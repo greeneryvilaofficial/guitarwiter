@@ -81,6 +81,7 @@
   }
   *{box-sizing:border-box;}
   html,body{ height:100%; }
+  html{ touch-action: manipulation; overscroll-behavior: none; }
   body{
     margin:0;
     min-height:100dvh;
@@ -88,6 +89,12 @@
     font-family:'Roboto', sans-serif;
     color:var(--key-text);
     overflow-x:hidden;
+    overflow-y:hidden;
+    overscroll-behavior:none;
+    /* Cegah pull-to-refresh / swipe layar ikut "narik" halaman saat jari geser
+       cepat antar tuts -- ini yang bikin ketikan cepat kadang kerasa "goyang"
+       atau ke-skip di keyboard berbasis WebView biasa. */
+    touch-action: manipulation;
   }
 
   /* Halaman ini murni tampilan keyboard saja (tanpa contoh kotak teks /
@@ -207,12 +214,23 @@
 
   /* ---- Suggestion bar (prediksi kata) ---- */
   .suggest-bar{
-    display:flex; gap:4px; padding:6px 8px; background:var(--kb-bg);
-    border-bottom:1px solid rgba(255,255,255,.06); min-height:34px;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    padding:6px 8px; background:var(--kb-bg);
+    border-bottom:1px solid rgba(255,255,255,.06);
+    /* Tinggi DIKUNCI (bukan cuma min-height) -- ini yang bikin tuts di bawahnya
+       tetap diam di tempat yang sama persis, baik lagi 0, 1, 2, atau 3 saran,
+       jadi jempol yang lagi ngetik cepat nggak pernah "meleset" gara-gara
+       keyboard ikut naik-turun tiap saran berubah. */
+    height:38px; min-height:38px; max-height:38px;
+    overflow:hidden; contain:layout size;
   }
   .suggest-chip{
-    flex:1; background:none; border:none; color:var(--key-text);
-    font-family:inherit; font-size:.85rem; padding:6px 4px; border-radius:6px;
+    /* Dulu flex:1 -- tiap chip dipepetin melar sampai penuh tepi ke tepi,
+       jadi kelihatan nggak rapi/nggak center kalau saran cuma 1-2. Sekarang
+       chip selebar isinya saja dan dikelompokkan di TENGAH bar (lihat
+       justify-content:center di atas), persis gaya Gboard. */
+    flex:0 1 auto; max-width:38%; background:none; border:none; color:var(--key-text);
+    font-family:inherit; font-size:.85rem; padding:7px 16px; border-radius:8px;
     text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .suggest-chip:active{ background:rgba(255,255,255,.1); }
@@ -359,6 +377,7 @@
     <button class="gtool-btn" id="gifBtn" type="button" title="GIF">GIF</button>
     <button class="gtool-btn" id="translateBtn" type="button" title="Terjemahkan">文A</button>
     <button class="gtool-btn" id="oneHandBtn" type="button" title="Mode satu tangan">✋</button>
+    <button class="gtool-btn" id="langBtn" type="button" title="Ganti bahasa saran kata">🌐<span id="langBtnTag" style="font-size:.55rem;font-weight:700;margin-left:2px;">ID</span></button>
     <div class="gtool-spacer"></div>
     <button class="gtool-btn" id="settingsBtn" type="button" title="Setelan">⚙</button>
     <button class="gtool-btn mic-tool" id="micToolBtn" type="button" title="Dengarkan gitar (otomatis aktif)">🎤</button>
@@ -602,9 +621,35 @@
     return false;
   }
 
+  // Teks `text` di atas cuma pelacak INTERNAL buat mikir saran kata (kata yang
+  // lagi diketik + satu kata sebelumnya buat prediksi bigram) -- BUKAN isi asli
+  // kolom chat (itu langsung ke InputConnection Android lewat bridgeCommit).
+  // Sebelumnya nggak pernah dipangkas, jadi kalau kamu ngetik lama tanpa ganti
+  // kolom, dia terus membengkak sepanjang hari -> tiap ketik/hapus jadi makin
+  // berat karena selalu mengolah ulang string yang makin panjang. Sekarang
+  // dikunci maksimal 200 karakter terakhir saja, cukup buat kebutuhan saran,
+  // jadi ngetik & hapus tetap ringan berapa lama pun sesi ngetiknya.
+  const TEXT_TRACK_MAX = 200;
+  function trimTrackedText(){
+    if(text.length > TEXT_TRACK_MAX){
+      const cut = text.length - TEXT_TRACK_MAX;
+      text = text.slice(cut);
+      cursorPos = Math.max(0, cursorPos - cut);
+    }
+  }
+
+  // Karakter yang menandai "kata baru saja selesai diketik" (spasi, enter, tanda baca).
+  // Begitu salah satu ini muncul, kata sebelum karakter ini langsung dipelajari
+  // ke kamus pribadi (lihat learnWord) — persis Gboard, otomatis tanpa menu apa pun.
+  const WORD_BOUNDARY_RE = /^[\s.,!?;:)\]}"'\u201d]$/;
   function appendText(str){
+    if(WORD_BOUNDARY_RE.test(str)){
+      const { word } = getCurrentWordRange();
+      if(word) learnWord(word);
+    }
     text = text.slice(0,cursorPos) + str + text.slice(cursorPos);
     cursorPos += str.length;
+    trimTrackedText();
     bridgeCommit(str);
     renderSuggestions();
     if(document.getElementById('translatePanel').style.display==='flex') updateTranslatePreview();
@@ -618,11 +663,14 @@
     if(document.getElementById('translatePanel').style.display==='flex') updateTranslatePreview();
   }
   function pressEnter(){
+    const { word } = getCurrentWordRange();
+    if(word) learnWord(word);
     // Panggil sendEnter() dulu (bisa memicu tombol Kirim/Cari sesuai kolom aktif),
     // baru perbarui pelacak teks lokal secara terpisah agar tidak terkirim dobel.
     bridgeEnter();
     text = text.slice(0,cursorPos) + '\n' + text.slice(cursorPos);
     cursorPos += 1;
+    trimTrackedText();
     renderSuggestions();
   }
 
@@ -658,26 +706,112 @@
     for(let i=0;i<n;i++) bridgeDeleteBackward();
   }
 
-  // ---------------- Fitur 1: Prediksi kata / saran ketikan ----------------
-  const DICTIONARY = [...new Set(['saya','kamu','dia','kita','kami','mereka','aku','anda','ini','itu',
-    'yang','dan','atau','tapi','tetapi','karena','jika','kalau','maka','supaya','agar',
-    'akan','sudah','belum','sedang','masih','tidak','bukan','jangan','boleh','harus',
-    'bisa','mau','ingin','suka','cinta','sayang','baik','bagus','buruk','jelek',
-    'besar','kecil','banyak','sedikit','semua','sebagian','setiap','bagaimana','kenapa','mengapa',
-    'kapan','dimana','siapa','apa','apakah','iya','oke','baiklah','terima',
-    'kasih','terimakasih','maaf','permisi','tolong','mohon','silakan','selamat','pagi','siang',
-    'sore','malam','hari','besok','kemarin','sekarang','nanti','tadi','lagi',
-    'juga','hanya','saja','cuma','memang','sebenarnya','sebetulnya','mungkin','pasti','tentu',
-    'gitar','musik','lagu','nada','main','bermain','nyanyi','chord','senar','ketik',
-    'kerja','sekolah','kuliah','rumah','jalan','makan','minum','tidur','bangun','pulang',
-    'pergi','datang','sampai','tunggu','sabar','cepat','lambat','pelan',
-    'whatsapp','chat','pesan','telepon','video','foto','kirim','buka','tutup',
-    'website','aplikasi','android','keyboard','fitur','update','baru','lama','coba','tes'])];
+  // ---------------- Fitur 1: Prediksi kata / saran ketikan (multi-bahasa + belajar otomatis) ----------------
+  // Dua kamus bawaan: Indonesia (default) & Inggris. Tombol 🌐 di toolbar
+  // menukar kamus mana yang dipakai untuk saran, persis tombol globe di Gboard.
+  const DICTIONARIES = {
+    id: [...new Set(['saya','kamu','dia','kita','kami','mereka','aku','anda','ini','itu',
+      'yang','dan','atau','tapi','tetapi','karena','jika','kalau','maka','supaya','agar',
+      'akan','sudah','belum','sedang','masih','tidak','bukan','jangan','boleh','harus',
+      'bisa','mau','ingin','suka','cinta','sayang','baik','bagus','buruk','jelek',
+      'besar','kecil','banyak','sedikit','semua','sebagian','setiap','bagaimana','kenapa','mengapa',
+      'kapan','dimana','siapa','apa','apakah','iya','oke','baiklah','terima',
+      'kasih','terimakasih','maaf','permisi','tolong','mohon','silakan','selamat','pagi','siang',
+      'sore','malam','hari','besok','kemarin','sekarang','nanti','tadi','lagi',
+      'juga','hanya','saja','cuma','memang','sebenarnya','sebetulnya','mungkin','pasti','tentu',
+      'gitar','musik','lagu','nada','main','bermain','nyanyi','chord','senar','ketik',
+      'kerja','sekolah','kuliah','rumah','jalan','makan','minum','tidur','bangun','pulang',
+      'pergi','datang','sampai','tunggu','sabar','cepat','lambat','pelan',
+      'whatsapp','chat','pesan','telepon','video','foto','kirim','buka','tutup',
+      'website','aplikasi','android','keyboard','fitur','update','baru','lama','coba','tes'])],
+    en: [...new Set(['the','you','and','are','for','that','this','with','have','not','but',
+      'what','can','will','just','like','know','get','think','see','make','go','come',
+      'want','need','good','great','nice','thanks','thank','hello','hi','hey','yes','no',
+      'okay','ok','please','sorry','love','miss','time','day','today','tomorrow','yesterday',
+      'now','later','work','school','home','call','message','chat','video','photo','send',
+      'open','close','app','update','new','old','try','test','how','are','doing','fine',
+      'busy','free','later','soon','maybe','sure','really','very','much','more','some'])]
+  };
+  let currentLang = 'id';
+  try{ currentLang = localStorage.getItem('genjreng_lang') === 'en' ? 'en' : 'id'; }catch(e){}
+
+  // ---- Kamus pribadi: belajar sendiri dari kata yang kamu ketik, persis Gboard ----
+  // Setiap kata yang baru selesai diketik (ditandai spasi/enter/tanda baca)
+  // LANGSUNG disimpan ke localStorage saat itu juga, tanpa buka menu apa pun.
+  // Makin sering & makin baru dipakai, makin tinggi rangking-nya di saran berikutnya.
+  const LEARN_KEY = 'genjreng_learned_words_v1';
+  const BIGRAM_KEY = 'genjreng_bigrams_v1';
+  let learnedWords = {}, bigrams = {};
+  try{ learnedWords = JSON.parse(localStorage.getItem(LEARN_KEY) || '{}'); }catch(e){ learnedWords = {}; }
+  try{ bigrams = JSON.parse(localStorage.getItem(BIGRAM_KEY) || '{}'); }catch(e){ bigrams = {}; }
+  if(!learnedWords[currentLang]) learnedWords[currentLang] = {};
+  if(!bigrams[currentLang]) bigrams[currentLang] = {};
+  let lastCompletedWord = '';
+
+  let saveLearnTimer = null;
+  function persistLearning(){
+    // Debounce ringan (150ms) supaya tidak nulis ke localStorage tiap huruf,
+    // cukup sesaat setelah tiap kata selesai — tetap terasa instan buat user.
+    clearTimeout(saveLearnTimer);
+    saveLearnTimer = setTimeout(()=>{
+      try{ localStorage.setItem(LEARN_KEY, JSON.stringify(learnedWords)); }catch(e){}
+      try{ localStorage.setItem(BIGRAM_KEY, JSON.stringify(bigrams)); }catch(e){}
+    }, 150);
+  }
+  function learnWord(word){
+    const w = (word||'').trim();
+    if(w.length < 2 || w.length > 24) return;   // saring kata kependekan/kepanjangan (kemungkinan asal ketik)
+    if(!/^[a-zA-Z'-]+$/.test(w)) return;         // cuma huruf, biar angka/simbol acak nggak ikut kesimpan
+    const lower = w.toLowerCase();
+    const bucket = learnedWords[currentLang];
+    if(!bucket[lower]) bucket[lower] = {count:0, last:0, disp:w};
+    bucket[lower].count += 1;
+    bucket[lower].last = Date.now();
+    bucket[lower].disp = w; // simpan kapitalisasi terakhir (mis. nama, awal kalimat)
+    // Batasi kamus pribadi ke ±800 kata paling sering, biar tidak membengkak selamanya.
+    const keys = Object.keys(bucket);
+    if(keys.length > 800){
+      keys.sort((a,b)=> bucket[a].count - bucket[b].count);
+      delete bucket[keys[0]];
+    }
+    if(lastCompletedWord){
+      const bg = bigrams[currentLang];
+      if(!bg[lastCompletedWord]) bg[lastCompletedWord] = {};
+      bg[lastCompletedWord][lower] = (bg[lastCompletedWord][lower]||0) + 1;
+    }
+    lastCompletedWord = lower;
+    persistLearning();
+  }
 
   function getCurrentWordRange(){
     let start = cursorPos;
     while(start>0 && !/[\s\n]/.test(text[start-1])) start--;
     return { start, end: cursorPos, word: text.slice(start, cursorPos) };
+  }
+
+  function getLearnedCandidates(prefixLower, limit){
+    const bucket = learnedWords[currentLang] || {};
+    const now = Date.now();
+    return Object.keys(bucket)
+      .filter(w => w.startsWith(prefixLower) && w !== prefixLower)
+      .map(w=>{
+        const e = bucket[w];
+        const ageDays = (now - (e.last||0)) / 86400000;
+        // Skor: makin sering + makin baru dipakai, makin di atas (logika sama seperti Gboard).
+        return { word: e.disp || w, score: e.count*10 - Math.min(ageDays,30) };
+      })
+      .sort((a,b)=> b.score - a.score)
+      .slice(0, limit)
+      .map(c=>c.word);
+  }
+  function getStaticCandidates(prefixLower, limit, excludeLower){
+    const dict = DICTIONARIES[currentLang] || [];
+    return dict.filter(w => w.startsWith(prefixLower) && w !== prefixLower && !excludeLower.has(w.toLowerCase())).slice(0, limit);
+  }
+  function getNextWordCandidates(limit){
+    const bg = (bigrams[currentLang]||{})[lastCompletedWord];
+    if(!bg) return [];
+    return Object.keys(bg).sort((a,b)=> bg[b]-bg[a]).slice(0, limit);
   }
 
   function renderSuggestions(){
@@ -687,15 +821,19 @@
     let candidates = [];
     if(word.length > 0){
       const lower = word.toLowerCase();
-      // Cuma tampilkan saran kata SUNGGUHAN dari kamus yang cocok awalannya.
-      // Sebelumnya chip pertama selalu mengulang kata yang sedang diketik apa
-      // adanya -- itu bukan saran, cuma gema dari ketikan sendiri, dan makin
-      // panjang katanya makin memanjang juga chip-nya, bikin bingung dikira
-      // ada "ketikan tersimpan". Sekarang dihapus; kalau tidak ada kata di
-      // kamus yang cocok, baris saran otomatis kosong.
-      candidates = DICTIONARY.filter(w => w.startsWith(lower) && w.toLowerCase() !== lower).slice(0,3);
+      // Kamus pribadi (kata yang sudah pernah kamu ketik sendiri) diprioritaskan
+      // di depan kamus bawaan -- ini yang bikin ngetik makin lama makin cepat.
+      const learned = getLearnedCandidates(lower, 3);
+      const usedLower = new Set(learned.map(w=>w.toLowerCase()));
+      const staticC = getStaticCandidates(lower, 3 - learned.length, usedLower);
+      candidates = [...learned, ...staticC].slice(0,3);
     } else {
-      candidates = ['Halo', 'Terima kasih', 'Oke'];
+      // Belum mulai ngetik kata baru: tebak kata SELANJUTNYA dari kata terakhir
+      // yang barusan selesai diketik (prediksi 2 kata berurutan, mirip Gboard).
+      const nextGuess = getNextWordCandidates(3);
+      const usedLower = new Set(nextGuess.map(w=>w.toLowerCase()));
+      const defaults = currentLang==='en' ? ['Hello','Thanks','Okay'] : ['Halo','Terima kasih','Oke'];
+      candidates = [...nextGuess, ...defaults.filter(d=>!usedLower.has(d.toLowerCase()))].slice(0,3);
     }
     candidates.forEach((c) => {
       const chip = document.createElement('button');
@@ -714,6 +852,18 @@
     cursorPos = start + chosen.length + 1;
     if(removeCount > 0) bridgeDeleteBackwardN(removeCount);
     bridgeCommit(chosen + ' ');
+    learnWord(chosen); // memilih saran pun tetap dihitung "dipakai" -> makin sering muncul di atas
+    renderSuggestions();
+  }
+
+  function applyLang(lang){
+    currentLang = (lang === 'en') ? 'en' : 'id';
+    try{ localStorage.setItem('genjreng_lang', currentLang); }catch(e){}
+    if(!learnedWords[currentLang]) learnedWords[currentLang] = {};
+    if(!bigrams[currentLang]) bigrams[currentLang] = {};
+    lastCompletedWord = '';
+    const tag = document.getElementById('langBtnTag');
+    if(tag) tag.textContent = currentLang.toUpperCase();
     renderSuggestions();
   }
 
@@ -1669,8 +1819,17 @@
   loadSavedTheme();
   loadSavedFontScale();
   loadSavedKeyBorder();
-  renderSuggestions();
+  applyLang(currentLang);
   renderClipboardPanel();
+
+  const langBtn = document.getElementById('langBtn');
+  if(langBtn){
+    langBtn.addEventListener('pointerdown', ()=>{
+      flash(langBtn);
+      applyLang(currentLang === 'id' ? 'en' : 'id');
+      showStatus(currentLang==='en' ? 'Saran kata: Inggris 🌐' : 'Saran kata: Indonesia 🌐');
+    });
+  }
 
   const keyBorderToggle = document.getElementById('keyBorderToggle');
   if(keyBorderToggle){
