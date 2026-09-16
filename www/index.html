@@ -1432,10 +1432,17 @@
   // beberapa bacaan BERTURUT-TURUT yang SEPAKAT (idx sama) dulu baru dikunci.
   let candidateIdx = -1, candidateCount = 0;
   const CONFIRM_COUNT = 2; // dua bacaan berturut yang sepakat sudah cukup -- tetap terasa instan
+  // Ambang deteksi "ada petikan baru". HARUS sama persis dengan ONSET_RMS &
+  // ONSET_RATIO di NativeMicPitchDetector.java.
+  const ONSET_RMS = 0.012;
+  const ONSET_RATIO = 1.6;
   // Jeda waktu minimum SETELAH sebuah nada dikomit, sebelum boleh dianggap ada
-  // petikan baru sama sekali -- HARUS sama persis dengan COOLDOWN_MS di
-  // NativeMicPitchDetector.java.
-  const COOLDOWN_MS = 180;
+  // petikan baru sama sekali. Diturunkan dari 180 -> 140: deteksi & konfirmasi
+  // sekarang lebih cepat, jadi permainan cepat (tremolo/lick cepat) tetap
+  // kepick satu-satu tanpa jeda berlebih -- penjaga UTAMA anti-ketikan-dobel
+  // tetap RELEASE_RMS di bawah, bukan angka ini. HARUS sama persis dengan
+  // COOLDOWN_MS di NativeMicPitchDetector.java.
+  const COOLDOWN_MS = 140;
   // PENTING (fix "kedeteksi ganda / dobel ketikan"): dulu, begitu COOLDOWN_MS
   // lewat, sistem langsung siap mendeteksi onset baru lagi -- padahal senar
   // gitar yang baru dipetik itu MASIH BERDENGUNG jauh lebih lama dari 180ms.
@@ -1449,9 +1456,11 @@
   // baru lagi -- persis seperti "note off" di synth, bukan cuma timer. Kalau
   // dengungannya memang lama sekali (mis. senar terbuka dibiarkan berbunyi),
   // MAX_RELEASE_WAIT_MS jadi jaring pengaman supaya tidak macet permanen.
-  // HARUS sama persis dengan RELEASE_RMS & MAX_RELEASE_WAIT_MS di
-  // NativeMicPitchDetector.java.
-  const RELEASE_RMS = 0.018;
+  // Diturunkan dari 0.018 -> 0.012, SEIRING dengan ONSET_RMS yang juga
+  // diturunkan di micLoop() (biar ambang "mulai bunyi" & "sudah reda"
+  // sama-sama lebih sensitif ke petikan pelan). HARUS sama persis dengan
+  // RELEASE_RMS & MAX_RELEASE_WAIT_MS di NativeMicPitchDetector.java.
+  const RELEASE_RMS = 0.012;
   const MAX_RELEASE_WAIT_MS = 1500;
   let releaseWaitUntil = 0;
 
@@ -1499,7 +1508,11 @@
     let rms=0;
     for(let i=0;i<SIZE;i++) rms += buf[i]*buf[i];
     rms = Math.sqrt(rms/SIZE);
-    if(rms < 0.012) return null;
+    // Diturunkan dari 0.012 -> 0.007, sinkron dengan ONSET_RMS di micLoop() --
+    // supaya petikan pelan (fingerstyle/palm mute/senar tipis) yang sudah
+    // lolos jadi onset tidak langsung ditolak lagi di sini. HARUS sama
+    // persis dengan YIN_MIN_RMS di NativeMicPitchDetector.java.
+    if(rms < 0.007) return null;
 
     const minTau = Math.max(2, Math.floor(sampleRate / MAX_VALID_FREQ));
     const maxTau = Math.min(Math.floor(SIZE/2) - 1, Math.ceil(sampleRate / MIN_VALID_FREQ));
@@ -1677,12 +1690,19 @@
     const now = performance.now();
 
     if(state==='idle'){
-      if(rms>0.02 && rms>smoothedRms*1.6 && now>cooldownUntil){
+      // Ambang absolut diturunkan dari 0.02 -> ONSET_RMS (0.012) supaya
+      // petikan PELAN (fingerstyle, palm mute, senar atas yang tipis) tetap
+      // memicu onset, bukan cuma petikan keras. Rasio ke smoothedRms
+      // (noise-floor sekitar) tetap jadi penjaga utama supaya noise ruangan
+      // yang konstan tidak ikut kepicu. HARUS sama persis dengan ONSET_RMS &
+      // ONSET_RATIO di NativeMicPitchDetector.java.
+      if(rms>ONSET_RMS && rms>smoothedRms*ONSET_RATIO && now>cooldownUntil){
         state='sampling';
         sampleTries=0;
         candidateIdx=-1; candidateCount=0;
         // Kasih jeda dikit dulu (~45ms) biar transien petikan gitar mereda dan
-        // gelombangnya udah cukup stabil buat diukur.
+        // gelombangnya udah cukup stabil buat diukur. HARUS sama persis dengan
+        // SETTLE_MS di NativeMicPitchDetector.java.
         sampleAt = now + 45;
         showStatus('Mendengar petikan…');
       }
