@@ -67,13 +67,14 @@ public class NativeMicPitchDetector {
     private static final int HOP_SAMPLES = SAMPLE_RATE / 60;
     private static final int BASE_MIDI = 40; // E2 -- HARUS sama persis dengan BASE_MIDI di index.html
     private static final int NOTE_COUNT = 44; // HARUS sama persis dengan NOTE_COUNT di index.html
-    // Diturunkan dari 180 -> 140: karena deteksi & konfirmasi sekarang jauh
-    // lebih cepat (hop ~16.6ms, bukan blok ~93ms), jeda minimum antar petikan
-    // ini bisa dipangkas supaya permainan cepat (tremolo/lick cepat) tetap
-    // kepick satu-satu -- penjaga UTAMA anti-ketikan-dobel tetap RELEASE_RMS
-    // di bawah (nunggu dengungan senar benar2 reda), bukan angka ini.
-    // HARUS sama persis dengan COOLDOWN_MS di index.html.
-    private static final long COOLDOWN_MS = 140;
+    // Diturunkan lagi dari 140 -> 70: sesudah RETRIGGER ditambahkan (lihat di
+    // bawah), COOLDOWN_MS ini cuma perlu jadi debounce MINIMAL buat mencegah
+    // riak/jitter di dalam transien satu petikan yang sama kehitung dobel --
+    // bukan lagi penjaga utama jarak antar-nada (itu sekarang tugas
+    // RETRIGGER_RATIO + RELEASE_RMS). 70ms jauh di bawah jarak antar-petikan
+    // tercepat yang wajar (~150-160ms bahkan di teknik tapping cepat), jadi
+    // aman. HARUS sama persis dengan COOLDOWN_MS di index.html.
+    private static final long COOLDOWN_MS = 70;
     // PENTING (fix "kedeteksi ganda / dobel ketikan"): dulu, begitu COOLDOWN_MS
     // lewat, mic langsung siap mendeteksi onset baru lagi -- padahal senar
     // gitar yang baru dipetik itu MASIH BERDENGUNG jauh lebih lama, dan
@@ -81,10 +82,8 @@ public class NativeMicPitchDetector {
     // simpatik senar lain) sampai kebaca sebagai "petikan baru" -> ketikan
     // dobel dari satu kali petik. Sekarang, sesudah komit, mic WAJIB nunggu
     // RMS-nya turun di bawah RELEASE_RMS dulu (bukan cuma nunggu waktu) baru
-    // boleh siap deteksi onset baru lagi. Nilai diturunkan dari 0.018 -> 0.012,
-    // SEIRING dengan ONSET_RMS yang juga diturunkan di bawah (biar konsisten:
-    // ambang "mulai bunyi" dan "sudah reda" sama-sama lebih sensitif). HARUS
-    // sama persis dengan RELEASE_RMS & MAX_RELEASE_WAIT_MS di index.html.
+    // boleh siap deteksi onset baru lagi. HARUS sama persis dengan
+    // RELEASE_RMS & MAX_RELEASE_WAIT_MS di index.html.
     private static final double RELEASE_RMS = 0.012;
     private static final long MAX_RELEASE_WAIT_MS = 1500;
     private static final int MAX_SAMPLE_TRIES = 4; // HARUS sama persis dengan batas percobaan di index.html
@@ -98,6 +97,21 @@ public class NativeMicPitchDetector {
     // onset di micLoop() index.html.
     private static final double ONSET_RMS = 0.012;
     private static final double ONSET_RATIO = 1.6; // HARUS sama persis dengan rasio onset di index.html
+    // BARU -- fix "nada cepat/tapping ketimpa dengungan nada sebelumnya jadi
+    // gak kepick": dulu selama STATE_RELEASING, mic BUTA total terhadap
+    // petikan baru sampai dengungan lama turun di bawah RELEASE_RMS -- masalahnya
+    // di teknik tapping/petik cepat (mis. gaya Marcin), nada berikutnya sering
+    // menimpa SEBELUM dengungan nada sebelumnya sempat reda, jadi onset barunya
+    // hilang sama sekali (bukan salah baca, tapi tidak dianggap ada onset).
+    // Sekarang selama RELEASING, tiap hop dibandingkan ke hop SEBELUMNYA
+    // (bukan ke smoothedRms jangka panjang, yang sudah kadung naik gara-gara
+    // ekor dengungan) -- kalau ada lonjakan tajam relatif terhadap hop
+    // sebelumnya DAN levelnya sudah cukup keras buat jadi nada sungguhan
+    // (bukan cuma riak kecil di ekor dengungan), langsung dianggap onset baru,
+    // tanpa nunggu reda dulu. HARUS sama persis dengan RETRIGGER_RATIO &
+    // RETRIGGER_MIN_RMS di index.html.
+    private static final double RETRIGGER_RATIO = 1.7;
+    private static final double RETRIGGER_MIN_RMS = 0.012;
     // Diturunkan dari 0.012 -> 0.007, sinkron dengan ONSET_RMS di atas --
     // supaya sinyal pelan yang lolos jadi onset juga tidak langsung ditolak
     // yinDetect() sendiri. HARUS sama persis dengan ambang rms di yinDetect()
@@ -212,6 +226,7 @@ public class NativeMicPitchDetector {
         // butuh 2 blok penuh (~186ms).
         int candidateIdx = -1, candidateCount = 0;
         final int CONFIRM_COUNT = 2;
+        double prevHopRms = 0.001; // RMS hop SEBELUMNYA (bukan rata-rata jangka panjang) -- dipakai retrigger di STATE_RELEASING
 
         while (running.get()) {
             int read = audioRecord.read(hopRaw, 0, HOP_SAMPLES);
@@ -298,15 +313,32 @@ public class NativeMicPitchDetector {
                     // kalau belum yakin & masih ada jatah percobaan, lanjut ke hop berikutnya
                 }
             } else { // STATE_RELEASING
-                // Baru boleh siap deteksi onset baru lagi kalau: jeda minimum sudah
-                // lewat DAN (dengungannya sudah mereda di bawah RELEASE_RMS ATAU
-                // sudah kelamaan nunggu / MAX_RELEASE_WAIT_MS lewat, sebagai jaring
-                // pengaman supaya tidak macet permanen kalau nadanya memang lama
-                // sekali berbunyi, mis. senar terbuka dibiarkan berdengung).
-                if (now > cooldownUntil && (rms < RELEASE_RMS || now > releaseWaitUntil)) {
+                // BARU: retrigger -- kalau ada lonjakan RMS baru yang jelas (nada
+                // baru menimpa ekor dengungan nada sebelumnya), jangan tunggu reda
+                // dulu, langsung anggap onset baru. Dibandingkan ke prevHopRms
+                // (hop tepat sebelumnya), bukan smoothedRms, karena smoothedRms
+                // sudah ikut naik gara-gara ekor dengungan itu sendiri sehingga
+                // rasio terhadapnya jadi kurang sensitif persis di kasus yang mau
+                // ditangkap ini.
+                if (now > cooldownUntil && rms > RETRIGGER_MIN_RMS && rms > prevHopRms * RETRIGGER_RATIO) {
+                    state = STATE_SAMPLING;
+                    sampleTries = 0;
+                    candidateIdx = -1;
+                    candidateCount = 0;
+                    sampleAt = now + SETTLE_MS;
+                    postOnset();
+                } else if (now > cooldownUntil && (rms < RELEASE_RMS || now > releaseWaitUntil)) {
+                    // Baru boleh siap deteksi onset baru lagi (jalur normal, bukan
+                    // retrigger) kalau: jeda minimum sudah lewat DAN (dengungannya
+                    // sudah mereda di bawah RELEASE_RMS ATAU sudah kelamaan nunggu /
+                    // MAX_RELEASE_WAIT_MS lewat, sebagai jaring pengaman supaya
+                    // tidak macet permanen kalau nadanya memang lama sekali
+                    // berbunyi, mis. senar terbuka dibiarkan berdengung).
                     state = STATE_IDLE;
                 }
             }
+
+            prevHopRms = rms;
 
             smoothedRms = smoothedRms * 0.85 + rms * 0.15;
         }
