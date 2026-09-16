@@ -1436,13 +1436,20 @@
   // ONSET_RATIO di NativeMicPitchDetector.java.
   const ONSET_RMS = 0.012;
   const ONSET_RATIO = 1.6;
-  // Jeda waktu minimum SETELAH sebuah nada dikomit, sebelum boleh dianggap ada
-  // petikan baru sama sekali. Diturunkan dari 180 -> 140: deteksi & konfirmasi
-  // sekarang lebih cepat, jadi permainan cepat (tremolo/lick cepat) tetap
-  // kepick satu-satu tanpa jeda berlebih -- penjaga UTAMA anti-ketikan-dobel
-  // tetap RELEASE_RMS di bawah, bukan angka ini. HARUS sama persis dengan
-  // COOLDOWN_MS di NativeMicPitchDetector.java.
-  const COOLDOWN_MS = 140;
+  // BARU -- fix "nada cepat/tapping ketimpa dengungan nada sebelumnya jadi
+  // gak kepick": lihat penjelasan lengkap di RETRIGGER_RATIO
+  // NativeMicPitchDetector.java. HARUS sama persis dengan RETRIGGER_RATIO &
+  // RETRIGGER_MIN_RMS di sana.
+  const RETRIGGER_RATIO = 1.7;
+  const RETRIGGER_MIN_RMS = 0.012;
+  let prevHopRms = 0.001; // RMS frame SEBELUMNYA -- dipakai retrigger saat state 'releasing'
+  // Diturunkan lagi dari 140 -> 70: sesudah RETRIGGER ditambahkan (lihat di
+  // bawah), COOLDOWN_MS ini cuma perlu jadi debounce MINIMAL buat mencegah
+  // riak/jitter di dalam transien satu petikan yang sama kehitung dobel --
+  // bukan lagi penjaga utama jarak antar-nada (itu sekarang tugas
+  // RETRIGGER_RATIO + RELEASE_RMS). HARUS sama persis dengan COOLDOWN_MS di
+  // NativeMicPitchDetector.java.
+  const COOLDOWN_MS = 70;
   // PENTING (fix "kedeteksi ganda / dobel ketikan"): dulu, begitu COOLDOWN_MS
   // lewat, sistem langsung siap mendeteksi onset baru lagi -- padahal senar
   // gitar yang baru dipetik itu MASIH BERDENGUNG jauh lebih lama dari 180ms.
@@ -1760,13 +1767,28 @@
         }
       }
     } else if(state==='releasing'){
-      // Baru boleh siap deteksi onset baru lagi kalau: jeda minimum sudah lewat
-      // DAN (dengungannya sudah mereda di bawah RELEASE_RMS ATAU sudah kelamaan
-      // nunggu / MAX_RELEASE_WAIT_MS lewat, sebagai jaring pengaman).
-      if(now>cooldownUntil && (rms<RELEASE_RMS || now>releaseWaitUntil)){
+      // BARU: retrigger -- kalau ada lonjakan RMS baru yang jelas (nada baru
+      // menimpa ekor dengungan nada sebelumnya, khas teknik tapping/petik
+      // cepat), jangan tunggu reda dulu, langsung anggap onset baru.
+      // Dibandingkan ke prevHopRms (frame tepat sebelumnya), bukan
+      // smoothedRms, karena smoothedRms sudah ikut naik gara-gara ekor
+      // dengungan itu sendiri. HARUS sama persis dengan logika retrigger di
+      // NativeMicPitchDetector.java.
+      if(now>cooldownUntil && rms>RETRIGGER_MIN_RMS && rms>prevHopRms*RETRIGGER_RATIO){
+        state='sampling';
+        sampleTries=0;
+        candidateIdx=-1; candidateCount=0;
+        sampleAt = now + 45;
+        showStatus('Mendengar petikan…');
+      } else if(now>cooldownUntil && (rms<RELEASE_RMS || now>releaseWaitUntil)){
+        // Baru boleh siap deteksi onset baru lagi (jalur normal, bukan
+        // retrigger) kalau: jeda minimum sudah lewat DAN (dengungannya sudah
+        // mereda di bawah RELEASE_RMS ATAU sudah kelamaan nunggu /
+        // MAX_RELEASE_WAIT_MS lewat, sebagai jaring pengaman).
         state='idle';
       }
     }
+    prevHopRms = rms;
     smoothedRms = smoothedRms*0.85 + rms*0.15;
     rafId = requestAnimationFrame(micLoop);
   }
