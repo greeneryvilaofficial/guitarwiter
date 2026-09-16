@@ -42,29 +42,75 @@ public class NativeMicPitchDetector {
     }
 
     private static final int SAMPLE_RATE = 44100;
-    // 4096 sample @44.1kHz ~= 93ms per baca. HARUS sama persis dengan analyser.fftSize
-    // di index.html. Dulu 1536 (35ms) biar terasa cepat, tapi itu cuma ~2.8 siklus
-    // gelombang buat nada rendah kayak E2 (~82Hz) -- ketipisan data bikin YIN (atau
-    // autokorelasi apa pun) gampang salah pilih oktaf. 4096 kasih ~7.6 siklus di
-    // E2, jauh lebih andal. Latensinya tetap kerasa instan karena YIN langsung
-    // commit di bacaan pertama yang yakin (lihat recordLoop()).
+    // 4096 sample @44.1kHz ~= 93ms jendela analisis. HARUS sama persis dengan
+    // analyser.fftSize di index.html. Dulu 1536 (35ms) biar terasa cepat, tapi
+    // itu cuma ~2.8 siklus gelombang buat nada rendah kayak E2 (~82Hz) --
+    // ketipisan data bikin YIN (atau autokorelasi apa pun) gampang salah pilih
+    // oktaf. 4096 kasih ~7.6 siklus di E2, jauh lebih andal/akurat. Lebar
+    // jendela ini TIDAK diturunkan lagi biar akurasi nada rendah tetap terjaga
+    // -- kecepatan sekarang didapat dari HOP_SAMPLES di bawah, bukan dari
+    // memperkecil jendela ini.
     private static final int BUFFER_SAMPLES = 4096;
+    // BARU -- inti dari peningkatan kecepatan: dulu recordLoop() menunggu
+    // audioRecord.read() mengisi PENUH 4096 sampel baru (blocking, ~93ms) tiap
+    // kali sebelum bisa membaca ulang -- jadi onset & konfirmasi nada paling
+    // cepat baru kerasa ~186ms (2 bacaan) sesudah dipetik. Sekarang baca
+    // sedikit-sedikit (HOP_SAMPLES per iterasi, ~16.6ms -- SENGAJA disamakan
+    // dengan 1/60 detik supaya kecepatan & rasa responsifnya IDENTIK dengan
+    // requestAnimationFrame di index.html, ~60fps) dan geser isi "window" ke
+    // kiri tiap iterasi (sliding window), lalu tempel sampel baru di ujung.
+    // Hasilnya: "window" SELALU berisi 4096 sampel PALING BARU (persis cara
+    // AnalyserNode.getFloatTimeDomainData() bekerja di WebView), tapi
+    // diperbarui tiap ~16.6ms, bukan tiap ~93ms. Lebar jendela YIN (jadi tetap
+    // akurat buat nada rendah) tidak berubah sama sekali -- yang berubah cuma
+    // SESERING APA jendela itu "digeser dan dibaca ulang".
+    private static final int HOP_SAMPLES = SAMPLE_RATE / 60;
     private static final int BASE_MIDI = 40; // E2 -- HARUS sama persis dengan BASE_MIDI di index.html
     private static final int NOTE_COUNT = 44; // HARUS sama persis dengan NOTE_COUNT di index.html
-    private static final long COOLDOWN_MS = 180; // HARUS sama persis dengan cooldownUntil di index.html
+    // Diturunkan dari 180 -> 140: karena deteksi & konfirmasi sekarang jauh
+    // lebih cepat (hop ~16.6ms, bukan blok ~93ms), jeda minimum antar petikan
+    // ini bisa dipangkas supaya permainan cepat (tremolo/lick cepat) tetap
+    // kepick satu-satu -- penjaga UTAMA anti-ketikan-dobel tetap RELEASE_RMS
+    // di bawah (nunggu dengungan senar benar2 reda), bukan angka ini.
+    // HARUS sama persis dengan COOLDOWN_MS di index.html.
+    private static final long COOLDOWN_MS = 140;
     // PENTING (fix "kedeteksi ganda / dobel ketikan"): dulu, begitu COOLDOWN_MS
     // lewat, mic langsung siap mendeteksi onset baru lagi -- padahal senar
-    // gitar yang baru dipetik itu MASIH BERDENGUNG jauh lebih lama dari 180ms,
-    // dan dengungan itu bisa naik-turun (beating antar harmonik / getaran
+    // gitar yang baru dipetik itu MASIH BERDENGUNG jauh lebih lama, dan
+    // dengungan itu bisa naik-turun (beating antar harmonik / getaran
     // simpatik senar lain) sampai kebaca sebagai "petikan baru" -> ketikan
     // dobel dari satu kali petik. Sekarang, sesudah komit, mic WAJIB nunggu
     // RMS-nya turun di bawah RELEASE_RMS dulu (bukan cuma nunggu waktu) baru
-    // boleh siap deteksi onset baru lagi -- HARUS sama persis dengan
-    // RELEASE_RMS & MAX_RELEASE_WAIT_MS di index.html.
-    private static final double RELEASE_RMS = 0.018;
+    // boleh siap deteksi onset baru lagi. Nilai diturunkan dari 0.018 -> 0.012,
+    // SEIRING dengan ONSET_RMS yang juga diturunkan di bawah (biar konsisten:
+    // ambang "mulai bunyi" dan "sudah reda" sama-sama lebih sensitif). HARUS
+    // sama persis dengan RELEASE_RMS & MAX_RELEASE_WAIT_MS di index.html.
+    private static final double RELEASE_RMS = 0.012;
     private static final long MAX_RELEASE_WAIT_MS = 1500;
     private static final int MAX_SAMPLE_TRIES = 4; // HARUS sama persis dengan batas percobaan di index.html
     private static final double YIN_THRESHOLD = 0.15; // HARUS sama persis dengan THRESHOLD di index.html
+    // Diturunkan dari 0.02 -> 0.012: supaya petikan PELAN (fingerstyle, palm
+    // mute, atau jari lemah di senar atas yang tipis) tetap memicu onset,
+    // bukan cuma petikan keras. Rasio ONSET_RATIO (perbandingan ke smoothedRms
+    // / noise-floor sekitar) tetap jadi penjaga utama supaya noise ruangan
+    // yang konstan tidak ikut kepicu -- jadi menurunkan ambang absolut ini
+    // aman selama rasionya tetap dijaga. HARUS sama persis dengan ambang RMS
+    // onset di micLoop() index.html.
+    private static final double ONSET_RMS = 0.012;
+    private static final double ONSET_RATIO = 1.6; // HARUS sama persis dengan rasio onset di index.html
+    // Diturunkan dari 0.012 -> 0.007, sinkron dengan ONSET_RMS di atas --
+    // supaya sinyal pelan yang lolos jadi onset juga tidak langsung ditolak
+    // yinDetect() sendiri. HARUS sama persis dengan ambang rms di yinDetect()
+    // index.html.
+    private static final double YIN_MIN_RMS = 0.007;
+    // BARU: tunda sedikit sesudah onset sebelum mulai yinDetect(), biar
+    // transien petikan (bunyi "tak" pick menyentuh senar) sempat mereda dan
+    // gelombangnya sudah cukup stabil buat diukur -- HARUS sama persis dengan
+    // delay "sampleAt = now + 45" di micLoop() index.html. Dulu Java tidak
+    // butuh ini karena blocking-read 4096-sampel (~93ms) sudah otomatis
+    // "menunda" bacaan pertama; sekarang loop jalan tiap ~16.6ms jadi delay
+    // ini harus dibuat eksplisit supaya akurasi tidak turun akibat kecepatan.
+    private static final long SETTLE_MS = 45;
 
     // Rentang frekuensi yang masuk akal buat dicari (nada gitar yang dipetakan ke
     // tuts + sedikit margin). HARUS sama persis dengan MIN/MAX_VALID_FREQ di index.html.
@@ -140,97 +186,117 @@ public class NativeMicPitchDetector {
     private void recordLoop() {
         android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
 
-        final short[] rawBuf = new short[BUFFER_SAMPLES];
-        final float[] floatBuf = new float[BUFFER_SAMPLES];
+        final short[] hopRaw = new short[HOP_SAMPLES];
+        // Jendela geser (sliding window): SELALU berisi BUFFER_SAMPLES sampel
+        // PALING BARU. Tiap iterasi cuma HOP_SAMPLES (~16.6ms) sampel lama yang
+        // dibuang dari depan dan HOP_SAMPLES sampel baru ditempel di belakang --
+        // bukan menunggu buffer 4096-sampel terisi ulang dari nol tiap kali
+        // (itu cara lama yang bikin lambat). Ini identik secara perilaku dengan
+        // AnalyserNode.getFloatTimeDomainData() di index.html, yang juga selalu
+        // mengembalikan sampel terbaru tanpa peduli kapan terakhir dibaca.
+        final float[] window = new float[BUFFER_SAMPLES];
 
         final int STATE_IDLE = 0, STATE_SAMPLING = 1, STATE_RELEASING = 2;
         int state = STATE_IDLE;
         double smoothedRms = 0.001;
         long cooldownUntil = 0;
         long releaseWaitUntil = 0;
+        long sampleAt = 0; // waktu paling cepat boleh mulai yinDetect() sesudah onset -- lihat SETTLE_MS
         int sampleTries = 0;
         // Konsensus multi-bacaan (persis cara tuner "pro" bekerja): sebelum ini,
         // begitu SATU bacaan lolos ambang confidence langsung dikunci -- itu bikin
         // rawan ketuker kalau kebetulan satu bacaan itu meleset. Sekarang minta
         // beberapa bacaan BERTURUT-TURUT yang SEPAKAT (idx sama) dulu baru dikunci.
+        // Karena satu hop cuma ~16.6ms, dua bacaan sepakat tetap kelar dalam
+        // hitungan puluhan milidetik -- jauh lebih cepat dari versi lama yang
+        // butuh 2 blok penuh (~186ms).
         int candidateIdx = -1, candidateCount = 0;
-        final int CONFIRM_COUNT = 2; // dua bacaan berturut yang sepakat sudah cukup -- tetap terasa instan
+        final int CONFIRM_COUNT = 2;
 
         while (running.get()) {
-            int read = audioRecord.read(rawBuf, 0, BUFFER_SAMPLES);
+            int read = audioRecord.read(hopRaw, 0, HOP_SAMPLES);
             if (read <= 0) continue;
 
+            // Geser isi window ke kiri sejauh "read" sampel, lalu tempel sampel
+            // baru di ujung -- window sesudah ini berisi BUFFER_SAMPLES sampel
+            // paling baru.
+            System.arraycopy(window, read, window, 0, BUFFER_SAMPLES - read);
+            int writeOffset = BUFFER_SAMPLES - read;
             double sumSq = 0;
             for (int i = 0; i < read; i++) {
-                float v = rawBuf[i] / 32768f;
-                floatBuf[i] = v;
+                float v = hopRaw[i] / 32768f;
+                window[writeOffset + i] = v;
                 sumSq += (double) v * v;
             }
+            // RMS dihitung cuma dari potongan (hop) yang BARU masuk, bukan dari
+            // seluruh window -- supaya onset kedengaran secepat hop-nya sendiri
+            // (~16.6ms), bukan tertunda karena dirata-rata sama ~93ms histori
+            // lama di window yang sebagian besar masih diam.
             double rms = Math.sqrt(sumSq / read);
             long now = System.currentTimeMillis();
 
             if (state == STATE_IDLE) {
-                if (rms > 0.02 && rms > smoothedRms * 1.6 && now > cooldownUntil) {
+                if (rms > ONSET_RMS && rms > smoothedRms * ONSET_RATIO && now > cooldownUntil) {
                     state = STATE_SAMPLING;
                     sampleTries = 0;
                     candidateIdx = -1;
                     candidateCount = 0;
+                    sampleAt = now + SETTLE_MS;
                     postOnset();
-                    // Sengaja TIDAK menganalisis buffer ini juga -- buffer di titik onset
-                    // masih berisi transien awal petikan, bacaan baru dimulai dari buffer
-                    // berikutnya biar gelombangnya sudah lebih stabil.
                 }
             } else if (state == STATE_SAMPLING) {
-                PitchReading r = yinDetect(floatBuf, read, SAMPLE_RATE);
-                sampleTries++;
+                if (now >= sampleAt) {
+                    PitchReading r = yinDetect(window, BUFFER_SAMPLES, SAMPLE_RATE);
+                    sampleTries++;
 
-                if (r != null) {
-                    int[] idxOut = new int[1];
-                    boolean safe = isCategorySafe(r.freq, r.probability, idxOut);
-                    if (safe) {
-                        // Konsensus: cek apakah bacaan kali ini SEPAKAT sama kandidat
-                        // sebelumnya (idx sama). Kalau beda, kandidat direset ke bacaan
-                        // baru ini (mulai hitung dari 1 lagi) -- daripada asal kunci ke
-                        // bacaan pertama yang kebetulan lolos ambang tapi ternyata cuma
-                        // sekali muncul (fluktuasi sesaat).
-                        if (idxOut[0] == candidateIdx) {
-                            candidateCount++;
+                    if (r != null) {
+                        int[] idxOut = new int[1];
+                        boolean safe = isCategorySafe(r.freq, r.probability, idxOut);
+                        if (safe) {
+                            // Konsensus: cek apakah bacaan kali ini SEPAKAT sama kandidat
+                            // sebelumnya (idx sama). Kalau beda, kandidat direset ke bacaan
+                            // baru ini (mulai hitung dari 1 lagi) -- daripada asal kunci ke
+                            // bacaan pertama yang kebetulan lolos ambang tapi ternyata cuma
+                            // sekali muncul (fluktuasi sesaat).
+                            if (idxOut[0] == candidateIdx) {
+                                candidateCount++;
+                            } else {
+                                candidateIdx = idxOut[0];
+                                candidateCount = 1;
+                            }
+                            if (candidateCount >= CONFIRM_COUNT || sampleTries >= MAX_SAMPLE_TRIES) {
+                                // Sudah dapat CONFIRM_COUNT bacaan berturut yang sepakat
+                                // (paling umum), ATAU jatah percobaan sudah habis -- pakai
+                                // bacaan TERAKHIR yang lolos ini (lebih baik daripada nyerah
+                                // total).
+                                commit(idxOut[0], r.freq);
+                                state = STATE_RELEASING;
+                                cooldownUntil = now + COOLDOWN_MS;
+                                releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
+                            }
+                            // kalau belum cukup konsensus & masih ada jatah percobaan,
+                            // lanjut ke hop berikutnya (~16.6ms lagi) buat konfirmasi
+                        } else if (sampleTries < MAX_SAMPLE_TRIES) {
+                            // Bacaannya persis di batas dua kategori tuts berbeda (mis. angka
+                            // vs huruf/tanda baca) dan belum cukup yakin -- coba baca ulang
+                            // dulu daripada asal tebak dan salah kategori.
                         } else {
-                            candidateIdx = idxOut[0];
-                            candidateCount = 1;
-                        }
-                        if (candidateCount >= CONFIRM_COUNT || sampleTries >= MAX_SAMPLE_TRIES) {
-                            // Sudah dapat CONFIRM_COUNT bacaan berturut yang sepakat
-                            // (paling umum), ATAU jatah percobaan sudah habis -- pakai
-                            // bacaan TERAKHIR yang lolos ini (lebih baik daripada nyerah
-                            // total).
-                            commit(idxOut[0], r.freq);
+                            postUnclear();
                             state = STATE_RELEASING;
                             cooldownUntil = now + COOLDOWN_MS;
                             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
                         }
-                        // kalau belum cukup konsensus & masih ada jatah percobaan,
-                        // lanjut ke buffer berikutnya buat konfirmasi tanpa mengubah state
-                    } else if (sampleTries < MAX_SAMPLE_TRIES) {
-                        // Bacaannya persis di batas dua kategori tuts berbeda (mis. angka
-                        // vs huruf/tanda baca) dan belum cukup yakin -- coba baca ulang
-                        // dulu daripada asal tebak dan salah kategori.
-                    } else {
+                    } else if (sampleTries >= MAX_SAMPLE_TRIES) {
+                        // Beberapa hop berturut masih belum dapat bacaan yang jelas
+                        // (mis. senar teredam / lebih dari satu senar bunyi bareng) --
+                        // baru di sini nyerah.
                         postUnclear();
                         state = STATE_RELEASING;
                         cooldownUntil = now + COOLDOWN_MS;
                         releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
                     }
-                } else if (sampleTries >= MAX_SAMPLE_TRIES) {
-                    // Beberapa buffer berturut masih belum dapat bacaan yang jelas
-                    // (mis. senar teredam / lebih dari satu senar bunyi bareng) --
-                    // baru di sini nyerah.
-                    postUnclear();
-                    state = STATE_RELEASING;
-                    cooldownUntil = now + COOLDOWN_MS;
-                    releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
+                    // kalau belum yakin & masih ada jatah percobaan, lanjut ke hop berikutnya
                 }
-                // kalau belum yakin & masih ada jatah percobaan, lanjut ke buffer berikutnya
             } else { // STATE_RELEASING
                 // Baru boleh siap deteksi onset baru lagi kalau: jeda minimum sudah
                 // lewat DAN (dengungannya sudah mereda di bawah RELEASE_RMS ATAU
@@ -329,7 +395,7 @@ public class NativeMicPitchDetector {
         double rms = 0;
         for (int i = 0; i < size; i++) rms += (double) buf[i] * buf[i];
         rms = Math.sqrt(rms / size);
-        if (rms < 0.012) return null;
+        if (rms < YIN_MIN_RMS) return null;
 
         int minTau = Math.max(2, (int) Math.floor(sampleRate / MAX_VALID_FREQ));
         int maxTau = Math.min(size / 2 - 1, (int) Math.ceil(sampleRate / MIN_VALID_FREQ));
