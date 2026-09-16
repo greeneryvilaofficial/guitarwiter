@@ -1324,6 +1324,19 @@
     else if(type==='enter'){ showBubble(el,'↵'); pressEnter(); }
     else if(type==='literal'){ const c = el.dataset.char; showBubble(el, c===' '?'␣':c); appendText(c); }
   }
+  // BARU: dipanggil kalau ada tap/ketukan badan gitar (bunyi keras tapi tidak
+  // periodik sama sekali). Cari tombol spasi di layout biar dapat feedback
+  // visual (kedip tombol + bubble) sama seperti tuts lain yang diketuk lewat
+  // nada, lalu ketik spasi lewat jalur yang sama (appendText -> bridgeCommit)
+  // yang dipakai autoTypeNote(). HARUS konsisten dengan onPercussiveTap() di
+  // NativeMicPitchDetector.java.
+  function typePercussiveTapAsSpace(){
+    const spaceEl = allKeys.find(el => el && el.dataset && el.dataset.type === 'literal' && el.dataset.char === ' ');
+    if(spaceEl){ flash(spaceEl); showBubble(spaceEl, '␣'); }
+    appendText(' ');
+    showStatus('🥁 Tap terdeteksi → <b>"␣"</b> (spasi)');
+  }
+
   function autoTypeNote(idx){
     if(mode==='emoji'){
       const el = emojiKeys[idx];
@@ -1419,6 +1432,13 @@
   window.onNativeUnclear = function(){
     showStatus('Nada belum terdeteksi jelas, coba petik lagi.');
   };
+  // BARU: tap/ketukan ke badan gitar (bunyi keras tapi SAMA SEKALI tidak
+  // periodik, beda dari nada yang cuma ambigu di batas kategori) -- dianggap
+  // gestur sengaja, langsung ketik spasi. HARUS konsisten dengan
+  // onPercussiveTap() di NativeMicPitchDetector.java / HtmlKeyboardService.java.
+  window.onNativePercussiveTap = function(){
+    typePercussiveTapAsSpace();
+  };
 
   // ---------------- Mic: monophonic pitch detection (autocorrelation) ----------------
   let listening=false, micCtx=null, analyser=null, stream=null, rafId=null;
@@ -1442,7 +1462,21 @@
   // RETRIGGER_MIN_RMS di sana.
   const RETRIGGER_RATIO = 1.7;
   const RETRIGGER_MIN_RMS = 0.012;
-  let prevHopRms = 0.001; // RMS frame SEBELUMNYA -- dipakai retrigger saat state 'releasing'
+  // BARU (fix "satu strum/petik kebaca berkali-kali jadi huruf dobel/triple"):
+  // lihat penjelasan lengkap di RETRIGGER_WINDOW_HOPS NativeMicPitchDetector.java.
+  // Intinya: retrigger sekarang dibandingkan ke titik PALING PELAN dalam
+  // beberapa frame terakhir (harus ada "lembah" beneran dulu), bukan cuma satu
+  // frame sebelumnya -- supaya beating/riak dari SATU strum yang sama tidak
+  // kehitung berkali-kali sebagai huruf berbeda-beda. HARUS sama persis dengan
+  // RETRIGGER_WINDOW_HOPS, MIN_RETRIGGER_GAP_MS, RELEASE_CONFIRM_HOPS di
+  // NativeMicPitchDetector.java.
+  const RETRIGGER_WINDOW_HOPS = 5;
+  const MIN_RETRIGGER_GAP_MS = 110;
+  const RELEASE_CONFIRM_HOPS = 3;
+  const recentHopRms = new Array(RETRIGGER_WINDOW_HOPS).fill(0.001);
+  let recentHopIdx = 0;
+  let lastOnsetAt = 0;
+  let releaseBelowCount = 0;
   // Diturunkan lagi dari 140 -> 70: sesudah RETRIGGER ditambahkan (lihat di
   // bawah), COOLDOWN_MS ini cuma perlu jadi debounce MINIMAL buat mencegah
   // riak/jitter di dalam transien satu petikan yang sama kehitung dobel --
@@ -1711,6 +1745,7 @@
         // gelombangnya udah cukup stabil buat diukur. HARUS sama persis dengan
         // SETTLE_MS di NativeMicPitchDetector.java.
         sampleAt = now + 45;
+        lastOnsetAt = now;
         showStatus('Mendengar petikan…');
       }
     } else if(state==='sampling'){
@@ -1756,9 +1791,12 @@
             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
           }
         } else if(sampleTries >= 4){
-          // Beberapa frame berturut masih belum dapat bacaan yang jelas (mis. senar
-          // teredam atau lebih dari satu senar berbunyi) -- baru di sini nyerah.
-          showStatus('Nada belum terdeteksi jelas, coba petik lagi.');
+          // Beberapa frame berturut SAMA SEKALI tidak dapat sinyal periodik
+          // (yinDetect() balikin null terus) walau tadinya cukup keras buat
+          // memicu onset -- ini ciri khas TAP/ketukan ke badan gitar (bukan
+          // senar dipetik). Beda dari kasus "ambigu di batas kategori" di atas
+          // (yang MASIH dapat nada) -- di sini dianggap sengaja: ketik spasi.
+          typePercussiveTapAsSpace();
           state='releasing';
           cooldownUntil = now + COOLDOWN_MS;
           releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
@@ -1767,28 +1805,50 @@
         }
       }
     } else if(state==='releasing'){
+      // Cari titik paling pelan dari RETRIGGER_WINDOW_HOPS frame terakhir --
+      // "lembah" ini harus benar-benar dilewati dulu sebelum sebuah lonjakan
+      // dianggap onset baru, bukan cuma riak/beating dalam petikan yang sama.
+      let recentMin = recentHopRms[0];
+      for(let i=1;i<recentHopRms.length;i++){ if(recentHopRms[i]<recentMin) recentMin = recentHopRms[i]; }
+
       // BARU: retrigger -- kalau ada lonjakan RMS baru yang jelas (nada baru
       // menimpa ekor dengungan nada sebelumnya, khas teknik tapping/petik
-      // cepat), jangan tunggu reda dulu, langsung anggap onset baru.
-      // Dibandingkan ke prevHopRms (frame tepat sebelumnya), bukan
-      // smoothedRms, karena smoothedRms sudah ikut naik gara-gara ekor
-      // dengungan itu sendiri. HARUS sama persis dengan logika retrigger di
-      // NativeMicPitchDetector.java.
-      if(now>cooldownUntil && rms>RETRIGGER_MIN_RMS && rms>prevHopRms*RETRIGGER_RATIO){
+      // cepat) DAN memang ada lembah beneran sebelum lonjakan ini DAN sudah
+      // lewat jarak minimum mutlak dari onset terakhir, langsung anggap onset
+      // baru. Tiga syarat ini sengaja dipisah supaya beating/riak dari SATU
+      // strum yang sama tidak kehitung berkali-kali sebagai huruf berbeda-beda.
+      // HARUS sama persis dengan logika retrigger di NativeMicPitchDetector.java.
+      if(now>cooldownUntil && now-lastOnsetAt>MIN_RETRIGGER_GAP_MS
+          && rms>RETRIGGER_MIN_RMS && rms>recentMin*RETRIGGER_RATIO){
         state='sampling';
         sampleTries=0;
         candidateIdx=-1; candidateCount=0;
         sampleAt = now + 45;
+        lastOnsetAt = now;
+        releaseBelowCount = 0;
         showStatus('Mendengar petikan…');
-      } else if(now>cooldownUntil && (rms<RELEASE_RMS || now>releaseWaitUntil)){
-        // Baru boleh siap deteksi onset baru lagi (jalur normal, bukan
-        // retrigger) kalau: jeda minimum sudah lewat DAN (dengungannya sudah
-        // mereda di bawah RELEASE_RMS ATAU sudah kelamaan nunggu /
-        // MAX_RELEASE_WAIT_MS lewat, sebagai jaring pengaman).
+      } else if(now>cooldownUntil && now>releaseWaitUntil){
+        // Jaring pengaman: sudah kelamaan nunggu -- paksa balik ke idle walau
+        // belum benar-benar hening, daripada macet permanen.
         state='idle';
+        releaseBelowCount = 0;
+      } else if(rms<RELEASE_RMS){
+        // Baru boleh siap deteksi onset baru lagi (jalur normal) kalau RMS
+        // sudah di bawah RELEASE_RMS SELAMA RELEASE_CONFIRM_HOPS frame
+        // BERTURUT-TURUT -- bukan cuma sekali nyentuh di bawah ambang, supaya
+        // riak sesaat di tengah dengungan yang masih jelas terdengar tidak
+        // dikira "sudah reda".
+        releaseBelowCount++;
+        if(releaseBelowCount >= RELEASE_CONFIRM_HOPS && now>cooldownUntil){
+          state='idle';
+          releaseBelowCount = 0;
+        }
+      } else {
+        releaseBelowCount = 0;
       }
     }
-    prevHopRms = rms;
+    recentHopRms[recentHopIdx] = rms;
+    recentHopIdx = (recentHopIdx + 1) % recentHopRms.length;
     smoothedRms = smoothedRms*0.85 + rms*0.15;
     rafId = requestAnimationFrame(micLoop);
   }
