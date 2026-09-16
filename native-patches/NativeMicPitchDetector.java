@@ -39,6 +39,12 @@ public class NativeMicPitchDetector {
         void onPitchIndex(int idx, double freq); // Nada valid, ketemu indeks tuts-nya
         void onOutOfRange(double freq);          // Nada kedengaran tapi di luar jangkauan tuts
         void onUnclear();                        // Sinyal kedengaran tapi nadanya tidak jelas
+        // BARU: sinyal kedengaran KERAS tapi SAMA SEKALI TIDAK PERIODIK (yinDetect
+        // gagal total, bukan cuma ambigu di batas kategori) -- ciri khas pukulan/
+        // ketukan ke badan gitar (bukan senar dipetik). Beda dari onUnclear(): itu
+        // dipakai kalau ADA nada yang terdeteksi tapi cuma ambigu di batas dua
+        // kategori tuts, jadi tetap diperlakukan beda (lihat recordLoop()).
+        void onPercussiveTap();
     }
 
     private static final int SAMPLE_RATE = 44100;
@@ -112,6 +118,36 @@ public class NativeMicPitchDetector {
     // RETRIGGER_MIN_RMS di index.html.
     private static final double RETRIGGER_RATIO = 1.7;
     private static final double RETRIGGER_MIN_RMS = 0.012;
+    // BARU (fix "satu strum/petik kebaca berkali-kali jadi huruf dobel/triple"):
+    // dulu retrigger cuma dibandingkan ke SATU hop sebelumnya (prevHopRms).
+    // Masalahnya, chord yang di-strum (banyak senar bareng) atau nada yang
+    // masih berdengung itu levelnya naik-turun terus (BEATING -- interferensi
+    // antar harmonik beberapa senar), jadi gampang banget ada satu hop yang
+    // kebetulan lebih pelan dari hop tepat sebelumnya lalu hop sesudahnya naik
+    // lagi sedikit -> RETRIGGER_RATIO kelewat gampang terpicu berkali-kali
+    // padahal itu bukan petikan baru sama sekali, cuma riak dari petikan yang
+    // SAMA. Sekarang retrigger dibandingkan ke titik PALING PELAN dalam
+    // RETRIGGER_WINDOW_HOPS hop terakhir (~80ms), bukan cuma satu hop -- jadi
+    // harus ada "lembah" beneran dulu sebelum dianggap ada "puncak" (onset)
+    // baru, bukan sekadar riak naik-turun kecil dalam tren yang sama.
+    private static final int RETRIGGER_WINDOW_HOPS = 5;
+    // BARU: jarak minimum MUTLAK antar onset (baik onset normal maupun
+    // retrigger) -- jaring pengaman terakhir di luar syarat "lembah dulu" di
+    // atas, supaya beating yang sangat cepat sekalipun tidak bisa memicu lebih
+    // sering dari ini. 110ms masih jauh di bawah jarak petikan tercepat yang
+    // realistis (~150-160ms bahkan di teknik tapping cepat), jadi tidak akan
+    // kerasa nge-lag buat permainan sungguhan.
+    private static final long MIN_RETRIGGER_GAP_MS = 110;
+    // BARU (bagian dari fix yang sama): dulu begitu SATU hop RMS-nya di bawah
+    // RELEASE_RMS, langsung dianggap "sudah reda" dan state balik ke IDLE.
+    // Padahal riak/beating yang sama di atas juga bisa bikin RMS sempat
+    // nyentuh di bawah RELEASE_RMS SEBENTAR padahal senarnya masih jelas-jelas
+    // berbunyi -- begitu balik ke IDLE, riak berikutnya yang naik lagi kebaca
+    // sebagai onset baru -> huruf dobel lagi (lewat jalur normal, bukan
+    // retrigger). Sekarang RMS harus di bawah RELEASE_RMS SELAMA
+    // RELEASE_CONFIRM_HOPS hop BERTURUT-TURUT (bukan cuma sekali) baru
+    // dianggap benar-benar reda.
+    private static final int RELEASE_CONFIRM_HOPS = 3;
     // Diturunkan dari 0.012 -> 0.007, sinkron dengan ONSET_RMS di atas --
     // supaya sinyal pelan yang lolos jadi onset juga tidak langsung ditolak
     // yinDetect() sendiri. HARUS sama persis dengan ambang rms di yinDetect()
@@ -226,7 +262,13 @@ public class NativeMicPitchDetector {
         // butuh 2 blok penuh (~186ms).
         int candidateIdx = -1, candidateCount = 0;
         final int CONFIRM_COUNT = 2;
-        double prevHopRms = 0.001; // RMS hop SEBELUMNYA (bukan rata-rata jangka panjang) -- dipakai retrigger di STATE_RELEASING
+        // Riwayat RMS beberapa hop terakhir (bukan cuma satu) -- dipakai buat cari
+        // titik paling pelan (lembah) sebelum retrigger, lihat RETRIGGER_WINDOW_HOPS.
+        final double[] recentHopRms = new double[RETRIGGER_WINDOW_HOPS];
+        java.util.Arrays.fill(recentHopRms, 0.001);
+        int recentHopIdx = 0;
+        long lastOnsetAt = 0; // kapan terakhir kali ada onset (normal ATAU retrigger) -- lihat MIN_RETRIGGER_GAP_MS
+        int releaseBelowCount = 0; // berapa hop BERTURUT-TURUT rms sudah di bawah RELEASE_RMS -- lihat RELEASE_CONFIRM_HOPS
 
         while (running.get()) {
             int read = audioRecord.read(hopRaw, 0, HOP_SAMPLES);
@@ -257,6 +299,7 @@ public class NativeMicPitchDetector {
                     candidateIdx = -1;
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;
+                    lastOnsetAt = now;
                     postOnset();
                 }
             } else if (state == STATE_SAMPLING) {
@@ -302,10 +345,14 @@ public class NativeMicPitchDetector {
                             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
                         }
                     } else if (sampleTries >= MAX_SAMPLE_TRIES) {
-                        // Beberapa hop berturut masih belum dapat bacaan yang jelas
-                        // (mis. senar teredam / lebih dari satu senar bunyi bareng) --
-                        // baru di sini nyerah.
-                        postUnclear();
+                        // Beberapa hop berturut SAMA SEKALI tidak dapat sinyal periodik
+                        // (yinDetect() balikin null terus) walau tadinya cukup keras buat
+                        // memicu onset -- ini ciri khas TAP/ketukan ke badan gitar (bukan
+                        // senar dipetik, jadi tidak ada nada yang bisa dicocokkan sama
+                        // sekali). Diperlakukan beda dari "ambigu di batas kategori" di
+                        // atas (yang MASIH dapat nada, cuma raguan pilih tutsnya) --
+                        // di sini dianggap sengaja: langsung ketik spasi.
+                        postPercussiveTap();
                         state = STATE_RELEASING;
                         cooldownUntil = now + COOLDOWN_MS;
                         releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
@@ -313,32 +360,58 @@ public class NativeMicPitchDetector {
                     // kalau belum yakin & masih ada jatah percobaan, lanjut ke hop berikutnya
                 }
             } else { // STATE_RELEASING
+                // Cari titik paling pelan dari RETRIGGER_WINDOW_HOPS hop terakhir --
+                // ini "lembah" yang harus benar-benar dilewati dulu sebelum sebuah
+                // lonjakan dianggap onset baru, bukan cuma riak/beating dalam
+                // petikan yang sama.
+                double recentMin = recentHopRms[0];
+                for (int i = 1; i < recentHopRms.length; i++) {
+                    if (recentHopRms[i] < recentMin) recentMin = recentHopRms[i];
+                }
+
                 // BARU: retrigger -- kalau ada lonjakan RMS baru yang jelas (nada
-                // baru menimpa ekor dengungan nada sebelumnya), jangan tunggu reda
-                // dulu, langsung anggap onset baru. Dibandingkan ke prevHopRms
-                // (hop tepat sebelumnya), bukan smoothedRms, karena smoothedRms
-                // sudah ikut naik gara-gara ekor dengungan itu sendiri sehingga
-                // rasio terhadapnya jadi kurang sensitif persis di kasus yang mau
-                // ditangkap ini.
-                if (now > cooldownUntil && rms > RETRIGGER_MIN_RMS && rms > prevHopRms * RETRIGGER_RATIO) {
+                // baru menimpa ekor dengungan nada sebelumnya) DAN memang ada
+                // lembah beneran sebelum lonjakan ini DAN sudah lewat jarak minimum
+                // mutlak dari onset terakhir, langsung anggap onset baru, jangan
+                // tunggu reda dulu. Tiga syarat ini sengaja dipisah (bukan cuma satu
+                // ambang) supaya beating/riak dari SATU strum yang sama tidak
+                // kehitung berkali-kali sebagai huruf berbeda-beda.
+                if (now > cooldownUntil
+                        && now - lastOnsetAt > MIN_RETRIGGER_GAP_MS
+                        && rms > RETRIGGER_MIN_RMS
+                        && rms > recentMin * RETRIGGER_RATIO) {
                     state = STATE_SAMPLING;
                     sampleTries = 0;
                     candidateIdx = -1;
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;
+                    lastOnsetAt = now;
+                    releaseBelowCount = 0;
                     postOnset();
-                } else if (now > cooldownUntil && (rms < RELEASE_RMS || now > releaseWaitUntil)) {
-                    // Baru boleh siap deteksi onset baru lagi (jalur normal, bukan
-                    // retrigger) kalau: jeda minimum sudah lewat DAN (dengungannya
-                    // sudah mereda di bawah RELEASE_RMS ATAU sudah kelamaan nunggu /
-                    // MAX_RELEASE_WAIT_MS lewat, sebagai jaring pengaman supaya
-                    // tidak macet permanen kalau nadanya memang lama sekali
-                    // berbunyi, mis. senar terbuka dibiarkan berdengung).
+                } else if (now > cooldownUntil && now > releaseWaitUntil) {
+                    // Jaring pengaman: sudah kelamaan nunggu (mis. senar terbuka
+                    // dibiarkan berdengung lama) -- paksa balik ke IDLE walau belum
+                    // benar-benar hening, daripada macet permanen.
                     state = STATE_IDLE;
+                    releaseBelowCount = 0;
+                } else if (rms < RELEASE_RMS) {
+                    // Baru boleh siap deteksi onset baru lagi (jalur normal) kalau
+                    // RMS sudah di bawah RELEASE_RMS SELAMA RELEASE_CONFIRM_HOPS hop
+                    // BERTURUT-TURUT -- bukan cuma sekali nyentuh di bawah ambang,
+                    // supaya riak sesaat di tengah dengungan yang masih jelas
+                    // terdengar tidak dikira "sudah reda".
+                    releaseBelowCount++;
+                    if (releaseBelowCount >= RELEASE_CONFIRM_HOPS && now > cooldownUntil) {
+                        state = STATE_IDLE;
+                        releaseBelowCount = 0;
+                    }
+                } else {
+                    releaseBelowCount = 0;
                 }
             }
 
-            prevHopRms = rms;
+            recentHopRms[recentHopIdx] = rms;
+            recentHopIdx = (recentHopIdx + 1) % recentHopRms.length;
 
             smoothedRms = smoothedRms * 0.85 + rms * 0.15;
         }
@@ -562,5 +635,9 @@ public class NativeMicPitchDetector {
     private void postUnclear() {
         if (listener == null) return;
         mainHandler.post(() -> { if (listener != null) listener.onUnclear(); });
+    }
+    private void postPercussiveTap() {
+        if (listener == null) return;
+        mainHandler.post(() -> { if (listener != null) listener.onPercussiveTap(); });
     }
 }

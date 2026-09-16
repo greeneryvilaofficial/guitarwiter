@@ -274,6 +274,11 @@ public class HtmlKeyboardService extends InputMethodService {
                     webView.evaluateJavascript(
                             "window.onNativeUnclear && window.onNativeUnclear()", null);
                 }
+                @Override
+                public void onPercussiveTap() {
+                    webView.evaluateJavascript(
+                            "window.onNativePercussiveTap && window.onNativePercussiveTap()", null);
+                }
             });
             if (started) {
                 runOnUiThreadSafe(() -> webView.evaluateJavascript(
