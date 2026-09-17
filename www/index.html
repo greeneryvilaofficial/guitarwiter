@@ -1446,12 +1446,18 @@
   // 'releasing' (nunggu senar benar-benar mereda) -> balik ke 'idle'.
   let state='idle', sampleAt=0, cooldownUntil=0, smoothedRms=0.001;
   let sampleTries=0;
+  let onsetPeakRms = 0.001; // puncak RMS sejak onset -- lihat TAP_DECAY_RATIO
+  // BARU: lihat penjelasan lengkap di TAP_DECAY_RATIO NativeMicPitchDetector.java.
+  // HARUS sama persis dengan TAP_DECAY_RATIO & STRONG_PROBABILITY di sana.
+  const TAP_DECAY_RATIO = 0.30;
+  const STRONG_PROBABILITY = 0.80;
   // Konsensus multi-bacaan (persis cara tuner "pro" bekerja): sebelum ini,
   // begitu SATU bacaan lolos ambang confidence langsung dikunci -- itu bikin
   // rawan ketuker kalau kebetulan satu bacaan itu meleset. Sekarang minta
   // beberapa bacaan BERTURUT-TURUT yang SEPAKAT (idx sama) dulu baru dikunci.
   let candidateIdx = -1, candidateCount = 0;
-  const CONFIRM_COUNT = 2; // dua bacaan berturut yang sepakat sudah cukup -- tetap terasa instan
+  // requiredConfirm sekarang ADAPTIF per bacaan (lihat isCategorySafe() &
+  // pemakaiannya di micLoop()), bukan angka tetap lagi.
   // Ambang deteksi "ada petikan baru". HARUS sama persis dengan ONSET_RMS &
   // ONSET_RATIO di NativeMicPitchDetector.java.
   const ONSET_RMS = 0.012;
@@ -1506,6 +1512,10 @@
   let releaseWaitUntil = 0;
 
   function freqToMidi(freq){ return 69 + 12*Math.log2(freq/440); }
+  // BARU -- fix "satu fret satu nada harus akurat": lihat penjelasan lengkap
+  // di calibrationOffsetCents NativeMicPitchDetector.java. HARUS sama persis
+  // logikanya dengan sana.
+  let calibrationOffsetCents = 0;
   function freqToIdx(freq){ return Math.round(freqToMidi(freq)) - BASE_MIDI; }
 
   function commitDetectedNote(freq){
@@ -1707,19 +1717,41 @@
   // dekat pusat nada, aman langsung. Kalau posisinya di area pinggir/ambigu
   // antara dua nada tetangga, baru dikomit kalau bacaannya cukup meyakinkan --
   // makin dekat batas kategori berbeda, makin tinggi juga syarat keyakinannya.
+  // Return-nya juga bawa centsOff (SELALU positif) -- dipakai micLoop() buat
+  // menentukan requiredConfirm adaptif. HARUS sama persis dengan
+  // isCategorySafe() di NativeMicPitchDetector.java.
   function isCategorySafe(freq, clarity){
-    const midiOffset = freqToMidi(freq) - BASE_MIDI;
+    // Kalibrasi tuning diterapkan di sini: geser midiOffset sebesar offset
+    // yang sudah dipelajari, SEBELUM dibulatkan ke fret/nada terdekat.
+    const midiOffset = freqToMidi(freq) - BASE_MIDI - calibrationOffsetCents/100;
     const idx = Math.round(midiOffset);
-    if(idx<0 || idx>=NOTE_COUNT) return {safe:false, idx};
-    const centsOff = Math.abs(midiOffset - idx) * 100; // 0..50
-    if(centsOff < 25) return {safe:true, idx};
-    const neighborIdx = idx + (midiOffset >= idx ? 1 : -1);
-    const differentCategory = !(neighborIdx>=0 && neighborIdx<NOTE_COUNT
-        && categoryOfIndex(idx) === categoryOfIndex(neighborIdx));
-    // Beda kategori (mis. angka/huruf) butuh keyakinan lebih tinggi lagi
-    // daripada sekadar ketuker sesama angka, karena akibatnya lebih mengganggu.
-    const requiredClarity = differentCategory ? 0.9 : 0.75;
-    return { safe: clarity >= requiredClarity, idx };
+    if(idx<0 || idx>=NOTE_COUNT) return {safe:false, idx, centsOff:100};
+    const signedCentsOff = (midiOffset - idx) * 100;
+    const centsOff = Math.abs(signedCentsOff); // 0..50
+    let safe;
+    if(centsOff < 25){
+      // BARU: dulu langsung aman TANPA cek clarity kalau sudah dekat pusat
+      // nada -- sekarang tetap perlu clarity minimal (asal-tidak-berisik),
+      // walau jauh lebih longgar dibanding kasus di batas kategori.
+      safe = clarity >= 0.5;
+    } else {
+      const neighborIdx = idx + (midiOffset >= idx ? 1 : -1);
+      const differentCategory = !(neighborIdx>=0 && neighborIdx<NOTE_COUNT
+          && categoryOfIndex(idx) === categoryOfIndex(neighborIdx));
+      // Beda kategori (mis. angka/huruf) butuh keyakinan lebih tinggi lagi
+      // daripada sekadar ketuker sesama angka, karena akibatnya lebih mengganggu.
+      const requiredClarity = differentCategory ? 0.9 : 0.75;
+      safe = clarity >= requiredClarity;
+    }
+    // BARU -- kalibrasi tuning: kalau bacaan ini SANGAT dekat pusat nada
+    // (<15 cent) DAN dianggap aman, pelan-pelan geser referensi tuning ke arah
+    // situ (EMA lambat, 5% per bacaan). Dibatasi +-45 cent.
+    if(safe && centsOff < 15){
+      calibrationOffsetCents = calibrationOffsetCents*0.95 + signedCentsOff*0.05;
+      if(calibrationOffsetCents > 45) calibrationOffsetCents = 45;
+      if(calibrationOffsetCents < -45) calibrationOffsetCents = -45;
+    }
+    return { safe, idx, centsOff };
   }
 
   function micLoop(){
@@ -1746,15 +1778,29 @@
         // SETTLE_MS di NativeMicPitchDetector.java.
         sampleAt = now + 45;
         lastOnsetAt = now;
+        onsetPeakRms = rms;
         showStatus('Mendengar petikan…');
       }
     } else if(state==='sampling'){
+      // Terus perbarui puncak RMS sejak onset -- lihat catatan onsetPeakRms di
+      // NativeMicPitchDetector.java (dilacak terus selama fase sampling, bukan
+      // cuma dari satu frame pemicu onset saja).
+      if(rms > onsetPeakRms) onsetPeakRms = rms;
       if(now>=sampleAt){
         const result = yinDetect(buf, micCtx.sampleRate);
         sampleTries++;
+        // Seberapa besar sinyal sudah meluruh dari puncaknya -- lihat
+        // TAP_DECAY_RATIO NativeMicPitchDetector.java buat penjelasan lengkap.
+        const decayRatio = rms / onsetPeakRms;
         if(result){
           const chk = isCategorySafe(result.freq, result.clarity);
-          if(chk.safe){
+          // BARU: walau isCategorySafe() bilang "aman", kalau sinyalnya sudah
+          // meluruh SANGAT cepat (ciri tap) DAN periodisitasnya tidak sampai
+          // sangat meyakinkan, jangan percaya sebagai nada -- ini yang nangkep
+          // kasus "tap kebaca jadi nada lain di atas". HARUS sama persis
+          // dengan logika looksPercussive di NativeMicPitchDetector.java.
+          const looksPercussive = decayRatio < TAP_DECAY_RATIO && result.clarity < STRONG_PROBABILITY;
+          if(chk.safe && !looksPercussive){
             // Konsensus: cek apakah bacaan kali ini SEPAKAT sama kandidat
             // sebelumnya (idx sama). Kalau beda, kandidat direset ke bacaan
             // baru ini (mulai hitung dari 1 lagi) -- daripada asal kunci ke
@@ -1766,19 +1812,30 @@
               candidateIdx = chk.idx;
               candidateCount = 1;
             }
-            if(candidateCount >= CONFIRM_COUNT || sampleTries >= 4){
-              // Sudah dapat CONFIRM_COUNT bacaan berturut yang sepakat (paling
-              // umum), ATAU jatah percobaan sudah habis -- pakai bacaan
-              // TERAKHIR yang lolos ini (lebih baik daripada nyerah total).
+            // requiredConfirm ADAPTIF -- HARUS sama persis dengan requiredConfirm
+            // di NativeMicPitchDetector.java.
+            const requiredConfirm = chk.centsOff < 12 ? 1 : (chk.centsOff < 22 ? 2 : 3);
+            if(candidateCount >= requiredConfirm || sampleTries >= 4){
+              // Sudah dapat cukup bacaan berturut yang sepakat (paling umum),
+              // ATAU jatah percobaan sudah habis -- pakai bacaan TERAKHIR yang
+              // lolos ini (lebih baik daripada nyerah total).
               commitDetectedNote(result.freq);
               state='releasing';
               cooldownUntil = now + COOLDOWN_MS;
               releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
             } else {
-              // Baru 1 bacaan yang lolos -- tunggu satu bacaan lagi buat
-              // konfirmasi sebelum benar-benar dikunci.
+              // Belum cukup konsensus -- tunggu satu bacaan lagi buat konfirmasi
+              // sebelum benar-benar dikunci.
               sampleAt = now + 10;
             }
+          } else if(looksPercussive){
+            // Meluruh sangat cepat & periodisitasnya tidak sampai sangat
+            // meyakinkan -- ini tap, bukan nada. Langsung diputuskan sekarang
+            // juga, tidak perlu tunggu jatah percobaan habis.
+            typePercussiveTapAsSpace();
+            state='releasing';
+            cooldownUntil = now + COOLDOWN_MS;
+            releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
           } else if(sampleTries < 4){
             // Bacaannya persis di batas dua kategori tuts berbeda (mis. angka vs
             // huruf/tanda baca) dan belum cukup yakin -- coba baca ulang dulu
@@ -1825,6 +1882,7 @@
         candidateIdx=-1; candidateCount=0;
         sampleAt = now + 45;
         lastOnsetAt = now;
+        onsetPeakRms = rms;
         releaseBelowCount = 0;
         showStatus('Mendengar petikan…');
       } else if(now>cooldownUntil && now>releaseWaitUntil){
