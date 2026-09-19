@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.media.AudioFormat;
+import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import androidx.core.content.ContextCompat;
@@ -47,7 +48,11 @@ public class NativeMicPitchDetector {
         void onPercussiveTap();
     }
 
-    private static final int SAMPLE_RATE = 44100;
+    // Rate cadangan. Rate yang dipakai sebenarnya dipilih di start(): utamakan rate NATIVE
+    // perangkat (umumnya 48000 Hz) supaya sistem audio Android tidak perlu me-resample
+    // -- resampling menambah latensi & beban CPU. Semua durasi di bawah (hop 1/60 detik,
+    // ms, jumlah hop) diturunkan dari rate ini, jadi perilakunya tetap sama.
+    private static final int FALLBACK_SAMPLE_RATE = 44100;
     // 4096 sample @44.1kHz ~= 93ms jendela analisis. HARUS sama persis dengan
     // analyser.fftSize di index.html. Dulu 1536 (35ms) biar terasa cepat, tapi
     // itu cuma ~2.8 siklus gelombang buat nada rendah kayak E2 (~82Hz) --
@@ -70,7 +75,6 @@ public class NativeMicPitchDetector {
     // diperbarui tiap ~16.6ms, bukan tiap ~93ms. Lebar jendela YIN (jadi tetap
     // akurat buat nada rendah) tidak berubah sama sekali -- yang berubah cuma
     // SESERING APA jendela itu "digeser dan dibaca ulang".
-    private static final int HOP_SAMPLES = SAMPLE_RATE / 60;
     private static final int BASE_MIDI = 40; // E2 -- HARUS sama persis dengan BASE_MIDI di index.html
     private static final int NOTE_COUNT = 44; // HARUS sama persis dengan NOTE_COUNT di index.html
     // Diturunkan lagi dari 140 -> 70: sesudah RETRIGGER ditambahkan (lihat di
@@ -92,7 +96,7 @@ public class NativeMicPitchDetector {
     // RELEASE_RMS & MAX_RELEASE_WAIT_MS di index.html.
     private static final double RELEASE_RMS = 0.012;
     private static final long MAX_RELEASE_WAIT_MS = 1500;
-    private static final int MAX_SAMPLE_TRIES = 4; // HARUS sama persis dengan batas percobaan di index.html
+    private static final int MAX_SAMPLE_TRIES = 5;   // dulu 4: +1 supaya batas akhir (SETTLE + tries x hop) tetap ~sama walau mulainya lebih awal; // HARUS sama persis dengan batas percobaan di index.html
     private static final double YIN_THRESHOLD = 0.15; // HARUS sama persis dengan THRESHOLD di index.html
     // Diturunkan dari 0.02 -> 0.012: supaya petikan PELAN (fingerstyle, palm
     // mute, atau jari lemah di senar atas yang tipis) tetap memicu onset,
@@ -160,7 +164,7 @@ public class NativeMicPitchDetector {
     // butuh ini karena blocking-read 4096-sampel (~93ms) sudah otomatis
     // "menunda" bacaan pertama; sekarang loop jalan tiap ~16.6ms jadi delay
     // ini harus dibuat eksplisit supaya akurasi tidak turun akibat kecepatan.
-    private static final long SETTLE_MS = 45;
+    private static final long SETTLE_MS = 30;   // dulu 45: mulai baca nada 1 hop lebih awal
     // BARU (fix "tap badan gitar masih kebaca jadi nada lain di atas"): dulu
     // satu-satunya sinyal buat mendeteksi tap adalah yinDetect() BALIKIN NULL
     // TOTAL -- padahal resonansi badan gitar kadang punya periodisitas SEMU
@@ -188,6 +192,8 @@ public class NativeMicPitchDetector {
     private final android.os.Handler mainHandler;
     private Listener listener;
     private AudioRecord audioRecord;
+    private volatile int sampleRate = FALLBACK_SAMPLE_RATE;
+    private volatile int hopSamples = FALLBACK_SAMPLE_RATE / 60;
     private Thread recordThread;
     private final AtomicBoolean running = new AtomicBoolean(false);
     // BARU -- fix "satu fret satu nada harus akurat": gitar SUNGGUHAN jarang
@@ -221,26 +227,47 @@ public class NativeMicPitchDetector {
 
         this.listener = listener;
 
-        int minBufSize = AudioRecord.getMinBufferSize(
-                SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
-        int bufSize = Math.max(minBufSize, BUFFER_SAMPLES * 4);
-
+        // Tentukan rate: native perangkat dulu, 44100 sebagai cadangan.
+        int nativeRate = FALLBACK_SAMPLE_RATE;
         try {
-            audioRecord = new AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
-                    SAMPLE_RATE,
-                    AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    bufSize);
-        } catch (SecurityException | IllegalArgumentException e) {
-            return false;
+            AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+            String prop = (am != null) ? am.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE) : null;
+            if (prop != null) {
+                int v = Integer.parseInt(prop.trim());
+                if (v >= 16000 && v <= 48000) nativeRate = v;
+            }
+        } catch (Exception ignored) {
         }
+        int[] candidateRates = (nativeRate == FALLBACK_SAMPLE_RATE)
+                ? new int[]{FALLBACK_SAMPLE_RATE}
+                : new int[]{nativeRate, FALLBACK_SAMPLE_RATE};
 
-        if (audioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
-            audioRecord.release();
-            audioRecord = null;
-            return false;
+        audioRecord = null;
+        for (int rate : candidateRates) {
+            int minBufSize = AudioRecord.getMinBufferSize(
+                    rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+            if (minBufSize <= 0) continue;
+            int bufSize = Math.max(minBufSize, BUFFER_SAMPLES * 4);
+            AudioRecord candidate = null;
+            try {
+                candidate = new AudioRecord(
+                        MediaRecorder.AudioSource.MIC,
+                        rate,
+                        AudioFormat.CHANNEL_IN_MONO,
+                        AudioFormat.ENCODING_PCM_16BIT,
+                        bufSize);
+            } catch (SecurityException | IllegalArgumentException e) {
+                candidate = null;
+            }
+            if (candidate != null && candidate.getState() == AudioRecord.STATE_INITIALIZED) {
+                audioRecord = candidate;
+                sampleRate = rate;
+                hopSamples = rate / 60;
+                break;
+            }
+            if (candidate != null) candidate.release();
         }
+        if (audioRecord == null) return false;
 
         running.set(true);
         audioRecord.startRecording();
@@ -267,7 +294,8 @@ public class NativeMicPitchDetector {
     private void recordLoop() {
         android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
 
-        final short[] hopRaw = new short[HOP_SAMPLES];
+        final int hop = this.hopSamples;
+        final short[] hopRaw = new short[hop];
         // Jendela geser (sliding window): SELALU berisi BUFFER_SAMPLES sampel
         // PALING BARU. Tiap iterasi cuma HOP_SAMPLES (~16.6ms) sampel lama yang
         // dibuang dari depan dan HOP_SAMPLES sampel baru ditempel di belakang --
@@ -319,7 +347,7 @@ public class NativeMicPitchDetector {
         if (rec == null) return;
 
         while (running.get()) {
-            int read = rec.read(hopRaw, 0, HOP_SAMPLES);
+            int read = rec.read(hopRaw, 0, hop);
             if (read < 0) break;       // ERROR_INVALID_OPERATION / ERROR_DEAD_OBJECT dst
             if (read == 0) continue;
 
@@ -360,7 +388,7 @@ public class NativeMicPitchDetector {
                 // mengukur), bukan cuma diambil dari satu hop pemicu onset saja.
                 if (rms > onsetPeakRms) onsetPeakRms = rms;
                 if (now >= sampleAt) {
-                    PitchReading r = yinDetect(window, BUFFER_SAMPLES, SAMPLE_RATE);
+                    PitchReading r = yinDetect(window, BUFFER_SAMPLES, sampleRate);
                     sampleTries++;
                     // Seberapa besar sinyal sudah meluruh dari puncaknya -- lihat
                     // TAP_DECAY_RATIO buat penjelasan lengkap kenapa ini pembeda
