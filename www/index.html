@@ -668,6 +668,15 @@
   // Begitu salah satu ini muncul, kata sebelum karakter ini langsung dipelajari
   // ke kamus pribadi (lihat learnWord) — persis Gboard, otomatis tanpa menu apa pun.
   const WORD_BOUNDARY_RE = /^[\s.,!?;:)\]}"'\u201d]$/;
+  // Render saran kata ditunda ke frame berikutnya (digabung kalau mengetik cepat) supaya
+  // thread JS langsung bebas menerima ketukan berikutnya. Teks sudah dikirim ke Android
+  // SEBELUM ini, jadi tidak ada ketikan yang tertunda.
+  var suggestScheduled = false;
+  function scheduleSuggestions(){
+    if(suggestScheduled) return;
+    suggestScheduled = true;
+    requestAnimationFrame(()=>{ suggestScheduled = false; renderSuggestions(); });
+  }
   function appendText(str){
     if(WORD_BOUNDARY_RE.test(str)){
       const { word } = getCurrentWordRange();
@@ -677,7 +686,7 @@
     cursorPos += str.length;
     trimTrackedText();
     bridgeCommit(str);
-    renderSuggestions();
+    scheduleSuggestions();
     if(document.getElementById('translatePanel').style.display==='flex') updateTranslatePreview();
   }
   function backspace(){
@@ -685,7 +694,7 @@
     text = text.slice(0,cursorPos-1) + text.slice(cursorPos);
     cursorPos -= 1;
     bridgeDeleteBackward();
-    renderSuggestions();
+    scheduleSuggestions();
     if(document.getElementById('translatePanel').style.display==='flex') updateTranslatePreview();
   }
   function pressEnter(){
@@ -1281,55 +1290,45 @@
   }
 
   // ---------------- Tekan-tahan tuts q-p buat ambil angka pojok (persis Gboard) ----------------
-  const LONG_PRESS_MS = 320;         // ambang lama tekan sebelum dianggap "tahan"
+  const LONG_PRESS_MS = 300;         // ambang lama tekan sebelum dianggap "tahan"
   const LONG_PRESS_MOVE_TOLERANCE = 18; // px -- geser lebih dari ini sebelum ambang = batal (ketarik keluar)
 
   function wireLongPressNumber(btn){
+    // RESPONSIF: huruf diketik SAAT JARI MENYENTUH (pointerdown), tidak menunggu jari
+    // diangkat. Kalau jari tetap menahan sampai LONG_PRESS_MS, huruf tadi dihapus
+    // lalu diganti angka pojok (persis hasil akhirnya seperti Gboard).
     let timer = null;
-    let longPressFired = false;
-    let cancelled = false;
     let startX = 0, startY = 0;
 
     function clearTimer(){ if(timer){ clearTimeout(timer); timer = null; } }
 
     btn.addEventListener('pointerdown', (e)=>{
-      longPressFired = false;
-      cancelled = false;
       startX = e.clientX; startY = e.clientY;
-      flash(btn);
       clearTimer();
+      manualPress(btn);                      // huruf langsung masuk, tanpa jeda
       timer = setTimeout(()=>{
         timer = null;
-        if(cancelled) return;
-        longPressFired = true;
         btn.classList.add('key-longpress-num');
         const num = btn.dataset.cornerNum;
+        backspace();                         // hapus huruf yang barusan diketik
         showBubble(btn, num);
         appendText(num);
         if(navigator.vibrate) navigator.vibrate(8);
       }, LONG_PRESS_MS);
     });
     btn.addEventListener('pointermove', (e)=>{
-      if(timer==null) return; // sudah kepencet lama / sudah batal, gak perlu dicek lagi
+      if(timer==null) return;
       if(Math.abs(e.clientX-startX) > LONG_PRESS_MOVE_TOLERANCE || Math.abs(e.clientY-startY) > LONG_PRESS_MOVE_TOLERANCE){
-        cancelled = true;
-        clearTimer();
+        clearTimer();                        // jari bergeser: batal jadi angka, huruf tetap
       }
     });
-    function release(){
+    function end(){
       clearTimer();
       btn.classList.remove('key-longpress-num');
-      if(!longPressFired && !cancelled){
-        manualPress(btn); // tekan sebentar (belum sampai ambang) = ketik huruf/simbol seperti biasa
-      }
-      longPressFired = false;
-      cancelled = false;
     }
-    btn.addEventListener('pointerup', release);
-    btn.addEventListener('pointercancel', ()=>{ clearTimer(); btn.classList.remove('key-longpress-num'); cancelled = true; });
-    btn.addEventListener('pointerleave', ()=>{
-      if(timer!=null){ cancelled = true; clearTimer(); } // jari geser keluar tuts sebelum ambang = batal
-    });
+    btn.addEventListener('pointerup', end);
+    btn.addEventListener('pointercancel', end);
+    btn.addEventListener('pointerleave', end);
   }
 
   // ---------------- Tekan-tahan Backspace: hapus berulang & makin cepat (persis Gboard) ----------------
