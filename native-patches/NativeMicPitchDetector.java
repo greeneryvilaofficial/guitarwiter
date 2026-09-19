@@ -311,9 +311,17 @@ public class NativeMicPitchDetector {
         int releaseBelowCount = 0; // berapa hop BERTURUT-TURUT rms sudah di bawah RELEASE_RMS -- lihat RELEASE_CONFIRM_HOPS
         double onsetPeakRms = 0.001; // puncak RMS sejak onset -- dipakai hitung seberapa cepat sinyal sudah meluruh (lihat TAP_DECAY_RATIO)
 
+        // FIX race: stop() mengisi field audioRecord = null dari thread lain. Pegang
+        // referensi lokal supaya loop ini tidak kena NullPointerException (yang akan
+        // menjatuhkan seluruh aplikasi). Kalau rec sudah di-release, read() mengembalikan
+        // kode error negatif -> loop berhenti rapi.
+        final AudioRecord rec = this.audioRecord;
+        if (rec == null) return;
+
         while (running.get()) {
-            int read = audioRecord.read(hopRaw, 0, HOP_SAMPLES);
-            if (read <= 0) continue;
+            int read = rec.read(hopRaw, 0, HOP_SAMPLES);
+            if (read < 0) break;       // ERROR_INVALID_OPERATION / ERROR_DEAD_OBJECT dst
+            if (read == 0) continue;
 
             // Geser isi window ke kiri sejauh "read" sampel, lalu tempel sampel
             // baru di ujung -- window sesudah ini berisi BUFFER_SAMPLES sampel

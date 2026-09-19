@@ -3,6 +3,9 @@ package com.keyboardkustom.app;
 import android.inputmethodservice.InputMethodService;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.os.Build;
+import android.os.PersistableBundle;
+import android.text.InputType;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
@@ -18,6 +21,8 @@ import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewClientCompat;
 import android.webkit.WebView;
 
+import org.json.JSONObject;
+
 /**
  * InputMethodService yang menampilkan file HTML keyboard sebagai WebView,
  * dan menjembatani ketikan dari JavaScript ke InputConnection sistem Android
@@ -29,6 +34,8 @@ public class HtmlKeyboardService extends InputMethodService {
     private WebViewAssetLoader assetLoader;
     private ClipboardManager clipboardManager;
     private NativeMicPitchDetector nativeMic;
+    // true kalau kolom yang sedang aktif adalah password / incognito -> JS tidak boleh belajar kata.
+    private volatile boolean privateField = false;
     private final ClipboardManager.OnPrimaryClipChangedListener clipListener = this::pushClipboardToJs;
 
     @Override
@@ -55,7 +62,8 @@ public class HtmlKeyboardService extends InputMethodService {
         // Mengaktifkan JavaScript agar logika tombol berfungsi
         webSettings.setJavaScriptEnabled(true);
         webSettings.setDomStorageEnabled(true);
-        webSettings.setAllowFileAccess(true);
+        // Halaman dimuat lewat WebViewAssetLoader (https), bukan file:// -> akses file tidak diperlukan.
+        webSettings.setAllowFileAccess(false);
 
         // Booster rendering: pakai layer hardware & matikan overscroll bounce
         // yang tidak perlu untuk tampilan keyboard.
@@ -129,6 +137,57 @@ public class HtmlKeyboardService extends InputMethodService {
     @Override
     public void onStartInputView(EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
+        // Deteksi kolom privat (password, incognito, dst) tiap kali pindah kolom.
+        privateField = isPrivateField(info);
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "window.onPrivateField && window.onPrivateField(" + privateField + ")", null);
+        }
+    }
+
+    /** Keyboard benar-benar terlihat lagi -> JS boleh menyalakan mic (kalau tidak dijeda manual). */
+    @Override
+    public void onWindowShown() {
+        super.onWindowShown();
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "window.onKeyboardShown && window.onKeyboardShown()", null);
+        }
+    }
+
+    /**
+     * Keyboard disembunyikan (tutup, pindah app, layar mati, dst) -> mikrofon HARUS mati.
+     * Dipakai onWindowHidden (bukan onFinishInputView) supaya mic tidak mati-hidup
+     * setiap kali cuma pindah antar kolom di layar yang sama.
+     */
+    @Override
+    public void onWindowHidden() {
+        super.onWindowHidden();
+        if (nativeMic != null) nativeMic.stop();   // jaring pengaman kalau JS belum sempat menjawab
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "window.onKeyboardHidden && window.onKeyboardHidden()", null);
+        }
+    }
+
+    /** Kolom password / incognito / minta tanpa personalisasi? */
+    private static boolean isPrivateField(EditorInfo info) {
+        if (info == null) return false;
+        if (Build.VERSION.SDK_INT >= 26
+                && (info.imeOptions & EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) {
+            return true;
+        }
+        int cls = info.inputType & InputType.TYPE_MASK_CLASS;
+        int variation = info.inputType & InputType.TYPE_MASK_VARIATION;
+        if (cls == InputType.TYPE_CLASS_TEXT) {
+            return variation == InputType.TYPE_TEXT_VARIATION_PASSWORD
+                    || variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                    || variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD;
+        }
+        if (cls == InputType.TYPE_CLASS_NUMBER) {
+            return variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD;
+        }
+        return false;
     }
 
     @Override
@@ -138,6 +197,11 @@ public class HtmlKeyboardService extends InputMethodService {
         }
         if (nativeMic != null) {
             nativeMic.stop();
+        }
+        if (webView != null) {
+            ViewGroup parent = (ViewGroup) webView.getParent();
+            if (parent != null) parent.removeView(webView);
+            webView.destroy();   // field sengaja TIDAK di-null: callback mic yang masih antre tidak boleh kena NPE
         }
         super.onDestroy();
     }
@@ -153,15 +217,21 @@ public class HtmlKeyboardService extends InputMethodService {
         CharSequence item = clip.getItemAt(0).coerceToText(this);
         if (item == null) return;
 
-        String escaped = item.toString()
-                .replace("\\", "\\\\")
-                .replace("'", "\\'")
-                .replace("\n", "\\n");
+        // Clip yang ditandai sensitif oleh pengirimnya (mis. password manager, Android 13+):
+        // jangan disimpan ke riwayat -- JS diberi tahu lewat argumen kedua.
+        boolean sensitive = false;
+        if (Build.VERSION.SDK_INT >= 23 && clip.getDescription() != null) {   // getExtras() baru ada di API 23
+            PersistableBundle extras = clip.getDescription().getExtras();
+            sensitive = extras != null && extras.getBoolean("android.content.extra.IS_SENSITIVE", false);
+        }
 
-        webView.post(() ->
-                webView.evaluateJavascript(
-                        "window.onClipboardChanged && window.onClipboardChanged('" + escaped + "')",
-                        null));
+        // JSONObject.quote() menghasilkan literal string JS yang aman (sudah termasuk tanda kutip),
+        // termasuk untuk karakter CR dan pemisah baris Unicode yang dulu merusak string JS.
+        final String js = "window.onClipboardChanged && window.onClipboardChanged("
+                + JSONObject.quote(item.toString()) + "," + sensitive + ")";
+
+        final WebView wv = webView;
+        wv.post(() -> wv.evaluateJavascript(js, null));
     }
 
     /** Objek yang diekspos ke JavaScript lewat window.AndroidKeyboard.* */
@@ -222,6 +292,12 @@ public class HtmlKeyboardService extends InputMethodService {
                     ic.commitText("\n", 1);
                 }
             });
+        }
+
+        /** Dibaca JS saat halaman baru selesai dimuat (onStartInputView bisa datang lebih dulu). */
+        @JavascriptInterface
+        public boolean isPrivateField() {
+            return privateField;
         }
 
         @JavascriptInterface
