@@ -36,6 +36,10 @@ public class HtmlKeyboardService extends InputMethodService {
     private NativeMicPitchDetector nativeMic;
     // true kalau kolom yang sedang aktif adalah password / incognito -> JS tidak boleh belajar kata.
     private volatile boolean privateField = false;
+    // true kalau di kolom aktif ada teks yang sedang terseleksi (blok biru). Diperbarui dari
+    // onUpdateSelection() -- dikirim sistem TANPA biaya IPC ekstra, jadi ketukan hapus biasa
+    // tetap secepat sebelumnya (tidak perlu bertanya ke aplikasi tiap ketukan).
+    private volatile boolean selectionActive = false;
     private final ClipboardManager.OnPrimaryClipChangedListener clipListener = this::pushClipboardToJs;
 
     @Override
@@ -139,10 +143,51 @@ public class HtmlKeyboardService extends InputMethodService {
         super.onStartInputView(info, restarting);
         // Deteksi kolom privat (password, incognito, dst) tiap kali pindah kolom.
         privateField = isPrivateField(info);
+        selectionActive = info != null && info.initialSelStart != info.initialSelEnd
+                && info.initialSelStart >= 0 && info.initialSelEnd >= 0;
         if (webView != null) {
+            webView.evaluateJavascript(
+                    "window.onSelectionChanged && window.onSelectionChanged(" + selectionActive + ")", null);
             webView.evaluateJavascript(
                     "window.onPrivateField && window.onPrivateField(" + privateField + ")", null);
         }
+    }
+
+    /** Sistem memberi tahu setiap kali posisi kursor / blok seleksi di kolom aktif berubah. */
+    @Override
+    public void onUpdateSelection(int oldSelStart, int oldSelEnd, int newSelStart, int newSelEnd,
+                                  int candidatesStart, int candidatesEnd) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd,
+                candidatesStart, candidatesEnd);
+        boolean has = newSelStart >= 0 && newSelEnd >= 0 && newSelStart != newSelEnd;
+        if (has != selectionActive) {
+            selectionActive = has;
+            if (webView != null) {
+                webView.evaluateJavascript(
+                        "window.onSelectionChanged && window.onSelectionChanged(" + has + ")", null);
+            }
+        }
+    }
+
+    /**
+     * Ada teks terseleksi (blok biru)? Kalau ya, hapus SELURUHNYA sekaligus dan kembalikan true.
+     * Flag selectionActive cuma "petunjuk cepat"; sebelum menghapus, seleksi dipastikan dulu
+     * lewat getSelectedText() (jalur langka, jadi tidak memperlambat ketukan hapus biasa).
+     * commitText("") menggantikan seluruh blok dengan kosong = terhapus semua.
+     */
+    private boolean deleteSelectionIfAny(InputConnection ic) {
+        if (!selectionActive) return false;
+        CharSequence sel = ic.getSelectedText(0);
+        boolean hasSel = sel != null && sel.length() > 0;
+        selectionActive = false;
+        if (hasSel) {
+            ic.commitText("", 1);
+        }
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "window.onSelectionChanged && window.onSelectionChanged(false)", null);
+        }
+        return hasSel;
     }
 
     /** Keyboard benar-benar terlihat lagi -> JS boleh menyalakan mic (kalau tidak dijeda manual). */
@@ -252,7 +297,10 @@ public class HtmlKeyboardService extends InputMethodService {
             runOnUiThreadSafe(() -> {
                 InputConnection ic = getCurrentInputConnection();
                 if (ic != null) {
-                    ic.deleteSurroundingText(1, 0);
+                    // Ada blok biru? Satu ketukan hapus semuanya. Kalau tidak, hapus 1 karakter.
+                    if (!deleteSelectionIfAny(ic)) {
+                        ic.deleteSurroundingText(1, 0);
+                    }
                 }
             });
         }
@@ -263,7 +311,9 @@ public class HtmlKeyboardService extends InputMethodService {
             runOnUiThreadSafe(() -> {
                 InputConnection ic = getCurrentInputConnection();
                 if (ic != null && n > 0) {
-                    ic.deleteSurroundingText(n, 0);
+                    if (!deleteSelectionIfAny(ic)) {
+                        ic.deleteSurroundingText(n, 0);
+                    }
                 }
             });
         }
