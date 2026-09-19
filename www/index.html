@@ -26,34 +26,40 @@
 <meta name="twitter:image" content="icon-512.png">
 <style>
   :root{
+    /* ---- Palet Gboard (tema gelap bawaan), diukur langsung dari rekaman layar Gboard ---- */
     --app-bg:#F1F3F4;
     --frame:#1F2023;
     --screen:#FFFFFF;
     --field-bg:#FFFFFF;
     --field-border:#DADCE0;
-    --kb-bg:#202124;
-    --key-bg:#35363A;
-    --key-fn-bg:#28292C;
-    --key-text:#E8EAED;
-    --key-tag:#7CE7C4;
+    --kb-bg:#223134;
+    --key-bg:#3D494D;
+    --key-fn-bg:#2F3B3F;
+    --key-text:#FDFFFC;
+    --key-tag:#6BABA4;
     --shadow:rgba(0,0,0,.45);
-    --accent:#1A73E8;
+    --accent:#6BABA4;
     --accent-dim:#E8F0FE;
     --danger:#D93025;
-    --muted:#5F6368;
-    --key-shift-on-bg:#284666;
-    --key-capslock-bg:#1A73E8;
-    --key-active-bg:#2E5D4D;
-    --key-fn-active-bg:#3A4A57;
-    --key-bubble-bg:#101114;
-    --key-bubble-text:#FFFFFF;
-    --key-enter-bg:#1CC9A5;
+    --muted:#8E9A9C;
+    --key-shift-on-bg:#4A6266;
+    --key-capslock-bg:#6BABA4;
+    --key-active-bg:#566468;
+    --key-fn-active-bg:#414F53;
+    --key-bubble-bg:#4A585C;
+    --key-bubble-text:#FDFFFC;
+    --key-enter-bg:#6BABA4;
+    --bar-icon:#C4C9C8;
+    --bar-icon-dim:#5B686B;
+    --divider:#3D494D;
+    --pill-bg:#33444A;
     /* ---- Rasio ukuran huruf tuts, bisa diubah 0.85–2.0 lewat Setelan (85%–200%), persis fitur Gboard terbaru ---- */
     --key-font-scale:1;
-    /* ---- Gaya Material 3 Expressive: tuts berbentuk membulat (pill/stadium),
-       bukan kotak siku seperti keyboard lama. Batas tuts (outline) opsional,
-       default polos menyatu dengan background, bisa dinyalakan lewat Setelan. ---- */
-    --key-radius:20px;
+    /* ---- Geometri Gboard (diukur dari layar 360dp): tuts persegi membulat 8dp, tinggi 39dp,
+       jarak antar tuts 4.75dp, margin kiri-kanan 13.5dp ---- */
+    --key-radius:8px;
+    --key-h:39px;
+    --kgap:4.75px;
     --key-border:none;
   }
   /* ---- Tema alternatif ala Gboard: tinggal ganti class di <body> ---- */
@@ -61,21 +67,25 @@
     --kb-bg:#E8EAED; --key-bg:#FFFFFF; --key-fn-bg:#DADCE0; --key-text:#202124;
     --key-tag:#1A73E8; --key-active-bg:#C2E7FF; --key-fn-active-bg:#BDC1C6;
     --key-bubble-bg:#202124; --key-bubble-text:#FFFFFF; --key-enter-bg:#1A73E8;
+    --bar-icon:#5F6368; --bar-icon-dim:#BDC1C6; --divider:#C4C7C5; --pill-bg:#FFFFFF; --muted:#5F6368;
   }
   body.theme-blue{
     --kb-bg:#0B2545; --key-bg:#13315C; --key-fn-bg:#0E223F; --key-text:#E8F0FE;
     --key-tag:#8AB4F8; --key-active-bg:#1A4A8A; --key-fn-active-bg:#1A4A8A;
     --key-bubble-bg:#08182E; --key-bubble-text:#FFFFFF; --key-enter-bg:#4C8DFF;
+    --bar-icon:#AFC4E8; --bar-icon-dim:#4B6494; --divider:#1F3F6E; --pill-bg:#1A3C70;
   }
   body.theme-purple{
     --kb-bg:#241B2F; --key-bg:#3A2C4A; --key-fn-bg:#2B2038; --key-text:#F1E8FA;
     --key-tag:#D9B3FF; --key-active-bg:#5B3E75; --key-fn-active-bg:#4A3560;
     --key-bubble-bg:#1A1220; --key-bubble-text:#FFFFFF; --key-enter-bg:#B388FF;
+    --bar-icon:#CDB8E6; --bar-icon-dim:#6E5A86; --divider:#4F3D63; --pill-bg:#45355A;
   }
   body.theme-green{
     --kb-bg:#0F2A1E; --key-bg:#17402C; --key-fn-bg:#0F2A1E; --key-text:#E4F5EA;
     --key-tag:#7CE7C4; --key-active-bg:#1F6B47; --key-fn-active-bg:#1B5A3D;
     --key-bubble-bg:#081A11; --key-bubble-text:#FFFFFF; --key-enter-bg:#2ECC8F;
+    --bar-icon:#B5DCC5; --bar-icon-dim:#4F7A62; --divider:#245C40; --pill-bg:#1C4D36;
   }
   *{box-sizing:border-box;}
   html,body{ height:100%; }
@@ -100,22 +110,12 @@
      lewat HtmlKeyboardService.java, yang tampil cuma keyboard-nya, mengisi
      penuh area yang diberikan Android untuk keyboard. */
   .kb-float-wrap{
+    position:relative;
     width:100%;
     max-width:480px;
     margin:0 auto;
     background:var(--kb-bg);
     padding-bottom:env(safe-area-inset-bottom, 0px);
-  }
-
-  /* ---- Responsif: layar sangat sempit / lebih lebar (tablet) ---- */
-  @media (max-width:340px){
-    .krow{ gap:3px; margin-bottom:4px; }
-    .key{ padding:7px 0 5px; }
-    .key .ch{ font-size:.9rem; }
-  }
-  @media (min-width:600px){
-    .kb-float-wrap{ max-width:600px; }
-    .key .ch{ font-size:1.15rem; }
   }
 
   /* BARU -- fix "tampilan bertumpuk, tidak ringkas": dulu baris ikon fitur
@@ -132,89 +132,112 @@
   */
   .feature-bar{
     display:flex; align-items:stretch;
-    height:var(--toolbar-h, clamp(44px, 11vh, 56px));
-    min-height:var(--toolbar-h, clamp(44px, 11vh, 56px));
-    max-height:var(--toolbar-h, clamp(44px, 11vh, 56px));
+    height:var(--toolbar-h, 44px);
+    min-height:var(--toolbar-h, 44px);
+    max-height:var(--toolbar-h, 44px);
+    padding:0 6px 0 0;
   }
-  .feature-toggle{ flex:0 0 auto; align-self:center; margin-left:2px; font-size:1.1rem; }
-  .gboard-toolbar{
-    display:flex; align-items:center; justify-content:flex-start;
-    flex:1 1 auto; min-width:0; height:100%;
-    padding:6px 6px; gap:2px;
-    overflow-x:auto; scrollbar-width:none; -ms-overflow-style:none;
+  .bar-center{ position:relative; flex:1 1 auto; min-width:0; display:flex; }
+  /* Tombol samping bar (kiri: grid/X, kanan: mic). Area sentuh 44dp, gambar lebih kecil. */
+  .gb-side{
+    flex:0 0 auto; align-self:center; width:44px; height:44px; border:none; padding:0;
+    background:none; color:var(--bar-icon); border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; -webkit-tap-highlight-color:transparent;
   }
-  .gboard-toolbar::-webkit-scrollbar{ display:none; }
-  .gtool-btn{
-    border:none; background:none; color:#9AA0A6; font-size:1.25rem;
-    /* Area sentuh 48dp x 48dp sesuai standar Material Design (accessibility target minimum),
-       supaya mic/menu/setelan tidak mudah salah tekan. */
-    width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-    cursor:pointer; -webkit-tap-highlight-color:transparent; flex:0 0 auto;
-    transition:background .1s ease;
+  .gb-side svg{ width:20px; height:20px; fill:currentColor; }
+  .gb-left{ width:40px; }
+  .gb-left svg{ width:19px; height:19px; }
+  .gb-side:active .gb-circle, .gb-left:active{ background:rgba(255,255,255,.10); }
+  .gb-circle{
+    width:30px; height:30px; border-radius:50%; background:var(--key-bg); color:var(--bar-icon);
+    display:flex; align-items:center; justify-content:center;
   }
-  .gtool-btn:active{ background:rgba(255,255,255,.12); }
-  .gtool-btn#gifBtn, .gtool-btn#translateBtn{
-    width:auto; min-width:48px; padding:0 10px; font-size:.72rem; font-weight:700;
-    letter-spacing:.02em; border-radius:18px; background:rgba(255,255,255,.06);
-  }
-  .gtool-btn.tool-active{ color:var(--key-tag); background:rgba(124,231,196,.14); }
-  .gtool-btn.mic-tool{ color:#8AB4F8; }
-  .gtool-btn.mic-tool.on{ color:#F28B82; }
-  .gtool-spacer{ flex:1; }
+  .gb-circle svg{ width:20px; height:20px; }
+  .gb-mic .gb-circle{ color:var(--bar-icon-dim); }
+  .gb-mic.on .gb-circle{ color:var(--key-tag); }
+  .gb-close{ width:30px; height:30px; border-radius:50%; background:var(--key-bg); display:none; align-items:center; justify-content:center; }
+  .gb-close svg{ width:18px; height:18px; }
+  .gb-left.is-close .gb-grid{ display:none; }
+  .gb-left.is-close .gb-close{ display:flex; }
 
-  .keyboard{ background:var(--kb-bg); border-radius:14px 14px 0 0; margin-top:0; padding:4px 4px 6px; }
-  .krow{ display:flex; gap:4px; justify-content:center; margin-bottom:6px; }
+  /* Baris ikon (muncul saat grid ditekan): sticker, GIF, gear, terjemah, palet -- tersebar rata */
+  .gboard-toolbar{
+    display:flex; align-items:center; justify-content:space-around;
+    flex:1 1 auto; min-width:0; height:100%; padding:0 2px;
+  }
+  .gtool-btn{
+    border:none; background:none; color:var(--bar-icon); width:44px; height:44px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; padding:0;
+    cursor:pointer; -webkit-tap-highlight-color:transparent; flex:0 0 auto; transition:background .1s ease;
+  }
+  .gtool-btn svg{ width:22px; height:22px; fill:currentColor; }
+  .gtool-btn:active{ background:rgba(255,255,255,.12); }
+  .gtool-btn.dim{ color:var(--bar-icon-dim); }
+  .gtool-btn.gtool-gif{ font-family:inherit; font-size:.8rem; font-weight:700; letter-spacing:.06em; color:var(--bar-icon-dim); }
+  .gtool-btn.gtool-gif.has-gif{ color:var(--bar-icon); }
+  .gtool-btn.tool-active{ color:var(--key-tag); background:rgba(107,171,164,.16); }
+
+
+  .keyboard{ background:var(--kb-bg); margin-top:0; padding:5px 13px 8px; }
+  .krow{ display:flex; gap:var(--kgap); justify-content:center; margin-bottom:9px; }
   .krow:last-child{ margin-bottom:0; }
-  /* Offset tiap baris dikit-dikit biar diamond-shape kayak QWERTY fisik/Gboard asli */
-  .krow:nth-child(2){ padding:0 1.6%; }
-  .krow:nth-child(3){ padding:0 4.4%; }
-  .krow:nth-child(4){ padding:0 0; }
+  /* Baris a-l digeser setengah tuts (persis Gboard). Baris pertama (angka) disembunyikan,
+     jadi urutan nth-child: 2 = q-p, 3 = a-l, 4 = shift+z-m+hapus, 5 = baris bawah. */
+  .krow:nth-child(3){ padding:0 calc((100% + var(--kgap)) / 20); }
 
   .key{
-    position:relative; flex:1; min-width:0; background:var(--key-bg);
+    position:relative; flex:1 1 0; min-width:0; height:var(--key-h); background:var(--key-bg);
     border:var(--key-border); border-radius:var(--key-radius);
-    padding:12px 0 9px; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    box-shadow:0 1.5px 0 var(--shadow); font-family:Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    padding:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    box-shadow:none; font-family:Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
     cursor:pointer; user-select:none; -webkit-tap-highlight-color:transparent;
-    min-height:44px; transition:border-radius .12s ease;
+    transition:background .05s ease;
   }
-  .key .ch{ font-size:calc(1.05rem * var(--key-font-scale)); font-weight:400; color:var(--key-text); line-height:1; }
-  .key .tag{ font-size:.48rem; font-weight:700; color:var(--key-tag); margin-top:3px; }
+  .key .ch{ font-size:calc(1.375rem * var(--key-font-scale)); font-weight:400; color:var(--key-text); line-height:1; display:flex; align-items:center; justify-content:center; }
+  .key .tag{ font-size:.42rem; font-weight:700; color:var(--key-tag); margin-top:2px; opacity:.85; line-height:1; }
   .key.fn{ background:var(--key-fn-bg); flex:1.3; }
-  .key.fn .ch{ font-size:calc(.85rem * var(--key-font-scale)); color:#C6C9CD; }
-  /* Shift & Backspace: rasio lebar 1.5x tuts huruf biasa, sama-sama, biar gampang
-     dijangkau kelingking/jempol saat mengetik cepat (persis spesifikasi Gboard). */
-  .key.fn.key-shift, .key.fn.key-backspace{ flex:1.5; }
-  .key.fn.key-shift .ch{ font-size:calc(1.15rem * var(--key-font-scale)); }
-  /* Spacebar: porsi ~50% dari lebar baris bawah (baris: emoji, ?123, koma, spasi, titik, enter) */
-  .key.space{ flex:6.3; padding-top:14px; padding-bottom:11px; }
-  .key.space .ch{ font-size:calc(.66rem * var(--key-font-scale)); color:#C6C9CD; font-weight:500; letter-spacing:.04em; }
+  .key.fn .ch{ font-size:calc(1rem * var(--key-font-scale)); color:var(--key-text); }
+  .key .ch svg{ width:calc(1.4rem * var(--key-font-scale)); height:calc(1.4rem * var(--key-font-scale)); fill:currentColor; display:block; }
+  /* Shift & Backspace: ±1.58x lebar tuts huruf (diukur dari Gboard) */
+  .key.fn.key-shift, .key.fn.key-backspace{ flex:1.58; }
+  /* Baris bawah (rasio lebar diukur dari Gboard): ?123 1.48 | , 1 | emoji 1 | spasi 4.5 | . 1 | enter 1.6 */
+  .key.fn#numBtn{ flex:1.48; }
+  .key.key-punct{ background:var(--key-fn-bg); flex:1; }
+  .key.key-emoji{ background:var(--key-bg); flex:1; }
+  .key.space{ flex:4.5; }
+  .key.space .ch{ font-size:calc(.72rem * var(--key-font-scale)); color:var(--muted); font-weight:500; letter-spacing:.02em; }
   .key.is-active{ background:var(--key-active-bg); }
-  .key.fn.is-active{ background:var(--key-fn-active-bg); }
+  .key.fn.is-active, .key.key-punct.is-active{ background:var(--key-fn-active-bg); }
   .key.shift-on{ background:var(--key-shift-on-bg); }
   .key.caps-lock{ background:var(--key-capslock-bg); }
-  .key.caps-lock .ch{ color:#fff; }
-  /* Enter: warna aksen kontras (hijau toska) + bentuk oval/pill supaya jelas ini
-     tombol aksi utama (primary action button), bukan sekadar tuts biasa. */
-  .key.fn.key-enter{ background:var(--key-enter-bg); flex:1.6; border-radius:22px; }
-  .key.fn.key-enter .ch{ color:#062B22; font-size:calc(1.05rem * var(--key-font-scale)); }
-  .key.fn.key-enter .tag{ color:#0B3B30; }
-  .key.fn.key-enter.is-active{ background:#17AE8D; }
+  .key.caps-lock .ch{ color:#10292B; }
+  /* Ikon shift: garis luar saja; terisi saat shift aktif; garis bawah tambahan saat caps-lock */
+  .ic-shift path{ fill:none; }
+  .key.shift-on .ic-shift path, .key.caps-lock .ic-shift path{ fill:currentColor; }
+  .ic-shift .caps-bar{ display:none; }
+  .key.caps-lock .ic-shift .caps-bar{ display:block; }
+  /* Enter: pil aksen teal, ikon gelap (warna & rasio dari Gboard) */
+  .key.fn.key-enter{ background:var(--key-enter-bg); flex:1.6; border-radius:20px; }
+  .key.fn.key-enter .ch{ color:#223134; }
+  .key.fn.key-enter .tag{ color:#1B4A46; }
+  .key.fn.key-enter.is-active{ background:#5A968F; }
+
 
   .emoji-panel{
     display:none;
     grid-template-columns:repeat(6,1fr);
     gap:5px;
     background:var(--kb-bg);
-    border-radius:14px;
-    margin-top:12px;
-    padding:10px 6px;
+    border-radius:0;
+    margin-top:2px;
+    padding:6px 10px 8px;
     max-height:230px;
     overflow-y:auto;
   }
   .emoji-btn{
-    position:relative; border:var(--key-border); background:var(--key-bg); border-radius:14px;
-    padding:7px 0 5px; cursor:pointer; box-shadow:0 1.5px 0 var(--shadow);
+    position:relative; border:var(--key-border); background:var(--key-bg); border-radius:var(--key-radius);
+    padding:7px 0 5px; cursor:pointer; box-shadow:none;
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
     user-select:none; -webkit-tap-highlight-color:transparent;
   }
@@ -227,25 +250,21 @@
 
   /* ---- Suggestion bar (prediksi kata) ---- */
   .suggest-bar{
-    display:flex; align-items:center; justify-content:center; gap:6px;
-    flex:1 1 auto; min-width:0; height:100%;
-    padding:6px 8px; background:var(--kb-bg);
-    /* Dulu tinggi DIKUNCI sendiri (38px) karena ini baris terpisah dari
-       toolbar ikon. Sekarang dia berbagi slot .feature-bar bareng
-       .gboard-toolbar (lihat komentar .feature-bar) -- tingginya ikut 100%
-       punya parent, jadi tetap konsisten TANPA perlu dikunci lagi sendiri. */
+    display:flex; align-items:center; justify-content:center;
+    flex:1 1 auto; min-width:0; height:100%; padding:0; background:var(--kb-bg);
     overflow:hidden; contain:layout size;
   }
+  /* Tiga slot sama lebar, dipisah garis tipis -- persis Gboard */
   .suggest-chip{
-    /* Dulu flex:1 -- tiap chip dipepetin melar sampai penuh tepi ke tepi,
-       jadi kelihatan nggak rapi/nggak center kalau saran cuma 1-2. Sekarang
-       chip selebar isinya saja dan dikelompokkan di TENGAH bar (lihat
-       justify-content:center di atas), persis gaya Gboard. */
-    flex:0 1 auto; max-width:38%; background:none; border:none; color:var(--key-text);
-    font-family:inherit; font-size:.85rem; padding:7px 16px; border-radius:8px;
+    position:relative; flex:1 1 0; min-width:0; height:100%; background:none; border:none;
+    color:var(--key-text); font-family:inherit; font-size:1rem; padding:0 8px; border-radius:0;
     text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    -webkit-tap-highlight-color:transparent;
   }
-  .suggest-chip:active{ background:rgba(255,255,255,.1); }
+  .suggest-chip + .suggest-chip::before{
+    content:''; position:absolute; left:0; top:50%; height:22px; margin-top:-11px; width:1px; background:var(--divider);
+  }
+  .suggest-chip:active{ background:rgba(255,255,255,.08); }
   /* BARU -- fix "tampilan bertumpuk, tidak rapat kayak Gboard": dulu pesan
      status (nada terdeteksi, tap, error izin, dsb) punya baris SENDIRI
      (.ime-status) di BAWAH suggest-bar -- jadi tiap kali ada bunyi kedeteksi
@@ -277,7 +296,7 @@
     cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:1rem;
   }
   .theme-swatch.selected{ border-color:var(--key-tag); }
-  .theme-swatch[data-theme="dark"]{ background:#202124; }
+  .theme-swatch[data-theme="dark"]{ background:#223134; }
   .theme-swatch[data-theme="light"]{ background:#FFFFFF; }
   .theme-swatch[data-theme="blue"]{ background:#13315C; }
   .theme-swatch[data-theme="purple"]{ background:#3A2C4A; }
@@ -315,13 +334,14 @@
 
   .key .bubble, .emoji-btn .bubble{
     position:absolute; bottom:100%; left:50%;
-    transform:translateX(-50%) translateY(6px) scale(.85);
-    background:var(--key-bubble-bg); color:var(--key-bubble-text); font-weight:700; font-size:1.1rem;
-    padding:8px 12px; border-radius:8px; box-shadow:0 6px 16px rgba(0,0,0,.4);
+    transform:translateX(-50%) translateY(6px) scale(.9);
+    background:var(--key-bubble-bg); color:var(--key-bubble-text); font-weight:400; font-size:1.7rem; line-height:1;
+    min-width:calc(100% + 6px); text-align:center; padding:11px 8px 13px; border-radius:10px;
+    box-shadow:0 4px 14px rgba(0,0,0,.4);
     opacity:0; pointer-events:none; white-space:nowrap;
-    transition:opacity .1s ease, transform .1s ease; z-index:5;
+    transition:opacity .08s ease, transform .08s ease; z-index:5;
   }
-  .key .bubble.show, .emoji-btn .bubble.show{ opacity:1; transform:translateX(-50%) translateY(-4px) scale(1); }
+  .key .bubble.show, .emoji-btn .bubble.show{ opacity:1; transform:translateX(-50%) translateY(-6px) scale(1); }
 
   /* ---- Panel GIF (placeholder stiker — lihat catatan di JS soal integrasi Tenor asli) ---- */
   .gif-panel{
@@ -365,13 +385,15 @@
      Ukuran ~30% dari ukuran huruf utama (1.05rem * .3 ≈ .315rem), sesuai rasio
      sub-teks angka di Gboard asli, dan tetap ikut skala --key-font-scale. */
   .key .corner-num{
-    position:absolute; top:2px; right:3px;
-    font-size:calc(1.05rem * var(--key-font-scale) * .3);
-    font-weight:700; color:var(--muted); opacity:.85; line-height:1;
+    position:absolute; top:3px; right:5px;
+    font-size:calc(.5rem * var(--key-font-scale));
+    font-weight:400; color:var(--key-text); opacity:.6; line-height:1;
   }
   /* ---- Baris angka: tersembunyi di mode huruf (persis Gboard), cuma tampil di mode ?123 ---- */
   .krow-nums{ display:none; }
   .keyboard.show-num-row .krow-nums{ display:flex; }
+  /* Di mode ?123 baris angka sudah tampil, jadi badge angka pojok tidak perlu lagi */
+  .keyboard.show-num-row .corner-num{ display:none; }
   /* ---- Highlight sesaat saat tuts sedang ditekan-tahan buat ambil angka pojok ---- */
   .key.key-longpress-num{ background:var(--key-active-bg); }
   .key.key-longpress-num .ch{ opacity:.35; }
@@ -391,26 +413,115 @@
   }
 
 
+  body.hide-tags .key .tag, body.hide-tags .emoji-btn .tag{ display:none; }
+
+  /* ---- Panel alat (muncul saat ikon grid ditekan; menggantikan area tuts) ---- */
+  .tool-panel{ display:none; padding:14px 14px 16px; background:var(--kb-bg); }
+  .tool-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .tool-pill{
+    display:flex; align-items:center; gap:8px; min-width:0; height:42px; padding:0 12px;
+    border:none; border-radius:999px; background:var(--pill-bg); color:var(--key-text);
+    font-family:inherit; font-size:.92rem; cursor:pointer; text-align:left;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .tool-pill:active{ background:var(--key-fn-active-bg); }
+  .tool-pill svg{ width:22px; height:22px; fill:currentColor; flex:0 0 auto; }
+  .tool-pill .lbl{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center; }
+  .tool-pill .chev svg{ width:16px; height:16px; fill:none; stroke:currentColor; opacity:.85; }
+  .tool-pill .chev{ display:flex; }
+  .tool-pill.on{ background:rgba(107,171,164,.28); }
+  .tool-pill .pill-tag{ font-size:.7rem; font-weight:700; opacity:.75; flex:0 0 auto; }
+
+  /* ---- Bahasa: popup cepat (tahan spasi) + panel kelola ---- */
+  .lang-popup{
+    display:none; position:absolute; left:50%; bottom:64px; transform:translateX(-50%);
+    min-width:220px; max-width:92%; padding:6px; z-index:30; overflow-y:auto; overscroll-behavior:contain;
+    background:var(--pill-bg); border-radius:16px; box-shadow:0 8px 24px rgba(0,0,0,.5);
+  }
+  .lang-item{
+    display:flex; align-items:center; gap:10px; width:100%; height:40px; flex:0 0 auto; padding:0 14px;
+    border:none; border-radius:12px; background:none; color:var(--key-text);
+    font-family:inherit; font-size:.95rem; text-align:left; cursor:pointer;
+  }
+  .lang-item:active{ background:rgba(255,255,255,.1); }
+  .lang-item.active{ background:rgba(107,171,164,.25); }
+  .lang-item .lang-tag{ margin-left:auto; font-size:.7rem; font-weight:700; opacity:.7; }
+  .lang-item.manage{ color:var(--key-tag); }
+  .lang-item svg{ width:20px; height:20px; fill:currentColor; }
+  .lang-panel{ display:none; flex-direction:column; gap:2px; padding:8px 10px; background:var(--kb-bg); max-height:250px; overflow-y:auto; }
+  .lang-panel h4{ margin:4px 4px 6px; font-size:.8rem; color:var(--key-tag); font-weight:500; }
+  .lang-row{ display:flex; align-items:center; gap:8px; min-height:44px; }
+  .lang-row .lang-pick{
+    flex:1 1 auto; display:flex; align-items:center; gap:10px; height:44px; padding:0 12px;
+    border:none; border-radius:12px; background:none; color:var(--key-text); font-family:inherit; font-size:.95rem;
+    text-align:left; cursor:pointer;
+  }
+  .lang-row .lang-pick.active{ background:rgba(107,171,164,.25); }
+  .lang-row .lang-pick .lang-tag{ margin-left:auto; font-size:.7rem; font-weight:700; opacity:.7; }
+  .lang-row input[type="checkbox"]{ width:22px; height:22px; accent-color:var(--key-tag); flex:0 0 auto; margin-right:6px; }
+
+  /* Setelan: bisa dibuka penuh (gear) atau cuma satu bagian (palet = tema, ubah ukuran = ukuran) */
+  .settings-panel[data-filter="theme"] .sec:not(.sec-theme),
+  .settings-panel[data-filter="size"] .sec:not(.sec-size){ display:none; }
+  /* ---- Responsif: layar sangat sempit / tablet / landscape ---- */
+  @media (max-width:340px){
+    :root{ --kgap:3px; --key-h:36px; }
+    .keyboard{ padding-left:6px; padding-right:6px; }
+    .krow{ margin-bottom:7px; }
+    .key .ch{ font-size:calc(1.15rem * var(--key-font-scale)); }
+  }
+  @media (min-width:600px){
+    :root{ --key-h:46px; --kgap:6px; }
+    .kb-float-wrap{ max-width:720px; }
+    .keyboard{ padding-left:18px; padding-right:18px; }
+    .key .ch{ font-size:calc(1.55rem * var(--key-font-scale)); }
+    .suggest-chip{ font-size:1.1rem; }
+  }
+  /* PENTING: di dalam keyboard, "viewport" cuma selebar layar x setinggi area keyboard, jadi
+     orientation:landscape SALAH-KENA di HP portrait (lebar 360 > tinggi 240). Deteksi landscape
+     sungguhan lewat lebar >= 560 dan tinggi keyboard pendek. */
+  @media (min-width:560px) and (max-height:340px){
+    :root{ --key-h:32px; }
+    .krow{ margin-bottom:5px; }
+    .key .tag{ display:none; }
+    .key .ch{ font-size:calc(1.15rem * var(--key-font-scale)); }
+  }
+
 </style>
 </head>
 <body>
 
 <div class="kb-float-wrap" id="kbWrap">
   <div class="feature-bar" id="featureBar">
-    <button class="gtool-btn feature-toggle" id="featureToggleBtn" type="button" title="Fitur lainnya">⋯</button>
-    <div class="gboard-toolbar" id="gboardToolbar" style="display:none;">
-      <button class="gtool-btn" id="clipboardBtn" type="button" title="Clipboard">📋</button>
-      <button class="gtool-btn" id="gifBtn" type="button" title="GIF">GIF</button>
-      <button class="gtool-btn" id="translateBtn" type="button" title="Terjemahkan">文A</button>
-      <button class="gtool-btn" id="oneHandBtn" type="button" title="Mode satu tangan">✋</button>
-      <button class="gtool-btn" id="langBtn" type="button" title="Ganti bahasa saran kata">🌐<span id="langBtnTag" style="font-size:.55rem;font-weight:700;margin-left:2px;">ID</span></button>
-      <div class="gtool-spacer"></div>
-      <button class="gtool-btn" id="settingsBtn" type="button" title="Setelan">⚙</button>
-      <button class="gtool-btn mic-tool" id="micToolBtn" type="button" title="Dengarkan gitar (otomatis aktif)">🎤</button>
+    <button class="gb-side gb-left" id="featureToggleBtn" type="button" title="Menu" aria-label="Menu">
+      <span class="gb-grid" data-icon="grid"></span>
+      <span class="gb-close" data-icon="close"></span>
+    </button>
+    <div class="bar-center">
+      <div class="suggest-bar" id="suggestBar"></div>
+      <div class="gboard-toolbar" id="gboardToolbar" style="display:none;">
+        <button class="gtool-btn dim" id="stickerBtn" type="button" title="Stiker (belum tersedia)" aria-disabled="true"><span data-icon="sticker"></span></button>
+        <button class="gtool-btn gtool-gif has-gif" id="gifBtn" type="button" title="GIF">GIF</button>
+        <button class="gtool-btn" id="settingsBtn" type="button" title="Setelan"><span data-icon="gear"></span></button>
+        <button class="gtool-btn" id="translateBtn" type="button" title="Terjemahkan"><span data-icon="translate"></span></button>
+        <button class="gtool-btn" id="themeBtn" type="button" title="Tema"><span data-icon="palette"></span></button>
+      </div>
     </div>
-    <div class="suggest-bar" id="suggestBar"></div>
+    <button class="gb-side gb-mic" id="micToolBtn" type="button" title="Dengarkan gitar (otomatis aktif)" aria-label="Mic gitar"><span class="gb-circle" data-icon="mic"></span></button>
   </div>
+  <div class="tool-panel" id="toolPanel">
+    <div class="tool-grid">
+      <button class="tool-pill" id="clipboardBtn" type="button"><span data-icon="clipboard"></span><span class="lbl">Papan klip</span><span class="chev" data-icon="chev"></span></button>
+      <button class="tool-pill" id="emojiToolBtn" type="button"><span data-icon="emoji"></span><span class="lbl">Emoji</span><span class="chev" data-icon="chev"></span></button>
+      <button class="tool-pill" id="oneHandBtn" type="button"><span data-icon="onehand"></span><span class="lbl">Satu tangan</span></button>
+      <button class="tool-pill" id="langBtn" type="button"><span data-icon="globe"></span><span class="lbl">Bahasa</span><span class="pill-tag" id="langBtnTag">ID</span><span class="chev" data-icon="chev"></span></button>
+      <button class="tool-pill" id="sizeBtn" type="button"><span data-icon="resize"></span><span class="lbl">Ubah ukuran</span></button>
+      <button class="tool-pill" id="noteTagBtn" type="button"><span data-icon="keyboard"></span><span class="lbl">Label nada</span></button>
+    </div>
+  </div>
+  <div class="lang-panel" id="langPanel"></div>
   <div class="settings-panel" id="settingsPanel">
+    <div class="sec sec-theme">
     <h4>Pilih Tema Warna</h4>
     <div class="theme-swatches" id="themeSwatches">
       <div class="theme-swatch" data-theme="auto" title="Otomatis (ikuti sistem)">◐</div>
@@ -420,16 +531,21 @@
       <div class="theme-swatch" data-theme="purple" title="Ungu"></div>
       <div class="theme-swatch" data-theme="green" title="Hijau"></div>
     </div>
+    </div>
+    <div class="sec sec-size">
     <h4 style="margin-top:16px;">Ukuran Huruf Tuts</h4>
     <div class="font-scale-row">
       <input type="range" id="fontScaleRange" min="85" max="200" step="1" value="100">
       <span id="fontScaleLabel">100%</span>
     </div>
+    </div>
+    <div class="sec sec-border">
     <h4 style="margin-top:16px;">Batas Tuts</h4>
     <label class="key-border-row">
       <input type="checkbox" id="keyBorderToggle">
       <span>Tampilkan garis batas di setiap tuts</span>
     </label>
+    </div>
   </div>
   <div class="clipboard-panel" id="clipboardPanel"></div>
   <div class="gif-panel" id="gifPanel"></div>
@@ -453,11 +569,36 @@
     <div class="keyboard" id="keyboard"></div>
     <div class="emoji-panel" id="emojiPanel"></div>
   </div>
+  <div class="lang-popup" id="langPopup"></div>
   <button class="one-hand-flip" id="oneHandFlip" type="button" title="Pindah sisi">⇄</button>
 </div>
 
 <script>
 (function(){
+  // ---------------- Ikon (SVG inline, gaya Material -- disamakan dengan ikon Gboard) ----------------
+  const _svg = (body, cls) => '<svg viewBox="0 0 24 24" aria-hidden="true"' + (cls ? ' class="'+cls+'"' : '') + '>' + body + '</svg>';
+  const ICONS = {
+    grid:      _svg('<rect x="3" y="3" width="8" height="8" rx="2.4"/><rect x="13" y="3" width="8" height="8" rx="2.4"/><rect x="3" y="13" width="8" height="8" rx="2.4"/><rect x="13" y="13" width="8" height="8" rx="2.4"/>'),
+    mic:       _svg('<path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>'),
+    close:     _svg('<path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>'),
+    gear:      _svg('<path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/>'),
+    translate: _svg('<path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0 0 14.07 6H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/>'),
+    palette:   _svg('<path d="M12 2C6.49 2 2 6.49 2 12s4.49 10 10 10c1.38 0 2.5-1.12 2.5-2.5 0-.61-.23-1.2-.64-1.67a.528.528 0 0 1-.13-.33c0-.28.22-.5.5-.5H16c3.31 0 6-2.69 6-6 0-4.96-4.49-9-10-9zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 8 6.5 8 8 8.67 8 9.5 7.33 11 6.5 11zm3-4C8.67 7 8 6.33 8 5.5S8.67 4 9.5 4s1.5.67 1.5 1.5S10.33 7 9.5 7zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 4 14.5 4s1.5.67 1.5 1.5S15.33 7 14.5 7zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 8 17.5 8s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>'),
+    sticker:   _svg('<path d="M5 3h14a2 2 0 0 1 2 2v9l-7 7H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M21 14h-5a2 2 0 0 0-2 2v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="9" cy="9.5" r="1.3"/><circle cx="15" cy="9.5" r="1.3"/><path d="M8.6 13.4c1.7 1.6 3.4 1.6 5 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'),
+    clipboard: _svg('<path d="M19 2h-4.18C14.4.84 13.3 0 12 0s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm7 18H5V4h2v3h10V4h2v16z"/>'),
+    emoji:     _svg('<path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/>'),
+    onehand:   _svg('<path d="M17 1H7c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zm0 18H7V5h10v14zM9.5 13.2l2.2-2.2-2.2-2.2 1-1 3.2 3.2-3.2 3.2z"/>'),
+    resize:    _svg('<rect x="4" y="4" width="16" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3.2 2.6"/>'),
+    keyboard:  _svg('<path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/>'),
+    globe:     _svg('<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><ellipse cx="12" cy="12" rx="4" ry="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 12h18" fill="none" stroke="currentColor" stroke-width="2"/>'),
+    chev:      _svg('<path d="M9 6l6 6-6 6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'),
+    check:     _svg('<path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/>'),
+    shift:     _svg('<path d="M12 4 3.8 13H9v5h6v-5h5.2z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path class="caps-bar" d="M9 21h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>', 'ic-shift'),
+    backspace: _svg('<path d="M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H7.07L2.4 12l4.66-7H22v14zm-11.59-2L14 13.41 17.59 17 19 15.59 15.41 12 19 8.41 17.59 7 14 10.59 10.41 7 9 8.41 12.59 12 9 15.59z"/>'),
+    enter:     _svg('<path d="M19 7v4H5.83l3.58-3.59L8 6l-6 6 6 6 1.41-1.41L5.83 13H21V7z"/>'),
+  };
+  document.querySelectorAll('[data-icon]').forEach(el => { if(ICONS[el.dataset.icon]) el.innerHTML = ICONS[el.dataset.icon]; });
+
   // ---------------- Note table: E2 (open low E) upward. Setiap tuts — termasuk spasi, Shift,
   // Backspace, Enter, dan tombol ganti mode — mendapat satu nada sendiri, berurutan dari nada
   // terendah (pojok kiri atas) ke nada tertinggi (pojok kanan bawah), mengikuti urutan visual keyboard. ----------------
@@ -465,7 +606,7 @@
   const BASE_MIDI = 40; // E2
 
   // Urutan visual keyboard (persis urutan render): baris angka, baris q-p, baris a-l,
-  // [Shift] + baris z-m + [Backspace], lalu baris bawah [emoji][?123][,][spasi][.][Enter]
+  // [Shift] + baris z-m + [Backspace], lalu baris bawah [?123][,][emoji][spasi][.][Enter] (urutan Gboard)
   const KEY_DEFS = [
     ...['1','2','3','4','5','6','7','8','9','0'].map(ch=>({type:'letter', char:ch})),
     ...['q','w','e','r','t','y','u','i','o','p'].map((ch,i)=>({type:'letter', char:ch, cornerNum:(i+1)%10})),
@@ -474,9 +615,9 @@
     ...['z','x','c','v','b','n','m'].map(ch=>({type:'letter', char:ch})),
     {type:'backspace'},
     {type:'num-toggle'},
-    {type:'emoji-toggle'},
     {type:'literal', char:',', label:','},
-    {type:'literal', char:' ', label:'spasi', big:true},
+    {type:'emoji-toggle'},
+    {type:'literal', char:' ', label:'', big:true},
     {type:'literal', char:'.', label:'.'},
     {type:'enter'},
   ];
@@ -552,26 +693,26 @@
     } else if(def.type==='shift'){
       btn.className='key fn key-shift';
       btn.id='shiftBtn';
-      btn.innerHTML='<span class="ch">⇧</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
+      btn.innerHTML='<span class="ch">'+ICONS.shift+'</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
       btn.addEventListener('pointerdown', ()=> shiftToggle(btn));
       keyMap['shift'] = btn;
     } else if(def.type==='backspace'){
       btn.className='key fn key-backspace';
       btn.dataset.type='backspace';
-      btn.innerHTML='<span class="ch">⌫</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
+      btn.innerHTML='<span class="ch">'+ICONS.backspace+'</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
       btn.addEventListener('pointerdown', ()=> functionalPress(btn)); // tekan sebentar = hapus 1 karakter, langsung, tanpa jeda
       wireLongPressRepeat(btn, backspace); // tahan = mulai berulang otomatis & makin cepat (lihat wireLongPressRepeat)
       keyMap['backspace'] = btn;
     } else if(def.type==='emoji-toggle'){
-      btn.className='key fn'; btn.id='emojiBtn';
-      btn.innerHTML='<span class="ch">😊</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
+      btn.className='key fn key-emoji'; btn.id='emojiBtn';
+      btn.innerHTML='<span class="ch">'+ICONS.emoji+'</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
       btn.addEventListener('pointerdown', ()=>{ flash(btn); setMode(mode==='emoji' ? 'letters' : 'emoji'); });
     } else if(def.type==='num-toggle'){
       btn.className='key fn'; btn.id='numBtn';
       btn.innerHTML='<span class="ch">?123</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
       btn.addEventListener('pointerdown', ()=>{ flash(btn); setMode(mode==='symbols' ? 'letters' : 'symbols'); });
     } else if(def.type==='literal'){
-      btn.className = def.big ? 'key space' : 'key';
+      btn.className = def.big ? 'key space' : 'key key-punct';
       btn.dataset.type='literal';
       btn.dataset.char = def.char;
       btn.innerHTML = '<span class="ch">'+(def.label||def.char)+'</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
@@ -580,7 +721,7 @@
     } else if(def.type==='enter'){
       btn.className='key fn key-enter';
       btn.dataset.type='enter';
-      btn.innerHTML='<span class="ch">↵</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
+      btn.innerHTML='<span class="ch">'+ICONS.enter+'</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
       btn.addEventListener('pointerdown', ()=> functionalPress(btn));
       keyMap['enter'] = btn;
     }
@@ -675,7 +816,7 @@
   function scheduleSuggestions(){
     if(suggestScheduled) return;
     suggestScheduled = true;
-    requestAnimationFrame(()=>{ suggestScheduled = false; renderSuggestions(); });
+    requestAnimationFrame(()=>{ suggestScheduled = false; updateAutoCapsLocal(); renderSuggestions(); });
   }
   function appendText(str){
     if(selectionActive){ resetTrackedText(); selectionActive = false; }   // ketikan menggantikan blok biru
@@ -714,7 +855,7 @@
     text = text.slice(0,cursorPos) + '\n' + text.slice(cursorPos);
     cursorPos += 1;
     trimTrackedText();
-    renderSuggestions();
+    scheduleSuggestions();
   }
 
   // ---------------- Bubble + flash ----------------
@@ -767,34 +908,91 @@
     for(let i=0;i<n;i++) bridgeDeleteBackward();
   }
 
-  // ---------------- Fitur 1: Prediksi kata / saran ketikan (multi-bahasa + belajar otomatis) ----------------
-  // Dua kamus bawaan: Indonesia (default) & Inggris. Tombol 🌐 di toolbar
-  // menukar kamus mana yang dipakai untuk saran, persis tombol globe di Gboard.
-  const DICTIONARIES = {
-    id: [...new Set(['saya','kamu','dia','kita','kami','mereka','aku','anda','ini','itu',
-      'yang','dan','atau','tapi','tetapi','karena','jika','kalau','maka','supaya','agar',
-      'akan','sudah','belum','sedang','masih','tidak','bukan','jangan','boleh','harus',
-      'bisa','mau','ingin','suka','cinta','sayang','baik','bagus','buruk','jelek',
-      'besar','kecil','banyak','sedikit','semua','sebagian','setiap','bagaimana','kenapa','mengapa',
-      'kapan','dimana','siapa','apa','apakah','iya','oke','baiklah','terima',
-      'kasih','terimakasih','maaf','permisi','tolong','mohon','silakan','selamat','pagi','siang',
-      'sore','malam','hari','besok','kemarin','sekarang','nanti','tadi','lagi',
-      'juga','hanya','saja','cuma','memang','sebenarnya','sebetulnya','mungkin','pasti','tentu',
-      'gitar','musik','lagu','nada','main','bermain','nyanyi','chord','senar','ketik',
-      'kerja','sekolah','kuliah','rumah','jalan','makan','minum','tidur','bangun','pulang',
-      'pergi','datang','sampai','tunggu','sabar','cepat','lambat','pelan',
-      'whatsapp','chat','pesan','telepon','video','foto','kirim','buka','tutup',
-      'website','aplikasi','android','keyboard','fitur','update','baru','lama','coba','tes'])],
-    en: [...new Set(['the','you','and','are','for','that','this','with','have','not','but',
-      'what','can','will','just','like','know','get','think','see','make','go','come',
-      'want','need','good','great','nice','thanks','thank','hello','hi','hey','yes','no',
-      'okay','ok','please','sorry','love','miss','time','day','today','tomorrow','yesterday',
-      'now','later','work','school','home','call','message','chat','video','photo','send',
-      'open','close','app','update','new','old','try','test','how','are','doing','fine',
-      'busy','free','later','soon','maybe','sure','really','very','much','more','some'])]
+  // ---------------- Fitur 1: Prediksi kata / saran ketikan (banyak bahasa + belajar otomatis) ----------------
+  // Setiap bahasa punya daftar kata umum (urut dari yang paling sering dipakai) + kata pembuka kalimat.
+  // Ini kamus ringkas bawaan (offline), BUKAN kamus raksasa seperti milik Gboard -- untuk menambah
+  // bahasa baru cukup tambah satu entri di LANGS. Kata yang kamu ketik sendiri dipelajari otomatis
+  // per bahasa (kamus pribadi), jadi makin lama makin pas.
+  // Pencocokan tidak peka aksen: ketik "cafe" -> disarankan "café" (cara mengetik huruf beraksen).
+  const LANGS = {
+    id:{ name:'Bahasa Indonesia', tag:'ID', starters:['Saya','Aku','Halo'], fill:['yang','dan','di'],
+      nx:{ saya:'ingin mau tidak sudah', aku:'mau sudah tidak', kamu:'mau sudah lagi', kita:'bisa harus akan', mereka:'sudah akan tidak',
+           yang:'ada sudah paling', di:'sini mana rumah', ke:'sana mana rumah', dengan:'baik cara saya', untuk:'saya kamu itu',
+           tidak:'bisa ada tahu', sudah:'makan selesai tidak', belum:'ada tahu selesai', terima:'kasih', selamat:'pagi siang malam',
+           apa:'kabar yang itu', bagaimana:'kabar cara kalau', kenapa:'tidak kamu bisa', kalau:'kamu tidak begitu', nanti:'malam ya saya',
+           besok:'pagi ya kita', lagi:'apa dimana makan', mau:'ke makan apa', bisa:'tolong kirim bantu', tolong:'kirim bantu ya',
+           boleh:'saya minta tanya', bahasa:'Inggris Indonesia Jawa', kata:'kata dia saya', ada:'yang apa di' },
+      w:`yang dan di ini itu dengan untuk tidak dari dalam akan pada juga saya ke karena tetapi ada mereka sudah kita bisa oleh atau seperti kami lebih anda apa saat dia kamu aku hanya belum harus telah lain satu dua tiga empat lima enam tujuh delapan sembilan sepuluh banyak semua setiap orang hari tahun waktu bulan minggu besok kemarin sekarang nanti tadi lagi masih sedang baru lama sama jadi bukan jangan mau ingin suka cinta sayang baik bagus buruk jelek besar kecil sedikit bagaimana kenapa mengapa kapan dimana mana siapa apakah iya oke baiklah terima kasih terimakasih maaf permisi tolong mohon silakan selamat pagi siang sore malam sampai pulang pergi datang tunggu sabar cepat lambat pelan kerja sekolah kuliah rumah jalan makan minum tidur bangun main bermain nyanyi gitar musik lagu nada senar chord ketik ketika ketikan kirim pesan telepon foto video buka tutup aplikasi keyboard fitur update coba tes lihat dengar bicara bilang tanya jawab baca tulis belajar ajar tahu paham mengerti ingat lupa pikir rasa hati senang sedih marah takut capek lelah sehat sakit obat dokter uang harga beli jual bayar murah mahal toko pasar mobil motor sepeda kereta pesawat bus kota desa negara dunia air api tanah udara angin hujan panas dingin cuaca langit matahari bintang laut gunung sungai pantai hutan pohon bunga hewan kucing anjing ikan burung ayam sapi makanan nasi roti mie sayur buah telur susu kopi teh gula garam pedas manis asin pahit enak lapar haus kenyang teman sahabat keluarga ibu bapak ayah kakak adik anak istri suami saudara tetangga guru murid dosen mahasiswa siswa kantor bos gaji libur cuti rapat tugas ujian nilai lulus hasil masalah solusi cara alasan tujuan rencana janji harapan mimpi kabar berita informasi data nomor alamat nama umur tanggal jam menit detik sini sana situ atas bawah depan belakang kiri kanan tengah luar dekat jauh tinggi rendah panjang pendek lebar sempit berat ringan kuat lemah mudah sulit susah penting perlu boleh dapat punya memiliki menjadi membuat melakukan mengambil memberi menerima membawa mengirim membuka menutup memakai menggunakan mencari menemukan menunggu bertemu berbicara bekerja berjalan berlari duduk berdiri mandi berangkat kembali masuk keluar naik turun hidup mati lahir tumbuh berubah mulai selesai lanjut berhenti tetap bahwa sebagai antara setelah sebelum sambil sedangkan walaupun meskipun namun sehingga supaya agar jika kalau maka lalu kemudian akhirnya pertama kedua terakhir selalu sering kadang jarang pernah tentu pasti mungkin sepertinya sebenarnya memang bahkan apalagi sekali sangat cukup kurang terlalu paling amat banget dong deh sih kok lho kan nih tuh gitu gini gimana emang udah belom gak nggak ga enggak yaudah ayo yuk mari makasih sip mantap keren wah aduh astaga duh hehe haha inggris indonesia jawa sunda bahasa pilihan saran kata huruf besar kecil ketiknya bisakah bagaimanapun sebaiknya seharusnya sebenarnya kemungkinan kesempatan pengalaman pekerjaan pendidikan kesehatan keluarga perusahaan pemerintah masyarakat perjalanan pertemuan pembelajaran permainan pertanyaan penjelasan perkembangan kebutuhan kehidupan kebahagiaan kesulitan kepercayaan`},
+    en:{ name:'English', tag:'EN', starters:['I','The','Hello'], fill:['the','to','and'],
+      nx:{ i:'am have will', you:'are can have', the:'best first same', to:'be do the', of:'the course my', and:'the i then', is:'it the not',
+           are:'you we they', can:'you i we', will:'be you do', do:'you not it', have:'a to been', thank:'you', thanks:'for a', good:'morning night luck',
+           how:'are is do', what:'is are do', see:'you the', let:'me us know', please:'let send help', hello:'there how' },
+      w:`the be to of and a in that have i it for not on with he as you do at this but his by from they we say her she or an will my one all would there their what so up out if about who get which go me when make can like time no just him know take people into year your good some could them see other than then now look only come its over think also back after use two how our work first well way even new want because any these give day most us is are was were been being has had did does done said says made went gone got getting here where why while still again never always ever very much many more less little big small long short high low old young right left next last same each every both few another such own too off down through before between under above thing things something nothing everything someone anyone everyone place home house school office city country world life man woman child friend family mother father brother sister love hate need feel find tell ask call try leave keep let begin start stop help show hear play run move live believe bring happen write read learn change follow watch wait meet talk turn open close send receive buy sell pay eat drink sleep sit stand walk hello hi hey thanks thank please sorry okay yes maybe sure really actually probably definitely already yet soon later today tomorrow yesterday tonight morning night week month minute hour second message phone photo video music song guitar note chord string keyboard app update test type typing text word sentence language english indonesian great nice cool awesome amazing beautiful happy sad angry tired busy free ready late early fast slow easy hard best better worse worst quite pretty rather perhaps however therefore although though unless until whether during without within against among toward across around along upon inside outside beyond really something anything everything tonight forever together tomorrow`},
+    es:{ name:'Español', tag:'ES', starters:['Hola','Yo','Gracias'], fill:['de','que','y'], nx:{},
+      w:`de la que el en y a los se del las un por con no una su para es al lo como más pero sus le ya o este sí porque esta entre cuando muy sin sobre también me hasta hay donde quien desde todo nos durante todos uno les ni contra otros ese eso ante ellos e esto mí antes algunos qué unos yo otro otras otra él tanto esa estos mucho quienes nada muchos cual poco ella estar estas algunas algo nosotros hola gracias favor buenos días buenas tardes noches adiós bien mal claro vale perdón siento amigo amiga casa trabajo tiempo hoy mañana ayer ahora luego siempre nunca quiero puedo tengo estoy soy vamos hacer decir ir ver dar saber querer poder tener venir música guitarra canción teléfono mensaje foto vídeo número también después así aquí allí cómo dónde cuándo cuánto quién porqué está están fue eran será habrá pueden tiene tienen hace hacen vida mundo país ciudad familia madre padre hijo hija hermano hermana`},
+    pt:{ name:'Português', tag:'PT', starters:['Olá','Eu','Obrigado'], fill:['de','que','e'], nx:{},
+      w:`de a o que e do da em um para é com não uma os no se na por mais as dos como mas foi ao ele das tem à seu sua ou ser quando muito há nos já está eu também só pelo pela até isso ela entre era depois sem mesmo aos ter seus quem nas me esse eles estão você tinha foram essa num nem suas meu às minha têm numa pelos elas havia seja qual será nós tenho lhe deles essas esses pelas este fosse dele olá obrigado obrigada favor bom dia boa tarde noite tchau tudo bem desculpa amigo amiga casa trabalho tempo hoje amanhã ontem agora sempre nunca quero posso estou sou vamos fazer dizer ir ver dar saber querer poder vir música violão canção telefone mensagem foto vídeo número também aqui ali onde quando como porque vida mundo país cidade família mãe pai filho filha irmão irmã`},
+    fr:{ name:'Français', tag:'FR', starters:['Bonjour','Je','Merci'], fill:['de','la','le'], nx:{},
+      w:`de la le et les des en un du une que est pour qui dans a par plus pas au sur ne se ce il sont avec son ses aussi mais ou comme nous vous je tu elle ils elles été être avoir fait faire dit tout très bien bonjour bonsoir salut merci s'il plaît excusez pardon oui non peut-être ami amie maison travail temps aujourd'hui demain hier maintenant après toujours jamais veux peux suis vais aller voir donner savoir vouloir pouvoir venir musique guitare chanson téléphone message photo vidéo numéro où quand comment pourquoi ici là vie monde pays ville famille mère père fils fille frère sœur c'est j'ai qu'il n'est l'on d'accord`},
+    de:{ name:'Deutsch', tag:'DE', starters:['Hallo','Ich','Danke'], fill:['der','die','und'], nx:{},
+      w:`der die und in den von zu das mit sich des auf für ist im dem nicht ein eine als auch es an werden aus er hat dass sie nach wird bei einer um am sind noch wie einem über einen so zum war haben nur oder aber vor zur bis mehr durch man sein wurde sei hallo danke bitte guten morgen tag abend nacht tschüss ja nein vielleicht gut schlecht freund freundin haus arbeit zeit heute gestern jetzt später immer nie will kann habe bin gehen sehen geben wissen wollen können kommen machen sagen musik gitarre lied telefon nachricht foto video nummer wo wann wie warum hier dort leben welt land stadt familie mutter vater sohn tochter bruder schwester ich du wir ihr`},
+    it:{ name:'Italiano', tag:'IT', starters:['Ciao','Io','Grazie'], fill:['di','che','e'], nx:{},
+      w:`di e il la che in un a per è con non una i le da si come ma più sono ha al lo se anche gli del ci mi ti ho hai molto tutto tutti niente ciao grazie prego scusa buongiorno buonasera buonanotte arrivederci sì no forse bene male amico amica casa lavoro tempo oggi domani ieri adesso dopo sempre mai voglio posso sto andiamo fare dire andare vedere dare sapere volere potere venire musica chitarra canzone telefono messaggio foto video numero dove quando come perché qui là vita mondo paese città famiglia madre padre figlio figlia fratello sorella io tu noi voi`},
+    nl:{ name:'Nederlands', tag:'NL', starters:['Hallo','Ik','Dank'], fill:['de','het','een'], nx:{},
+      w:`de van een het in en is dat op te voor met zijn niet aan er ook als maar om dan ze bij nog naar door uit over of wat wel heeft worden dit ik je we hij ja nee misschien goed slecht hallo bedankt dank alsjeblieft goedemorgen goedenacht doei vriend vriendin huis werk tijd vandaag morgen gisteren nu later altijd nooit wil kan heb ben gaan zien geven weten willen kunnen komen maken zeggen muziek gitaar lied telefoon bericht foto video nummer waar wanneer hoe waarom hier daar leven wereld land stad familie moeder vader zoon dochter broer zus`},
+    ms:{ name:'Bahasa Melayu', tag:'MS', starters:['Saya','Hai','Terima'], fill:['yang','dan','di'], nx:{},
+      w:`yang dan di itu dengan untuk ini dari dalam tidak akan pada juga ke kerana tetapi ada mereka sudah kita boleh oleh atau seperti kami lebih anda apa saya dia awak hanya belum mesti telah lain satu dua tiga hari tahun masa bulan minggu esok semalam sekarang nanti tadi lagi masih sedang baru lama sama jadi bukan jangan mahu ingin suka sayang baik bagus besar kecil banyak sedikit semua bagaimana kenapa bila mana siapa ya okey terima kasih maaf tolong sila selamat pagi tengah hari petang malam pergi datang tunggu cepat lambat kerja sekolah rumah makan minum tidur main nyanyi gitar muzik lagu mesej telefon gambar video`},
+    tr:{ name:'Türkçe', tag:'TR', starters:['Merhaba','Ben','Teşekkürler'], fill:['ve','bir','bu'], nx:{},
+      w:`ve bir bu da de için ile ne ama daha çok gibi en var yok ben sen o biz siz onlar evet hayır belki iyi kötü merhaba selam teşekkürler teşekkür lütfen günaydın akşamlar geceler hoşça kal özür dilerim arkadaş ev iş zaman bugün yarın dün şimdi sonra her zaman asla istiyorum yapabilirim gidiyorum görmek vermek bilmek istemek gelmek yapmak söylemek müzik gitar şarkı telefon mesaj fotoğraf video numara nerede nasıl neden burada orada hayat dünya ülke şehir aile anne baba oğul kız kardeş`},
+    jv:{ name:'Basa Jawa', tag:'JV', starters:['Aku','Sugeng','Matur'], fill:['ora','lan','ing'], nx:{},
+      w:`aku kowe dheweke kita sampeyan ora ya iya wis durung lagi arep gelem ana ning ing karo lan utawa nanging amarga yen nek sing iki kuwi kae apa piye kok ngapa kapan endi sapa nggih mboten sampun dereng badhe matur nuwun sugeng enjing siang sonten dalu monggo nyuwun pangapunten tulung apik ala gedhe cilik akeh sithik kabeh dina sasi taun wektu saiki mengko wingi sesuk omah sekolah kerja mangan ngombe turu lunga teka enteni cepet alon dolan nyanyi gitar musik lagu`},
+    su:{ name:'Basa Sunda', tag:'SU', starters:['Abdi','Wilujeng','Nuhun'], fill:['teu','jeung','di'], nx:{},
+      w:`abdi anjeun manéh urang kuring henteu teu enya muhun atuh geus tos acan keur badé hoyong aya di jeung atawa tapi sabab lamun ieu éta naon kumaha naha iraha mana saha nuhun hatur punten wilujeng énjing siang sonten wengi mangga tulung alus goréng ageung alit seueur saeutik kabéh poé bulan taun waktu ayeuna engké kamari isukan imah sakola gawé dahar nginum sare indit datang ngadagoan gancang lalaunan kaulinan nyanyi gitar musik lagu`},
   };
-  let currentLang = 'id';
-  try{ currentLang = localStorage.getItem('genjreng_lang') === 'en' ? 'en' : 'id'; }catch(e){}
+  const LANG_KEY = 'genjreng_lang', LANGS_KEY = 'genjreng_langs';
+  // Bahasa yang diaktifkan (muncul di pilihan cepat: tahan spasi) & bahasa yang sedang dipakai.
+  let enabledLangs = ['id','en'];
+  try{
+    const s = JSON.parse(localStorage.getItem(LANGS_KEY) || 'null');
+    if(Array.isArray(s)){ const f = s.filter(c => LANGS[c]); if(f.length) enabledLangs = f; }
+  }catch(e){}
+  let currentLang = enabledLangs[0];
+  try{ const c = localStorage.getItem(LANG_KEY); if(c && LANGS[c] && enabledLangs.includes(c)) currentLang = c; }catch(e){}
+
+  // ---- Pencocokan kata: tanpa aksen + toleran salah ketik (tuts bertetangga di QWERTY lebih murah) ----
+  function deaccent(s){ return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ß/g,'ss').replace(/ı/g,'i'); }
+  const _dictCache = {};
+  function getDict(lang){
+    if(!_dictCache[lang]){
+      _dictCache[lang] = [...new Set(LANGS[lang].w.split(/\s+/).filter(Boolean))].map((w,i)=>({ w, d:deaccent(w), r:i }));
+    }
+    return _dictCache[lang];
+  }
+  const KB_ROWS = ['qwertyuiop','asdfghjkl','zxcvbnm'], KB_OFF = [0,.25,.75], KB_POS = {};
+  KB_ROWS.forEach((row, ri)=> [...row].forEach((c, ci)=>{ KB_POS[c] = [ci + KB_OFF[ri], ri]; }));
+  function keyNear(a, b){
+    const p = KB_POS[a], q = KB_POS[b];
+    if(!p || !q) return false;
+    const dx = p[0]-q[0], dy = p[1]-q[1];
+    return dx*dx + dy*dy <= 1.7;
+  }
+  function editCost(a, b){
+    const n = a.length, m = b.length;
+    let prev2 = null, prev = new Array(m+1), cur = new Array(m+1);
+    for(let j=0;j<=m;j++) prev[j] = j;
+    for(let i=1;i<=n;i++){
+      cur[0] = i;
+      for(let j=1;j<=m;j++){
+        const ca = a[i-1], cb = b[j-1];
+        const sub = ca === cb ? 0 : (keyNear(ca, cb) ? 0.5 : 1);
+        let v = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + sub);
+        if(i>1 && j>1 && ca === b[j-2] && a[i-2] === cb && prev2) v = Math.min(v, prev2[j-2] + 0.7);
+        cur[j] = v;
+      }
+      prev2 = prev; prev = cur; cur = new Array(m+1);
+    }
+    return prev[m];
+  }
 
   // ---- Kamus pribadi: belajar sendiri dari kata yang kamu ketik, persis Gboard ----
   // Setiap kata yang baru selesai diketik (ditandai spasi/enter/tanda baca)
@@ -845,7 +1043,7 @@
     if(privateField) return;   // jangan pernah belajar dari kolom password/incognito
     const w = (word||'').trim();
     if(w.length < 2 || w.length > 24) return;   // saring kata kependekan/kepanjangan (kemungkinan asal ketik)
-    if(!/^[a-zA-Z'-]+$/.test(w)) return;         // cuma huruf, biar angka/simbol acak nggak ikut kesimpan
+    if(!/^[\p{L}'’-]+$/u.test(w)) return;        // cuma huruf (semua bahasa), biar angka/simbol acak nggak ikut kesimpan
     const lower = w.toLowerCase();
     const bucket = learnedWords[currentLang];
     if(!bucket[lower]) bucket[lower] = {count:0, last:0, disp:w};
@@ -867,66 +1065,107 @@
     persistLearning();
   }
 
+  // Kata = huruf/angka/apostrof/tanda hubung berurutan tepat sebelum kursor (tanda baca memutus kata).
+  const WORD_CH = /[\p{L}\p{N}'’-]/u;
   function getCurrentWordRange(){
     let start = cursorPos;
-    while(start>0 && !/[\s\n]/.test(text[start-1])) start--;
+    while(start > 0 && WORD_CH.test(text[start-1])) start--;
+    while(start < cursorPos && /['’-]/.test(text[start])) start++;   // kutip/strip di awal bukan bagian kata
     return { start, end: cursorPos, word: text.slice(start, cursorPos) };
   }
 
-  function getLearnedCandidates(prefixLower, limit){
-    const bucket = learnedWords[currentLang] || {};
+  // Hasil saran untuk kata yang sedang diketik: kamus pribadi > awalan kamus > koreksi salah ketik.
+  function computeWordSuggestions(word){
+    if(/\d/.test(word)) return [];
+    const typedD = deaccent(word);
+    const len = typedD.length;
+    const typedLower = word.toLowerCase();
+    const cands = new Map();
+    const push = (disp, score)=>{
+      const key = disp.toLowerCase();
+      if(key === typedLower) return;
+      const cur = cands.get(key);
+      if(!cur || cur.s < score) cands.set(key, { w:disp, s:score });
+    };
     const now = Date.now();
-    return Object.keys(bucket)
-      .filter(w => w.startsWith(prefixLower) && w !== prefixLower)
-      .map(w=>{
-        const e = bucket[w];
+    const bucket = learnedWords[currentLang] || {};
+    for(const k in bucket){
+      const e = bucket[k]; if(!e) continue;
+      const kd = deaccent(k);
+      if(kd.startsWith(typedD) && kd !== typedD){
         const ageDays = (now - (e.last||0)) / 86400000;
-        // Skor: makin sering + makin baru dipakai, makin di atas (logika sama seperti Gboard).
-        return { word: e.disp || w, score: e.count*10 - Math.min(ageDays,30) };
-      })
-      .sort((a,b)=> b.score - a.score)
-      .slice(0, limit)
-      .map(c=>c.word);
+        push(e.disp || k, 900 + Math.min(e.count,50)*4 - Math.min(ageDays,30));
+      }
+    }
+    const dict = getDict(currentLang);
+    // Kalau kata yang diketik SUDAH kata valid (kamus / kamus pribadi), jangan tawarkan koreksi mirip-mirip.
+    const known = dict.some(e => e.d === typedD) || Object.keys(bucket).some(k => deaccent(k) === typedD);
+    for(let i=0;i<dict.length;i++){
+      const e = dict[i];
+      if(e.d.startsWith(typedD)){
+        if(e.d !== typedD) push(e.w, 800 - e.r*0.3 - (e.d.length-len)*6);
+        continue;
+      }
+      if(!known && len >= 3 && Math.abs(e.d.length - len) <= 3){
+        const maxCost = len <= 4 ? 1.2 : 2.2;
+        let c = editCost(typedD, e.d);
+        if(e.d.length > len){   // orang belum selesai mengetik: bandingkan juga dengan awalan kata
+          c = Math.min(c, editCost(typedD, e.d.slice(0,len)) + 0.3, editCost(typedD, e.d.slice(0,len+1)) + 0.3);
+        }
+        if(c <= maxCost) push(e.w, 700 - c*120 - e.r*0.15);
+      }
+    }
+    return [...cands.values()].sort((a,b)=> b.s - a.s).slice(0, 4).map(c => c.w);
   }
-  function getStaticCandidates(prefixLower, limit, excludeLower){
-    const dict = DICTIONARIES[currentLang] || [];
-    return dict.filter(w => w.startsWith(prefixLower) && w !== prefixLower && !excludeLower.has(w.toLowerCase())).slice(0, limit);
+  // Samakan huruf besar/kecilnya dengan yang sedang diketik ("Ca" -> "Cara", "GB" -> "GBOARD").
+  function applyCase(w, typed){
+    if(!typed) return w;
+    if(typed.length > 1 && typed === typed.toUpperCase() && typed !== typed.toLowerCase()) return w.toUpperCase();
+    const f = typed.charAt(0);
+    if(f !== f.toLowerCase()) return w.charAt(0).toUpperCase() + w.slice(1);
+    return w;
   }
+  // Tebakan kata BERIKUTNYA: pasangan kata yang kamu pelajari > pasangan bawaan > kata pembuka/umum.
   function getNextWordCandidates(limit){
-    const bg = (bigrams[currentLang]||{})[lastCompletedWord];
-    if(!bg) return [];
-    return Object.keys(bg).sort((a,b)=> bg[b]-bg[a]).slice(0, limit);
+    const out = [], seen = new Set();
+    const add = w => { const k = w.toLowerCase(); if(!seen.has(k)){ seen.add(k); out.push(w); } };
+    const bg = (bigrams[currentLang] || {})[lastCompletedWord];
+    if(bg) Object.keys(bg).sort((a,b)=> bg[b]-bg[a]).slice(0, limit).forEach(add);
+    const nx = LANGS[currentLang].nx && LANGS[currentLang].nx[lastCompletedWord];
+    if(nx) nx.split(' ').forEach(add);
+    return out.slice(0, limit);
   }
 
   function renderSuggestions(){
     const bar = document.getElementById('suggestBar');
     bar.innerHTML = '';
-    // Kalau tadinya baris ikon fitur yang lagi dibuka, ketikan baru harus
-    // otomatis nampilin saran kata lagi -- gantian balik ke slot ini.
+    // Kalau tadinya baris ikon fitur yang lagi dibuka, ketikan baru harus otomatis
+    // nampilin saran kata lagi -- gantian balik ke slot ini.
     if(typeof showFeatureBarMode === 'function') showFeatureBarMode('suggest');
-    // Kalau lagi nampilin pesan status (lihat showStatus()) terus tiba-tiba ada
-    // ketikan/aksi baru, saran kata yang baru ini harus langsung menang --
-    // bersihkan dulu modifier class-nya biar tidak ada warna status yang
-    // "nyangkut" di belakang chip saran yang normal.
     bar.classList.remove('status-mode','status-error','status-ok');
     if(privateField) return;   // kolom privat: tanpa saran kata
     const { word } = getCurrentWordRange();
     let candidates = [];
     if(word.length > 0){
-      const lower = word.toLowerCase();
-      // Kamus pribadi (kata yang sudah pernah kamu ketik sendiri) diprioritaskan
-      // di depan kamus bawaan -- ini yang bikin ngetik makin lama makin cepat.
-      const learned = getLearnedCandidates(lower, 3);
-      const usedLower = new Set(learned.map(w=>w.toLowerCase()));
-      const staticC = getStaticCandidates(lower, 3 - learned.length, usedLower);
-      candidates = [...learned, ...staticC].slice(0,3);
+      // Persis Gboard: slot kiri = kata yang sedang diketik apa adanya, lalu koreksi/lanjutan terbaik.
+      const seen = new Set([word.toLowerCase()]);
+      candidates = [word];
+      for(const w of computeWordSuggestions(word).map(x => applyCase(x, word))){
+        const k = w.toLowerCase();
+        if(!seen.has(k)){ seen.add(k); candidates.push(w); }
+        if(candidates.length >= 3) break;
+      }
     } else {
-      // Belum mulai ngetik kata baru: tebak kata SELANJUTNYA dari kata terakhir
-      // yang barusan selesai diketik (prediksi 2 kata berurutan, mirip Gboard).
-      const nextGuess = getNextWordCandidates(3);
-      const usedLower = new Set(nextGuess.map(w=>w.toLowerCase()));
-      const defaults = currentLang==='en' ? ['Hello','Thanks','Okay'] : ['Halo','Terima kasih','Oke'];
-      candidates = [...nextGuess, ...defaults.filter(d=>!usedLower.has(d.toLowerCase()))].slice(0,3);
+      const L = LANGS[currentLang];
+      const atStart = shiftActive || !lastCompletedWord;   // awal kalimat -> kata pembuka
+      let list = getNextWordCandidates(3);
+      const seen = new Set(list.map(w => w.toLowerCase()));
+      for(const w of (atStart ? L.starters : L.fill).concat(L.fill)){
+        if(list.length >= 3) break;
+        if(!seen.has(w.toLowerCase())){ seen.add(w.toLowerCase()); list.push(w); }
+      }
+      if(shiftActive) list = list.map(w => w.charAt(0).toUpperCase() + w.slice(1));
+      candidates = list.slice(0, 3);
     }
     candidates.forEach((c) => {
       const chip = document.createElement('button');
@@ -949,15 +1188,56 @@
     renderSuggestions();
   }
 
+  function updateSpaceLabel(){
+    const sp = allKeys.find(el => el && el.dataset && el.dataset.type === 'literal' && el.dataset.char === ' ');
+    if(!sp) return;
+    // Seperti Gboard: nama bahasa tampil di spasi kalau lebih dari satu bahasa aktif.
+    sp.querySelector('.ch').textContent = enabledLangs.length > 1 ? LANGS[currentLang].name : '';
+  }
   function applyLang(lang){
-    currentLang = (lang === 'en') ? 'en' : 'id';
-    try{ localStorage.setItem('genjreng_lang', currentLang); }catch(e){}
+    if(!LANGS[lang]) lang = enabledLangs[0];
+    currentLang = lang;
+    try{ localStorage.setItem(LANG_KEY, currentLang); }catch(e){}
     if(!learnedWords[currentLang]) learnedWords[currentLang] = {};
     if(!bigrams[currentLang]) bigrams[currentLang] = {};
     lastCompletedWord = '';
     const tag = document.getElementById('langBtnTag');
-    if(tag) tag.textContent = currentLang.toUpperCase();
+    if(tag) tag.textContent = LANGS[currentLang].tag;
+    updateSpaceLabel();
     renderSuggestions();
+  }
+  function setEnabledLangs(list){
+    const f = Object.keys(LANGS).filter(c => list.includes(c));   // urutan tetap sesuai daftar LANGS
+    if(!f.length) return;
+    enabledLangs = f;
+    try{ localStorage.setItem(LANGS_KEY, JSON.stringify(enabledLangs)); }catch(e){}
+    if(!enabledLangs.includes(currentLang)) applyLang(enabledLangs[0]); else updateSpaceLabel();
+  }
+
+  // ---------------- Huruf besar otomatis (awal kalimat / awal kolom), seperti Gboard ----------------
+  // Sumber kebenaran = Android (getCursorCapsMode, menghormati jenis kolom: chat, email, URL, dst)
+  // lewat window.onAutoCaps(). Untuk respons instan setelah ketikan biasa (". " atau enter) dipakai
+  // tebakan lokal dari pelacak teks -- tanpa menunggu Android.
+  var capsPolicy = true;   // false = kolom ini tidak minta huruf besar otomatis (email, URL, password)
+  try{
+    if(window.AndroidKeyboard && window.AndroidKeyboard.getCapsPolicy) capsPolicy = !!window.AndroidKeyboard.getCapsPolicy();
+  }catch(e){}
+  function applyAutoCaps(on){
+    if(capsLock) return;
+    if(on){
+      if(!shiftActive){ shiftActive = true; autoShift = true; updateShiftVisual(); }
+    } else if(autoShift && shiftActive){
+      shiftActive = false; updateShiftVisual();   // updateShiftVisual() juga mereset autoShift
+    }
+  }
+  window.onAutoCaps = function(m){ applyAutoCaps(!!m); renderSuggestions(); };   // (tanpa tebakan lokal: jawaban Android yang menentukan)
+  window.onCapsPolicy = function(on){ capsPolicy = !!on; if(!capsPolicy) applyAutoCaps(false); };
+  function updateAutoCapsLocal(){
+    if(!capsPolicy || privateField || mode !== 'letters') return;
+    const before = text.slice(0, cursorPos);
+    if(!before) return;   // pelacak kosong = belum tahu isi kolom -> tunggu jawaban Android
+    if(/[.!?…]["')\]]*\s+$/.test(before) || /\n$/.test(before)) applyAutoCaps(true);
+    else if(autoShift) applyAutoCaps(false);
   }
 
   // ---------------- Fitur 2: Clipboard riwayat ----------------
@@ -1189,6 +1469,7 @@
   let shiftActive = false;
   let capsLock = false;
   let lastShiftTap = 0;
+  let autoShift = false;   // true = shift menyala karena huruf-besar-otomatis (bukan ditekan pengguna)
 
   const SYMBOLS = ['@','#','$','_','&','-','+','(',')','/', '*','"',"'",':',';','!','?','~','`', '%','^','=','[',']','{','}'];
   const numBtnEl = document.getElementById('numBtn');
@@ -1198,6 +1479,7 @@
 
   function shiftToggle(el){
     flash(el);
+    autoShift = false;   // pengguna sendiri yang menyentuh shift -> bukan otomatis lagi
     const now = performance.now();
     const isDoubleTap = (now - lastShiftTap) < 350;
     lastShiftTap = now;
@@ -1217,6 +1499,7 @@
     const shiftBtnEl = allKeys[29];
     shiftBtnEl.classList.toggle('shift-on', shiftActive && !capsLock);
     shiftBtnEl.classList.toggle('caps-lock', capsLock);
+    if(!shiftActive) autoShift = false;
     if(mode==='letters'){
       LETTER_INDICES.forEach(i=>{
         const el = allKeys[i];
@@ -1292,8 +1575,8 @@
     // di mode huruf, angkanya "di belakang" lewat badge pojok + tekan-tahan.
     keyboardEl.classList.toggle('show-num-row', mode==='symbols');
     applySymbolMode(mode==='symbols');
-    numBtnEl.textContent = (mode==='symbols') ? 'ABC' : '?123';
-    emojiBtnEl.querySelector('.ch').textContent = (mode==='emoji') ? '🔤' : '😊';
+    numBtnEl.querySelector('.ch').textContent = (mode==='symbols') ? 'ABC' : '?123';
+    { const ec = emojiBtnEl.querySelector('.ch'); if(mode==='emoji') ec.textContent = 'ABC'; else ec.innerHTML = ICONS.emoji; }
     if(mode==='symbols'){
       showStatus(listening ? 'Mode simbol aktif — petik nada untuk mengetik tanda baca.' : 'Mode simbol aktif — lihat nada di bawah tiap tanda baca.');
     } else if(mode==='emoji'){
@@ -2084,23 +2367,57 @@
   const gboardToolbarEl = document.getElementById('gboardToolbar');
   const suggestBarEl = document.getElementById('suggestBar');
   const featureToggleBtn = document.getElementById('featureToggleBtn');
+  // Semua panel yang menggantikan area tuts, beserta jenis display-nya saat terbuka.
+  const PANEL_DISPLAY = { toolPanel:'block', settingsPanel:'block', clipboardPanel:'flex', gifPanel:'flex', translatePanel:'flex', langPanel:'flex' };
+  let lastKbHeight = 0;
+  function panelEl(id){ return document.getElementById(id); }
+  function anyPanelOpen(){
+    return Object.keys(PANEL_DISPLAY).some(id => { const el = panelEl(id); return el && el.style.display && el.style.display !== 'none'; });
+  }
+  // Ikon kiri: grid saat normal, X saat ada panel / baris alat yang terbuka (persis Gboard).
+  function syncLeftIcon(){
+    featureToggleBtn.classList.toggle('is-close', anyPanelOpen() || gboardToolbarEl.style.display !== 'none');
+  }
+  function hideLangPopup(){ const p = panelEl('langPopup'); if(p) p.style.display = 'none'; }
+  function closePanelsOnly(){
+    Object.keys(PANEL_DISPLAY).forEach(id => { const p = panelEl(id); p.style.display = 'none'; p.style.minHeight = ''; });
+    const kb = panelEl('keyboardInner'); if(kb) kb.style.display = '';
+    document.querySelectorAll('.gtool-btn').forEach(b => b.classList.remove('tool-active'));
+    hideLangPopup();
+  }
+  // Buka satu panel. Panel setinggi tuts yang digantikannya supaya keyboard tidak "meloncat" naik-turun.
+  function openPanel(id, keepKeyboard, activeBtn){
+    const kb = panelEl('keyboardInner');
+    const kh = kb.offsetHeight; if(kh > 0) lastKbHeight = kh;
+    closePanelsOnly();
+    const p = panelEl(id);
+    p.style.display = PANEL_DISPLAY[id];
+    if(!keepKeyboard){ kb.style.display = 'none'; if(lastKbHeight) p.style.minHeight = lastKbHeight + 'px'; }
+    if(activeBtn) activeBtn.classList.add('tool-active');
+    syncLeftIcon();
+  }
+  // BARU: satu slot bar, dua isi yang gantian -- saran kata/status ATAU baris ikon alat (yang juga
+  // membuka kisi alat di area tuts). showFeatureBarMode('suggest') dipanggil lagi dari
+  // renderSuggestions()/showStatus() supaya umpan balik penting (ketikan, nada terdeteksi) selalu menang.
+  // PENTING: fungsi ini sudah dipanggil sejak applyLang() di awal, jadi jangan menyentuh const
+  // yang dideklarasikan di bawahnya -- semua elemen dicari lewat getElementById saat dipanggil.
   function showFeatureBarMode(mode){
     if(mode === 'tools'){
       gboardToolbarEl.style.display = 'flex';
       suggestBarEl.style.display = 'none';
-      featureToggleBtn.textContent = '‹';
-      featureToggleBtn.title = 'Kembali ke saran kata';
+      openPanel('toolPanel', false, null);
     } else {
       gboardToolbarEl.style.display = 'none';
       suggestBarEl.style.display = 'flex';
-      featureToggleBtn.textContent = '⋯';
-      featureToggleBtn.title = 'Fitur lainnya';
+      if(panelEl('toolPanel').style.display === 'block') closePanelsOnly();
     }
+    syncLeftIcon();
   }
-  featureToggleBtn.addEventListener('pointerdown', ()=>{
-    flash(featureToggleBtn);
-    const isToolsOpen = gboardToolbarEl.style.display !== 'none';
-    showFeatureBarMode(isToolsOpen ? 'suggest' : 'tools');
+  function closeEverything(){ closePanelsOnly(); showFeatureBarMode('suggest'); }
+  featureToggleBtn.addEventListener('pointerdown', (e)=>{
+    e.preventDefault();
+    if(anyPanelOpen() || gboardToolbarEl.style.display !== 'none') closeEverything();
+    else showFeatureBarMode('tools');
   });
 
   loadSavedTheme();
@@ -2108,15 +2425,13 @@
   loadSavedKeyBorder();
   applyLang(currentLang);
   renderClipboardPanel();
-
-  const langBtn = document.getElementById('langBtn');
-  if(langBtn){
-    langBtn.addEventListener('pointerdown', ()=>{
-      flash(langBtn);
-      applyLang(currentLang === 'id' ? 'en' : 'id');
-      showStatus(currentLang==='en' ? 'Saran kata: Inggris 🌐' : 'Saran kata: Indonesia 🌐');
-    });
-  }
+  // Keadaan huruf-besar-otomatis awal (Android sudah tahu kolom ini kosong / awal kalimat atau bukan).
+  try{
+    if(window.AndroidKeyboard && window.AndroidKeyboard.getCapsMode && window.AndroidKeyboard.getCapsMode() !== 0){
+      applyAutoCaps(true);
+      renderSuggestions();
+    }
+  }catch(e){}
 
   const keyBorderToggle = document.getElementById('keyBorderToggle');
   if(keyBorderToggle){
@@ -2157,60 +2472,120 @@
   });
 
   const settingsBtn = document.getElementById('settingsBtn');
-  const settingsPanel = document.getElementById('settingsPanel');
+  const themeBtn = document.getElementById('themeBtn');
+  const sizeBtn = document.getElementById('sizeBtn');
   const clipboardBtn = document.getElementById('clipboardBtn');
-  const clipboardPanel = document.getElementById('clipboardPanel');
   const gifBtn = document.getElementById('gifBtn');
-  const gifPanel = document.getElementById('gifPanel');
   const translateBtn = document.getElementById('translateBtn');
-  const translatePanel = document.getElementById('translatePanel');
-  const keyboardInner = document.getElementById('keyboardInner');
+  const langBtn = document.getElementById('langBtn');
+  const emojiToolBtn = document.getElementById('emojiToolBtn');
+  const noteTagBtn = document.getElementById('noteTagBtn');
+  const settingsPanel = panelEl('settingsPanel');
+  const langPanelEl = panelEl('langPanel');
+  const langPopupEl = panelEl('langPopup');
 
-  function closeAllPanels(){
-    settingsPanel.style.display = 'none';
-    clipboardPanel.style.display = 'none';
-    gifPanel.style.display = 'none';
-    translatePanel.style.display = 'none';
-    keyboardInner.style.display = '';
-    [clipboardBtn, gifBtn, translateBtn, settingsBtn].forEach(b=>b.classList.remove('tool-active'));
+  // Ketuk ikon yang sama lagi = kembali ke kisi alat. Baris ikon tetap tampil selama panelnya terbuka.
+  function togglePanel(id, btn, prep, keepKeyboard){
+    const cur = panelEl(id).style.display;
+    if(cur && cur !== 'none'){ showFeatureBarMode('tools'); return; }
+    if(prep) prep();
+    gboardToolbarEl.style.display = 'flex';
+    suggestBarEl.style.display = 'none';
+    openPanel(id, keepKeyboard, btn);
   }
-  settingsBtn.addEventListener('click', ()=>{
-    const willOpen = settingsPanel.style.display !== 'block';
-    closeAllPanels();
-    if(willOpen){ settingsPanel.style.display = 'block'; keyboardInner.style.display = 'none'; settingsBtn.classList.add('tool-active'); }
-  });
-  clipboardBtn.addEventListener('click', ()=>{
-    const willOpen = clipboardPanel.style.display !== 'flex';
-    closeAllPanels();
-    if(willOpen){
-      renderClipboardPanel();
-      clipboardPanel.style.display = 'flex';
-      keyboardInner.style.display = 'none';
-      clipboardBtn.classList.add('tool-active');
-    }
-  });
-  gifBtn.addEventListener('click', ()=>{
-    const willOpen = gifPanel.style.display !== 'flex';
-    closeAllPanels();
-    if(willOpen){
-      renderGifPanel();
-      gifPanel.style.display = 'flex';
-      keyboardInner.style.display = 'none';
-      gifBtn.classList.add('tool-active');
-    }
-  });
+  settingsBtn.addEventListener('click', ()=> togglePanel('settingsPanel', settingsBtn, ()=>{ settingsPanel.dataset.filter = 'all'; }));
+  themeBtn.addEventListener('click',    ()=> togglePanel('settingsPanel', themeBtn,    ()=>{ settingsPanel.dataset.filter = 'theme'; }));
+  sizeBtn.addEventListener('click',     ()=> togglePanel('settingsPanel', null,        ()=>{ settingsPanel.dataset.filter = 'size'; }));
+  clipboardBtn.addEventListener('click', ()=> togglePanel('clipboardPanel', null, renderClipboardPanel));
+  gifBtn.addEventListener('click',       ()=> togglePanel('gifPanel', gifBtn, renderGifPanel));
   translateBtn.addEventListener('click', ()=>{
-    const willOpen = translatePanel.style.display !== 'flex';
-    closeAllPanels();
-    if(willOpen){
-      // Mode terjemah tetap menampilkan tuts di bawah (bukan cuma panel) supaya
-      // user bisa langsung ngetik/petik nada, hasilnya muncul live di preview.
-      translatePanel.style.display = 'flex';
-      keyboardInner.style.display = '';
-      translateBtn.classList.add('tool-active');
-      updateTranslatePreview();
-    }
+    // Mode terjemah tetap menampilkan tuts (bukan cuma panel) supaya bisa langsung mengetik / memetik nada.
+    togglePanel('translatePanel', translateBtn, null, true);
+    updateTranslatePreview();
   });
+  langBtn.addEventListener('click', ()=> togglePanel('langPanel', null, renderLangPanel));
+  emojiToolBtn.addEventListener('click', ()=>{ closeEverything(); setMode('emoji'); });
+  document.getElementById('oneHandBtn').addEventListener('click', ()=>{ toggleOneHand(); closeEverything(); });
+
+  // ---- Label nada di tuts: bisa disembunyikan supaya tuts sebersih Gboard ----
+  function applyTags(show){
+    document.body.classList.toggle('hide-tags', !show);
+    noteTagBtn.classList.toggle('on', show);
+    try{ localStorage.setItem('genjreng_tags', show ? '1' : '0'); }catch(e){}
+  }
+  noteTagBtn.addEventListener('click', ()=> applyTags(document.body.classList.contains('hide-tags')));
+  (function(){ let s = '1'; try{ s = localStorage.getItem('genjreng_tags') || '1'; }catch(e){} applyTags(s !== '0'); })();
+
+  // ---- Pilihan bahasa: panel kelola (kisi alat -> Bahasa) + popup cepat (tahan spasi), seperti Gboard ----
+  function renderLangPanel(){
+    langPanelEl.innerHTML = '';
+    const head = document.createElement('h4');
+    head.textContent = 'Ketuk untuk memakai · centang = masuk pilihan cepat (tahan spasi)';
+    langPanelEl.appendChild(head);
+    Object.keys(LANGS).forEach(code => {
+      const row = document.createElement('div');
+      row.className = 'lang-row';
+      const pick = document.createElement('button');
+      pick.type = 'button';
+      pick.className = 'lang-pick' + (code === currentLang ? ' active' : '');
+      pick.innerHTML = '<span>' + LANGS[code].name + '</span><span class="lang-tag">' + LANGS[code].tag + '</span>';
+      pick.addEventListener('click', ()=>{
+        if(!enabledLangs.includes(code)) setEnabledLangs([...enabledLangs, code]);
+        applyLang(code);
+        closeEverything();
+      });
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = enabledLangs.includes(code);
+      cb.title = 'Tampilkan di pilihan cepat';
+      cb.addEventListener('change', ()=>{
+        const list = cb.checked ? [...enabledLangs, code] : enabledLangs.filter(c => c !== code);
+        if(!list.length){ cb.checked = true; return; }   // minimal satu bahasa harus aktif
+        setEnabledLangs(list);
+        renderLangPanel();
+      });
+      row.appendChild(pick); row.appendChild(cb);
+      langPanelEl.appendChild(row);
+    });
+  }
+  function showLangPopup(){
+    langPopupEl.innerHTML = '';
+    enabledLangs.forEach(code => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'lang-item' + (code === currentLang ? ' active' : '');
+      b.innerHTML = '<span>' + LANGS[code].name + '</span><span class="lang-tag">' + LANGS[code].tag + '</span>';
+      b.addEventListener('click', ()=>{ applyLang(code); hideLangPopup(); });
+      langPopupEl.appendChild(b);
+    });
+    const m = document.createElement('button');
+    m.type = 'button';
+    m.className = 'lang-item manage';
+    m.innerHTML = ICONS.globe + '<span>Kelola bahasa…</span>';
+    m.addEventListener('click', ()=>{ hideLangPopup(); gboardToolbarEl.style.display = 'flex'; suggestBarEl.style.display = 'none'; renderLangPanel(); openPanel('langPanel', false, null); });
+    langPopupEl.appendChild(m);
+    langPopupEl.style.display = 'block';
+    // Jangan sampai popup lebih tinggi dari area keyboard (WebView keyboard terpotong di tepinya).
+    langPopupEl.style.maxHeight = Math.max(90, kbWrap.clientHeight - 62) + 'px';
+  }
+  // Tahan spasi ±0,45 dtk -> popup bahasa. Spasi sudah terketik saat jari menyentuh (biar ketikan
+  // tetap instan), jadi kalau jadi tahan, spasi itu dihapus lagi.
+  (function(){
+    const sp = allKeys.find(el => el && el.dataset && el.dataset.type === 'literal' && el.dataset.char === ' ');
+    if(!sp) return;
+    let t = null, sx = 0, sy = 0;
+    const clear = ()=>{ if(t){ clearTimeout(t); t = null; } };
+    sp.addEventListener('pointerdown', (e)=>{
+      sx = e.clientX; sy = e.clientY; clear();
+      t = setTimeout(()=>{ t = null; backspace(); showLangPopup(); if(navigator.vibrate) navigator.vibrate(10); }, 450);
+    });
+    sp.addEventListener('pointermove', (e)=>{ if(t && (Math.abs(e.clientX-sx) > 18 || Math.abs(e.clientY-sy) > 18)) clear(); });
+    ['pointerup','pointercancel','pointerleave'].forEach(ev => sp.addEventListener(ev, clear));
+  })();
+  document.addEventListener('pointerdown', (e)=>{
+    if(langPopupEl.style.display === 'block' && !langPopupEl.contains(e.target)) hideLangPopup();
+  }, true);
+
   document.getElementById('translateSwap').addEventListener('click', ()=>{
     const from = document.getElementById('translateFrom');
     const to = document.getElementById('translateTo');
@@ -2230,7 +2605,6 @@
     showStatus('Terjemahan disisipkan.');
   });
 
-  document.getElementById('oneHandBtn').addEventListener('click', toggleOneHand);
   document.getElementById('oneHandFlip').addEventListener('click', toggleOneHand);
 
   // ---------------- Mic langsung otomatis mendengarkan, tanpa perlu tombol ----------------
