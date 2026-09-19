@@ -25,8 +25,6 @@
 <meta name="twitter:description" content="Nada gitar jadi ketikan otomatis, langsung di browser.">
 <meta name="twitter:image" content="icon-512.png">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
-
   :root{
     --app-bg:#F1F3F4;
     --frame:#1F2023;
@@ -86,7 +84,7 @@
     margin:0;
     min-height:100dvh;
     background:var(--kb-bg);
-    font-family:'Roboto', sans-serif;
+    font-family:Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
     color:var(--key-text);
     overflow-x:hidden;
     overflow-y:hidden;
@@ -120,13 +118,28 @@
     .key .ch{ font-size:1.15rem; }
   }
 
+  /* BARU -- fix "tampilan bertumpuk, tidak ringkas": dulu baris ikon fitur
+     (.gboard-toolbar) dan baris saran kata (.suggest-bar) adalah DUA baris
+     terpisah yang SELALU tampil bareng-bareng, ditumpuk vertikal -- jadi
+     total tinggi keyboard = tinggi toolbar + tinggi suggest-bar SEKALIGUS,
+     padahal isinya jarang perlu dilihat bersamaan. Gboard asli cuma pakai
+     SATU baris: defaultnya nampilin saran kata, dan ada satu tombol kecil
+     buat "buka" baris ikon fitur menggantikan saran kata sementara (gantian,
+     bukan nambah). Sekarang .feature-bar ini yang jadi slot tunggal itu --
+     tingginya TETAP (dikunci JS lewat --toolbar-h, sama seperti dulu), dan
+     .gboard-toolbar / .suggest-bar jadi ANAK yang mengisi 100% slot itu,
+     cuma satu yang display:flex di satu waktu (lihat toggleFeatureBar() JS).
+  */
+  .feature-bar{
+    display:flex; align-items:stretch;
+    height:var(--toolbar-h, clamp(44px, 11vh, 56px));
+    min-height:var(--toolbar-h, clamp(44px, 11vh, 56px));
+    max-height:var(--toolbar-h, clamp(44px, 11vh, 56px));
+  }
+  .feature-toggle{ flex:0 0 auto; align-self:center; margin-left:2px; font-size:1.1rem; }
   .gboard-toolbar{
     display:flex; align-items:center; justify-content:flex-start;
-    /* Tinggi toolbar fitur mengikuti rasio Gboard asli: ~10–12% dari total tinggi
-       keyboard. Nilai pastinya (--toolbar-h) dihitung & di-set oleh JS lewat
-       ResizeObserver di kbWrap (lihat sizeToolbarToRatio()), clamp() di sini
-       cuma jaring pengaman sebelum JS sempat jalan / kalau JS gagal. */
-    min-height:var(--toolbar-h, clamp(44px, 11vh, 56px));
+    flex:1 1 auto; min-width:0; height:100%;
     padding:6px 6px; gap:2px;
     overflow-x:auto; scrollbar-width:none; -ms-overflow-style:none;
   }
@@ -161,7 +174,7 @@
     position:relative; flex:1; min-width:0; background:var(--key-bg);
     border:var(--key-border); border-radius:var(--key-radius);
     padding:12px 0 9px; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    box-shadow:0 1.5px 0 var(--shadow); font-family:'Roboto', sans-serif;
+    box-shadow:0 1.5px 0 var(--shadow); font-family:Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
     cursor:pointer; user-select:none; -webkit-tap-highlight-color:transparent;
     min-height:44px; transition:border-radius .12s ease;
   }
@@ -215,13 +228,12 @@
   /* ---- Suggestion bar (prediksi kata) ---- */
   .suggest-bar{
     display:flex; align-items:center; justify-content:center; gap:6px;
+    flex:1 1 auto; min-width:0; height:100%;
     padding:6px 8px; background:var(--kb-bg);
-    border-bottom:1px solid rgba(255,255,255,.06);
-    /* Tinggi DIKUNCI (bukan cuma min-height) -- ini yang bikin tuts di bawahnya
-       tetap diam di tempat yang sama persis, baik lagi 0, 1, 2, atau 3 saran,
-       jadi jempol yang lagi ngetik cepat nggak pernah "meleset" gara-gara
-       keyboard ikut naik-turun tiap saran berubah. */
-    height:38px; min-height:38px; max-height:38px;
+    /* Dulu tinggi DIKUNCI sendiri (38px) karena ini baris terpisah dari
+       toolbar ikon. Sekarang dia berbagi slot .feature-bar bareng
+       .gboard-toolbar (lihat komentar .feature-bar) -- tingginya ikut 100%
+       punya parent, jadi tetap konsisten TANPA perlu dikunci lagi sendiri. */
     overflow:hidden; contain:layout size;
   }
   .suggest-chip{
@@ -234,17 +246,29 @@
     text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .suggest-chip:active{ background:rgba(255,255,255,.1); }
-  .ime-status{
-    display:none; padding:6px 10px; font-size:.78rem; text-align:center;
-    background:#B3261E; color:#FFFFFF; font-family:'Roboto', sans-serif;
+  /* BARU -- fix "tampilan bertumpuk, tidak rapat kayak Gboard": dulu pesan
+     status (nada terdeteksi, tap, error izin, dsb) punya baris SENDIRI
+     (.ime-status) di BAWAH suggest-bar -- jadi tiap kali ada bunyi kedeteksi
+     (yang notabene TERUS-MENERUS terjadi selagi main gitar), tinggi total
+     keyboard nambah satu baris lagi, mirip Gboard yang "meletus" tiap ada
+     notifikasi. Gboard asli tidak begitu -- toast/status singkat numpang di
+     SLOT yang SAMA dengan strip prediksi kata, gantian, bukan nambah baris.
+     Sekarang showStatus() menulis ke #suggestBar itu sendiri (lihat JS),
+     dibedain lewat modifier class ini -- tinggi bar tetap 38px yang sama
+     persis, cuma isinya yang gantian antara saran kata dan pesan status. */
+  .suggest-bar.status-mode{ justify-content:center; }
+  .suggest-status-text{
+    max-width:92%; font-size:.78rem; text-align:center; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; padding:6px 12px; border-radius:8px;
+    color:#FFFFFF; font-family:Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
-  .ime-status.show{ display:block; }
-  .ime-status.ok{ background:#1F6B47; }
+  .suggest-bar.status-error .suggest-status-text{ background:#B3261E; }
+  .suggest-bar.status-ok .suggest-status-text{ background:#1F6B47; }
 
   /* ---- Panel Settings (tema) ---- */
   .settings-panel{
     display:none; padding:14px 12px; background:var(--kb-bg); color:var(--key-text);
-    font-family:'Roboto', sans-serif;
+    font-family:Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
   .settings-panel h4{ margin:0 0 10px; font-size:.85rem; color:var(--key-tag); }
   .theme-swatches{ display:flex; gap:12px; flex-wrap:wrap; }
@@ -316,7 +340,7 @@
   /* ---- Panel Mode Terjemah ---- */
   .translate-panel{
     display:none; flex-direction:column; gap:8px; padding:10px 10px 12px;
-    background:var(--kb-bg); color:var(--key-text); font-family:'Roboto', sans-serif;
+    background:var(--kb-bg); color:var(--key-text); font-family:Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
   .translate-bar{ display:flex; align-items:center; gap:8px; }
   .translate-lang{
@@ -372,18 +396,20 @@
 <body>
 
 <div class="kb-float-wrap" id="kbWrap">
-  <div class="gboard-toolbar" id="gboardToolbar">
-    <button class="gtool-btn" id="clipboardBtn" type="button" title="Clipboard">📋</button>
-    <button class="gtool-btn" id="gifBtn" type="button" title="GIF">GIF</button>
-    <button class="gtool-btn" id="translateBtn" type="button" title="Terjemahkan">文A</button>
-    <button class="gtool-btn" id="oneHandBtn" type="button" title="Mode satu tangan">✋</button>
-    <button class="gtool-btn" id="langBtn" type="button" title="Ganti bahasa saran kata">🌐<span id="langBtnTag" style="font-size:.55rem;font-weight:700;margin-left:2px;">ID</span></button>
-    <div class="gtool-spacer"></div>
-    <button class="gtool-btn" id="settingsBtn" type="button" title="Setelan">⚙</button>
-    <button class="gtool-btn mic-tool" id="micToolBtn" type="button" title="Dengarkan gitar (otomatis aktif)">🎤</button>
+  <div class="feature-bar" id="featureBar">
+    <button class="gtool-btn feature-toggle" id="featureToggleBtn" type="button" title="Fitur lainnya">⋯</button>
+    <div class="gboard-toolbar" id="gboardToolbar" style="display:none;">
+      <button class="gtool-btn" id="clipboardBtn" type="button" title="Clipboard">📋</button>
+      <button class="gtool-btn" id="gifBtn" type="button" title="GIF">GIF</button>
+      <button class="gtool-btn" id="translateBtn" type="button" title="Terjemahkan">文A</button>
+      <button class="gtool-btn" id="oneHandBtn" type="button" title="Mode satu tangan">✋</button>
+      <button class="gtool-btn" id="langBtn" type="button" title="Ganti bahasa saran kata">🌐<span id="langBtnTag" style="font-size:.55rem;font-weight:700;margin-left:2px;">ID</span></button>
+      <div class="gtool-spacer"></div>
+      <button class="gtool-btn" id="settingsBtn" type="button" title="Setelan">⚙</button>
+      <button class="gtool-btn mic-tool" id="micToolBtn" type="button" title="Dengarkan gitar (otomatis aktif)">🎤</button>
+    </div>
+    <div class="suggest-bar" id="suggestBar"></div>
   </div>
-  <div class="suggest-bar" id="suggestBar"></div>
-  <div class="ime-status" id="imeStatus"></div>
   <div class="settings-panel" id="settingsPanel">
     <h4>Pilih Tema Warna</h4>
     <div class="theme-swatches" id="themeSwatches">
@@ -683,18 +709,36 @@
     bubble.classList.add('show');
     setTimeout(()=> bubble.classList.remove('show'), 260);
   }
+  let statusHideTimer = null;
   function showStatus(msg){
-    // Halaman ini sekarang murni keyboard, jadi satu-satunya tempat pesan
-    // status (nada terdeteksi, error izin mikrofon, dsb) ditampilkan adalah
-    // pita #imeStatus di dalam #kbWrap.
-    const imeStatus = document.getElementById('imeStatus');
-    if(!imeStatus) return;
+    // BARU: pesan status sekarang numpang di SLOT #suggestBar yang sama
+    // dengan saran kata (bukan baris terpisah lagi) -- lihat penjelasan
+    // lengkap di komentar .suggest-bar.status-mode CSS. Tinggi keyboard jadi
+    // tidak pernah berubah gara-gara status muncul/hilang, persis Gboard.
+    const bar = document.getElementById('suggestBar');
+    if(!bar) return;
+    // Umpan balik (nada terdeteksi, tap, error izin, dst) harus selalu
+    // kelihatan -- kalau tadinya baris ikon fitur yang lagi dibuka, otomatis
+    // gantian balik ke slot ini dulu.
+    if(typeof showFeatureBarMode === 'function') showFeatureBarMode('suggest');
     const isError = /ditolak|tidak tersedia|gagal|error/i.test(msg);
-    imeStatus.textContent = msg.replace(/<[^>]*>/g, '');
-    imeStatus.classList.add('show');
-    imeStatus.classList.toggle('ok', !isError);
-    clearTimeout(imeStatus._hideTimer);
-    imeStatus._hideTimer = setTimeout(()=> imeStatus.classList.remove('show'), 4000);
+    bar.innerHTML = '';
+    bar.classList.add('status-mode');
+    bar.classList.toggle('status-error', isError);
+    bar.classList.toggle('status-ok', !isError);
+    const span = document.createElement('span');
+    span.className = 'suggest-status-text';
+    span.textContent = msg.replace(/<[^>]*>/g, '');
+    bar.appendChild(span);
+    clearTimeout(statusHideTimer);
+    // Ditahan sebentar aja (900ms, bukan 4 detik seperti dulu) -- karena ini
+    // sekarang berbagi slot yang sama dengan saran kata, biar tidak lama-lama
+    // "merampas" tempat prediksi selagi main gitar cepat (notifikasi baru
+    // bakal muncul lagi tiap bunyi kedeteksi, jadi tidak perlu ditahan lama).
+    statusHideTimer = setTimeout(()=>{
+      bar.classList.remove('status-mode','status-error','status-ok');
+      renderSuggestions(); // balik ke saran kata normal, di slot yang sama persis
+    }, 900);
   }
 
   // ---------------- Bridge tambahan: hapus beberapa karakter sekaligus (dipakai saat ganti kata via prediksi) ----------------
@@ -748,6 +792,22 @@
   if(!bigrams[currentLang]) bigrams[currentLang] = {};
   let lastCompletedWord = '';
 
+  // Kolom privat (password / mode incognito / IME_FLAG_NO_PERSONALIZED_LEARNING).
+  // Di kolom ini keyboard TIDAK belajar kata, TIDAK menyimpan pasangan kata, dan
+  // TIDAK menampilkan saran kata. Nilainya diisi dari sisi Java (lihat
+  // HtmlKeyboardService.onStartInputView) lewat isPrivateField() / onPrivateField().
+  var privateField = false;   // var (bukan let) supaya aman dibaca dari fungsi mana pun sejak awal
+  try{
+    if(window.AndroidKeyboard && window.AndroidKeyboard.isPrivateField){
+      privateField = !!window.AndroidKeyboard.isPrivateField();
+    }
+  }catch(e){}
+  window.onPrivateField = function(on){
+    privateField = !!on;
+    if(typeof lastCompletedWord !== 'undefined') lastCompletedWord = '';
+    if(typeof renderSuggestions === 'function') renderSuggestions();
+  };
+
   let saveLearnTimer = null;
   function persistLearning(){
     // Debounce ringan (150ms) supaya tidak nulis ke localStorage tiap huruf,
@@ -759,6 +819,7 @@
     }, 150);
   }
   function learnWord(word){
+    if(privateField) return;   // jangan pernah belajar dari kolom password/incognito
     const w = (word||'').trim();
     if(w.length < 2 || w.length > 24) return;   // saring kata kependekan/kepanjangan (kemungkinan asal ketik)
     if(!/^[a-zA-Z'-]+$/.test(w)) return;         // cuma huruf, biar angka/simbol acak nggak ikut kesimpan
@@ -817,6 +878,15 @@
   function renderSuggestions(){
     const bar = document.getElementById('suggestBar');
     bar.innerHTML = '';
+    // Kalau tadinya baris ikon fitur yang lagi dibuka, ketikan baru harus
+    // otomatis nampilin saran kata lagi -- gantian balik ke slot ini.
+    if(typeof showFeatureBarMode === 'function') showFeatureBarMode('suggest');
+    // Kalau lagi nampilin pesan status (lihat showStatus()) terus tiba-tiba ada
+    // ketikan/aksi baru, saran kata yang baru ini harus langsung menang --
+    // bersihkan dulu modifier class-nya biar tidak ada warna status yang
+    // "nyangkut" di belakang chip saran yang normal.
+    bar.classList.remove('status-mode','status-error','status-ok');
+    if(privateField) return;   // kolom privat: tanpa saran kata
     const { word } = getCurrentWordRange();
     let candidates = [];
     if(word.length > 0){
@@ -926,8 +996,8 @@
     });
   }
   // Dipanggil dari sisi Java (HtmlKeyboardService) setiap kali clipboard sistem Android berubah.
-  window.onClipboardChanged = function(newText){
-    if(!newText) return;
+  window.onClipboardChanged = function(newText, sensitive){
+    if(!newText || sensitive === true) return;   // clip bertanda IS_SENSITIVE tidak disimpan
     clipboardHistory = clipboardHistory.filter(t => t !== newText);
     clipboardHistory.unshift(newText);
     clipboardHistory = clipboardHistory.slice(0,15);
@@ -1956,7 +2026,18 @@
     showStatus('Mikrofon dijeda. Ketuk ikon mic untuk mendengarkan lagi.');
   }
   const micToolBtn = document.getElementById('micToolBtn');
-  micToolBtn.addEventListener('click', ()=>{ if(listening) stopMic(); else startMic(); });
+  // userPausedMic: kalau pengguna sendiri mematikan mic lewat tombol, jangan
+  // dihidupkan lagi otomatis saat keyboard muncul kembali.
+  let userPausedMic = false;
+  micToolBtn.addEventListener('click', ()=>{
+    if(listening){ userPausedMic = true;  stopMic(); }
+    else         { userPausedMic = false; startMic(); }
+  });
+  // Dipanggil dari HtmlKeyboardService.onWindowHidden()/onWindowShown().
+  // Mic HARUS mati saat keyboard tidak terlihat (privasi + baterai), dan
+  // hidup lagi otomatis begitu keyboard muncul (kecuali dijeda manual).
+  window.onKeyboardHidden = function(){ if(listening) stopMic(); };
+  window.onKeyboardShown  = function(){ if(!listening && !userPausedMic) startMic(); };
 
   window.addEventListener('keydown', (e)=>{
     const key = keyMap[e.key.toLowerCase()];
@@ -1969,13 +2050,46 @@
 
   const kbWrap = document.getElementById('kbWrap');
 
-  if('serviceWorker' in navigator){
+  if('serviceWorker' in navigator && !window.AndroidKeyboard){
     window.addEventListener('load', ()=>{
       navigator.serviceWorker.register('sw.js').catch(()=>{});
     });
   }
 
   // ---------------- Inisialisasi & wiring fitur baru ----------------
+  // BARU: satu slot (.feature-bar), dua isi yang gantian tampil -- baris ikon
+  // fitur (.gboard-toolbar) ATAU saran kata/status (.suggest-bar), tidak
+  // pernah dua-duanya sekaligus. showFeatureBarMode('suggest') dipanggil lagi
+  // dari renderSuggestions()/showStatus() supaya begitu ada ketikan atau nada
+  // kedeteksi, tampilan otomatis balik nampilin itu walau tadinya lagi buka
+  // baris ikon fitur -- persis Gboard, umpan balik penting selalu menang.
+  // PENTING: blok ini HARUS dideklarasikan SEBELUM applyLang(currentLang) di
+  // bawah dipanggil -- applyLang() memicu renderSuggestions() yang langsung
+  // memanggil showFeatureBarMode(), jadi kalau gboardToolbarEl/suggestBarEl/
+  // featureToggleBtn belum sempat dideklarasikan (const punya "temporal dead
+  // zone"), halaman langsung crash total kena ReferenceError sejak awal load.
+  const gboardToolbarEl = document.getElementById('gboardToolbar');
+  const suggestBarEl = document.getElementById('suggestBar');
+  const featureToggleBtn = document.getElementById('featureToggleBtn');
+  function showFeatureBarMode(mode){
+    if(mode === 'tools'){
+      gboardToolbarEl.style.display = 'flex';
+      suggestBarEl.style.display = 'none';
+      featureToggleBtn.textContent = '‹';
+      featureToggleBtn.title = 'Kembali ke saran kata';
+    } else {
+      gboardToolbarEl.style.display = 'none';
+      suggestBarEl.style.display = 'flex';
+      featureToggleBtn.textContent = '⋯';
+      featureToggleBtn.title = 'Fitur lainnya';
+    }
+  }
+  featureToggleBtn.addEventListener('pointerdown', ()=>{
+    flash(featureToggleBtn);
+    const isToolsOpen = gboardToolbarEl.style.display !== 'none';
+    showFeatureBarMode(isToolsOpen ? 'suggest' : 'tools');
+  });
+
   loadSavedTheme();
   loadSavedFontScale();
   loadSavedKeyBorder();
@@ -2006,13 +2120,16 @@
   // (rotasi layar, buka/tutup panel emoji, dsb) supaya rasionya tetap konsisten. ----------------
   function sizeToolbarToRatio(){
     const wrap = document.getElementById('kbWrap');
-    const toolbar = document.getElementById('gboardToolbar');
-    if(!wrap || !toolbar) return;
+    // BARU: yang dikunci tingginya sekarang #featureBar (wadah bersama), bukan
+    // #gboardToolbar saja -- supaya baik lagi nampilin ikon fitur MAUPUN saran
+    // kata/status, tinggi slotnya tetap sama persis (lihat CSS .feature-bar).
+    const bar = document.getElementById('featureBar');
+    if(!wrap || !bar) return;
     const totalH = wrap.getBoundingClientRect().height;
     if(totalH <= 0) return;
     const target = Math.max(44, Math.min(56, totalH * 0.11)); // ~11% dari tinggi total, dibatasi 44–56px
-    toolbar.style.setProperty('--toolbar-h', target + 'px');
-    toolbar.style.minHeight = target + 'px';
+    bar.style.setProperty('--toolbar-h', target + 'px');
+    bar.style.height = target + 'px';
   }
   if('ResizeObserver' in window){
     new ResizeObserver(sizeToolbarToRatio).observe(kbWrap);
