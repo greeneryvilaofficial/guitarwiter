@@ -4,6 +4,8 @@ import android.inputmethodservice.InputMethodService;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.PersistableBundle;
 import android.text.InputType;
 import android.view.View;
@@ -40,6 +42,12 @@ public class HtmlKeyboardService extends InputMethodService {
     // onUpdateSelection() -- dikirim sistem TANPA biaya IPC ekstra, jadi ketukan hapus biasa
     // tetap secepat sebelumnya (tidak perlu bertanya ke aplikasi tiap ketukan).
     private volatile boolean selectionActive = false;
+    // Huruf besar otomatis (awal kolom / awal kalimat), persis Gboard. Android yang menentukan lewat
+    // InputConnection.getCursorCapsMode() -- jadi menghormati jenis kolom (chat, email, URL, password).
+    private volatile int capsMode = 0;
+    private volatile boolean capsPolicy = false;
+    private final Handler capsHandler = new Handler(Looper.getMainLooper());
+    private final Runnable capsRunnable = this::updateCapsNow;
     private final ClipboardManager.OnPrimaryClipChangedListener clipListener = this::pushClipboardToJs;
 
     @Override
@@ -145,12 +153,36 @@ public class HtmlKeyboardService extends InputMethodService {
         privateField = isPrivateField(info);
         selectionActive = info != null && info.initialSelStart != info.initialSelEnd
                 && info.initialSelStart >= 0 && info.initialSelEnd >= 0;
+        // Kolom teks biasa yang meminta kapitalisasi (kalimat/kata/semua huruf) -> boleh huruf besar otomatis.
+        capsPolicy = info != null && !privateField
+                && (info.inputType & InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT
+                && (info.inputType & (InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+                        | InputType.TYPE_TEXT_FLAG_CAP_WORDS
+                        | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES)) != 0;
         if (webView != null) {
             webView.evaluateJavascript(
                     "window.onSelectionChanged && window.onSelectionChanged(" + selectionActive + ")", null);
             webView.evaluateJavascript(
                     "window.onPrivateField && window.onPrivateField(" + privateField + ")", null);
+            webView.evaluateJavascript(
+                    "window.onCapsPolicy && window.onCapsPolicy(" + capsPolicy + ")", null);
         }
+        capsHandler.removeCallbacks(capsRunnable);
+        updateCapsNow();
+    }
+
+    /** Tanya Android: di posisi kursor sekarang, apakah huruf berikutnya harus kapital? Hasilnya dikirim ke JS. */
+    private void updateCapsNow() {
+        if (webView == null) return;
+        InputConnection ic = getCurrentInputConnection();
+        EditorInfo ei = getCurrentInputEditorInfo();
+        int m = 0;
+        if (capsPolicy && ic != null && ei != null) {
+            m = ic.getCursorCapsMode(ei.inputType);
+        }
+        capsMode = m;
+        webView.evaluateJavascript(
+                "window.onAutoCaps && window.onAutoCaps(" + m + ")", null);
     }
 
     /** Sistem memberi tahu setiap kali posisi kursor / blok seleksi di kolom aktif berubah. */
@@ -159,6 +191,10 @@ public class HtmlKeyboardService extends InputMethodService {
                                   int candidatesStart, int candidatesEnd) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd,
                 candidatesStart, candidatesEnd);
+        if (capsPolicy) {
+            capsHandler.removeCallbacks(capsRunnable);
+            capsHandler.postDelayed(capsRunnable, 50);
+        }
         boolean has = newSelStart >= 0 && newSelEnd >= 0 && newSelStart != newSelEnd;
         if (has != selectionActive) {
             selectionActive = has;
@@ -208,6 +244,7 @@ public class HtmlKeyboardService extends InputMethodService {
     @Override
     public void onWindowHidden() {
         super.onWindowHidden();
+        capsHandler.removeCallbacks(capsRunnable);
         if (nativeMic != null) nativeMic.stop();   // jaring pengaman kalau JS belum sempat menjawab
         if (webView != null) {
             webView.evaluateJavascript(
@@ -237,6 +274,7 @@ public class HtmlKeyboardService extends InputMethodService {
 
     @Override
     public void onDestroy() {
+        capsHandler.removeCallbacks(capsRunnable);
         if (clipboardManager != null) {
             clipboardManager.removePrimaryClipChangedListener(clipListener);
         }
@@ -348,6 +386,17 @@ public class HtmlKeyboardService extends InputMethodService {
         @JavascriptInterface
         public boolean isPrivateField() {
             return privateField;
+        }
+
+        /** Dibaca JS saat halaman selesai dimuat: 0 = huruf kecil, selain 0 = awal kalimat/kata (huruf besar). */
+        @JavascriptInterface
+        public int getCapsMode() {
+            return capsMode;
+        }
+
+        @JavascriptInterface
+        public boolean getCapsPolicy() {
+            return capsPolicy;
         }
 
         @JavascriptInterface
