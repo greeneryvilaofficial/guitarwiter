@@ -678,6 +678,7 @@
     requestAnimationFrame(()=>{ suggestScheduled = false; renderSuggestions(); });
   }
   function appendText(str){
+    if(selectionActive){ resetTrackedText(); selectionActive = false; }   // ketikan menggantikan blok biru
     if(WORD_BOUNDARY_RE.test(str)){
       const { word } = getCurrentWordRange();
       if(word) learnWord(word);
@@ -690,10 +691,17 @@
     if(document.getElementById('translatePanel').style.display==='flex') updateTranslatePreview();
   }
   function backspace(){
-    if(cursorPos<=0) return;
-    text = text.slice(0,cursorPos-1) + text.slice(cursorPos);
-    cursorPos -= 1;
+    // Selalu diteruskan ke Android, walau pelacak lokal kosong: kolom bisa berisi teks yang
+    // BUKAN diketik lewat keyboard ini, dan bisa ada teks terseleksi (blok biru). Java yang
+    // memutuskan: ada seleksi -> seluruh blok terhapus sekali ketuk; tidak ada -> 1 karakter.
     bridgeDeleteBackward();
+    if(selectionActive){
+      resetTrackedText();          // isi kolom berubah drastis, pelacak lama tidak valid lagi
+      selectionActive = false;
+    } else if(cursorPos > 0){
+      text = text.slice(0,cursorPos-1) + text.slice(cursorPos);
+      cursorPos -= 1;
+    }
     scheduleSuggestions();
     if(document.getElementById('translatePanel').style.display==='flex') updateTranslatePreview();
   }
@@ -811,6 +819,12 @@
       privateField = !!window.AndroidKeyboard.isPrivateField();
     }
   }catch(e){}
+  // Seleksi (blok biru) di kolom aplikasi. Diisi dari Java (onUpdateSelection). Dipakai cuma
+  // untuk menyegarkan pelacak teks lokal; PENGHAPUSAN seleksinya sendiri dilakukan Java.
+  var selectionActive = false;
+  window.onSelectionChanged = function(on){ selectionActive = !!on; };
+  function resetTrackedText(){ text = ''; cursorPos = 0; lastCompletedWord = ''; }
+
   window.onPrivateField = function(on){
     privateField = !!on;
     if(typeof lastCompletedWord !== 'undefined') lastCompletedWord = '';
