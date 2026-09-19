@@ -1,7 +1,7 @@
 {
   "name": "genjreng-ketik",
   "version": "1.0.0",
-  "description": "Guitar Witer — keyboard Android kustom yang mengubah nada gitar menjadi ketikan otomatis.",
+  "description": "Guitarwiter — keyboard Android kustom yang mengubah nada gitar menjadi ketikan otomatis.",
   "private": true,
   "scripts": {
     "sync": "cap sync android",

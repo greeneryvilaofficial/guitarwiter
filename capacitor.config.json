@@ -1,6 +1,6 @@
 {
   "appId": "com.keyboardkustom.app",
-  "appName": "Guitar Witer",
+  "appName": "Guitarwiter",
   "webDir": "www",
   "bundledWebRuntime": false,
   "server": {

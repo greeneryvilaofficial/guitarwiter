@@ -1,8 +1,8 @@
-# Kebijakan Privasi — Guitar Witer
+# Kebijakan Privasi — Guitarwiter
 
 Terakhir diperbarui: 1 September 2026
 
-Guitar Witer ("Aplikasi") adalah keyboard Android yang mengubah nada gitar menjadi ketikan. Karena keyboard memang berhubungan dengan apa yang kamu ketik, kebijakan ini menjelaskan secara jujur data apa yang diproses, di mana disimpan, dan bagaimana menghapusnya.
+Guitarwiter ("Aplikasi") adalah keyboard Android yang mengubah nada gitar menjadi ketikan. Karena keyboard memang berhubungan dengan apa yang kamu ketik, kebijakan ini menjelaskan secara jujur data apa yang diproses, di mana disimpan, dan bagaimana menghapusnya.
 
 ## Ringkasan
 - Aplikasi **tidak mengirim** data apa pun (audio, teks, clipboard) ke server mana pun, dan tidak membagikannya ke pihak ketiga.
@@ -31,7 +31,7 @@ Aplikasi menampilkan riwayat clipboard supaya kamu bisa menempel ulang teks yang
 Preferensi seperti tema, bahasa, dan ukuran huruf disimpan lokal di perangkat.
 
 ## Menghapus Data
-Semua data di atas tersimpan di penyimpanan lokal aplikasi. Untuk menghapusnya, buka Pengaturan Android → Aplikasi → Guitar Witer → Penyimpanan → **Hapus data**, atau cukup copot pemasangan Aplikasi. Karena tidak ada yang dikirim ke server, tidak ada salinan lain yang perlu dihapus.
+Semua data di atas tersimpan di penyimpanan lokal aplikasi. Untuk menghapusnya, buka Pengaturan Android → Aplikasi → Guitarwiter → Penyimpanan → **Hapus data**, atau cukup copot pemasangan Aplikasi. Karena tidak ada yang dikirim ke server, tidak ada salinan lain yang perlu dihapus.
 
 ## Perubahan Kebijakan
 Kebijakan ini dapat diperbarui sewaktu-waktu. Perubahan akan dicantumkan di halaman ini dengan tanggal pembaruan terbaru.
