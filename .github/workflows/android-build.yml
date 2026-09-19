@@ -148,7 +148,7 @@ jobs:
       # Tag dibuat unik per run (build-<nomor_run>) supaya tiap push ke main
       # otomatis jadi Release baru, tidak menimpa yang lama.
       - name: Buat GitHub Release & lampirkan APK
-        if: always()
+        if: success()   # jangan bikin Release kosong kalau build gagal
         uses: softprops/action-gh-release@v3
         with:
           tag_name: build-${{ github.run_number }}
