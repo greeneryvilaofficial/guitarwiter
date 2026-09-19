@@ -64,6 +64,14 @@ jobs:
           fi
           echo "OK: android/app/build.gradle ditemukan."
 
+      - name: Set nama aplikasi di launcher jadi Guitarwiter
+        run: |
+          set -e
+          F=android/app/src/main/res/values/strings.xml
+          test -f "$F" || (echo "FATAL: $F tidak ditemukan" && exit 1)
+          sed -i 's|<string name="app_name">[^<]*</string>|<string name="app_name">Guitarwiter</string>|; s|<string name="title_activity_main">[^<]*</string>|<string name="title_activity_main">Guitarwiter</string>|' "$F"
+          grep -n 'app_name\|title_activity_main' "$F"
+
       - name: Tempel HtmlKeyboardService.java ke lokasi paket Java
         run: |
           set -e
@@ -118,12 +126,15 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug --stacktrace
 
+      - name: Ganti nama APK debug jadi Guitarwiter-debug.apk
+        run: mv android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/Guitarwiter-debug.apk
+
       - name: Unggah APK debug sebagai artifact
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: app-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: Guitarwiter-debug-apk
+          path: android/app/build/outputs/apk/debug/Guitarwiter-debug.apk
           if-no-files-found: ignore
 
       - name: Build APK release (signed)
@@ -136,12 +147,16 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew assembleRelease --stacktrace
 
+      - name: Ganti nama APK release jadi Guitarwiter.apk
+        if: env.KEYSTORE_BASE64 != ''
+        run: mv android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/Guitarwiter.apk
+
       - name: Unggah APK release sebagai artifact (kalau ada)
         if: env.KEYSTORE_BASE64 != ''
         uses: actions/upload-artifact@v6
         with:
-          name: app-release-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: Guitarwiter-apk
+          path: android/app/build/outputs/apk/release/Guitarwiter.apk
 
       # ---- Bagian ini yang bikin APK-nya nongol di tab "Releases" depan repo,
       # bukan cuma terkubur di tab Actions -> buka run -> scroll ke Artifacts.
@@ -155,11 +170,11 @@ jobs:
           name: Build #${{ github.run_number }}
           body: |
             Build otomatis dari commit ${{ github.sha }}.
-            - `app-debug.apk` selalu ada (tidak perlu keystore).
-            - `app-release.apk` cuma ada kalau secret KEYSTORE_BASE64 dkk sudah diisi.
+            - `Guitarwiter-debug.apk` selalu ada (tidak perlu keystore).
+            - `Guitarwiter.apk` cuma ada kalau secret KEYSTORE_BASE64 dkk sudah diisi.
           # fail_on_unmatched_files:false -> kalau release.apk belum ada (keystore
           # belum disetel), step ini tetap sukses & cuma lampirin yang ada saja.
           fail_on_unmatched_files: false
           files: |
-            android/app/build/outputs/apk/debug/app-debug.apk
-            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/apk/debug/Guitarwiter-debug.apk
+            android/app/build/outputs/apk/release/Guitarwiter.apk
