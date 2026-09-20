@@ -3,6 +3,7 @@ package com.keyboardkustom.app;
 import android.inputmethodservice.InputMethodService;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.Intent;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -48,6 +49,11 @@ public class HtmlKeyboardService extends InputMethodService {
     private volatile boolean capsPolicy = false;
     private final Handler capsHandler = new Handler(Looper.getMainLooper());
     private final Runnable capsRunnable = this::updateCapsNow;
+    // Bahasa non-Latin (Rusia, Arab, Jepang, dst): teks yang sedang diketik berstatus "composing" di
+    // aplikasi tujuan. Kalau kursor dipindah / aplikasi menutup composing-nya, JS diberi tahu supaya
+    // tidak lagi mengganti teks yang sudah "terkunci".
+    private volatile boolean composingActive = false;
+    private volatile long lastComposeAt = 0;
     private final ClipboardManager.OnPrimaryClipChangedListener clipListener = this::pushClipboardToJs;
 
     @Override
@@ -169,6 +175,10 @@ public class HtmlKeyboardService extends InputMethodService {
         }
         capsHandler.removeCallbacks(capsRunnable);
         updateCapsNow();
+        composingActive = false;
+        if (webView != null) {
+            webView.evaluateJavascript("window.onComposingLost && window.onComposingLost()", null);
+        }
     }
 
     /** Tanya Android: di posisi kursor sekarang, apakah huruf berikutnya harus kapital? Hasilnya dikirim ke JS. */
@@ -191,6 +201,13 @@ public class HtmlKeyboardService extends InputMethodService {
                                   int candidatesStart, int candidatesEnd) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd,
                 candidatesStart, candidatesEnd);
+        if (composingActive && candidatesStart == -1 && candidatesEnd == -1
+                && System.currentTimeMillis() - lastComposeAt > 400) {
+            composingActive = false;
+            if (webView != null) {
+                webView.evaluateJavascript("window.onComposingLost && window.onComposingLost()", null);
+            }
+        }
         if (capsPolicy) {
             capsHandler.removeCallbacks(capsRunnable);
             capsHandler.postDelayed(capsRunnable, 50);
@@ -245,6 +262,14 @@ public class HtmlKeyboardService extends InputMethodService {
     public void onWindowHidden() {
         super.onWindowHidden();
         capsHandler.removeCallbacks(capsRunnable);
+        if (composingActive) {
+            InputConnection ic = getCurrentInputConnection();
+            if (ic != null) ic.finishComposingText();
+            composingActive = false;
+            if (webView != null) {
+                webView.evaluateJavascript("window.onComposingLost && window.onComposingLost()", null);
+            }
+        }
         if (nativeMic != null) nativeMic.stop();   // jaring pengaman kalau JS belum sempat menjawab
         if (webView != null) {
             webView.evaluateJavascript(
@@ -397,6 +422,44 @@ public class HtmlKeyboardService extends InputMethodService {
         @JavascriptInterface
         public boolean getCapsPolicy() {
             return capsPolicy;
+        }
+
+        /** Teks yang sedang disusun (Rusia/Arab/Jepang/dst): diganti utuh tiap ada huruf baru. */
+        @JavascriptInterface
+        public void setComposingText(final String t) {
+            runOnUiThreadSafe(() -> {
+                InputConnection ic = getCurrentInputConnection();
+                if (ic == null || t == null) return;
+                ic.setComposingText(t, 1);
+                composingActive = !t.isEmpty();
+                lastComposeAt = System.currentTimeMillis();
+            });
+        }
+
+        /** "Kunci" teks yang sedang disusun (spasi / tanda baca / pilih saran). */
+        @JavascriptInterface
+        public void finishComposing() {
+            runOnUiThreadSafe(() -> {
+                InputConnection ic = getCurrentInputConnection();
+                if (ic != null) ic.finishComposingText();
+                composingActive = false;
+            });
+        }
+
+        /** Tombol "Bagikan" di kisi alat: buka lembar bagikan Android dengan teks dari JS. */
+        @JavascriptInterface
+        public void shareText(final String t) {
+            runOnUiThreadSafe(() -> {
+                try {
+                    Intent send = new Intent(Intent.ACTION_SEND);
+                    send.setType("text/plain");
+                    send.putExtra(Intent.EXTRA_TEXT, t);
+                    Intent chooser = Intent.createChooser(send, "Bagikan Guitarwiter");
+                    chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(chooser);
+                } catch (Exception ignored) {
+                }
+            });
         }
 
         @JavascriptInterface
