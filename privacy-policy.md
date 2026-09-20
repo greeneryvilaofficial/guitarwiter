@@ -19,13 +19,15 @@ Aplikasi meminta izin mikrofon untuk satu tujuan: mendeteksi nada gitar yang kam
 Sebagai keyboard, Aplikasi meneruskan ketikanmu ke aplikasi yang sedang kamu gunakan (misalnya kolom chat), dan memantau teks yang sedang kamu ketik untuk menampilkan saran kata.
 
 Agar saran kata makin sesuai denganmu, Aplikasi menyimpan **secara lokal di perangkat**:
-- kata-kata yang sering kamu ketik (hanya kata berupa huruf, panjang 2–24 karakter), dan
-- pasangan kata yang sering muncul berurutan.
+- kata-kata yang sering kamu ketik (hanya kosakata berupa huruf, 2–14 karakter; kata asal-ulang, asal pencet, atau kepanjangan tidak disimpan), dan
+- pasangan 2 kata yang sering muncul berurutan.
+
+Aplikasi **tidak menyimpan kalimat atau paragraf**, dan teks yang kamu tempel dari clipboard tidak pernah dipelajari sebagai saran. Kamu bisa menghapus satu saran dengan menahannya di bar saran, atau semuanya lewat tombol "Reset kamus".
 
 **Kolom yang dikecualikan:** di kolom password, kolom yang meminta tanpa personalisasi (misalnya mode incognito), Aplikasi **tidak belajar kata, tidak menyimpan pasangan kata, dan tidak menampilkan saran kata**.
 
 ## Riwayat Clipboard
-Aplikasi menampilkan riwayat clipboard supaya kamu bisa menempel ulang teks yang pernah disalin. Hingga **15 item terakhir** disimpan secara lokal di perangkat. Salinan yang ditandai "sensitif" oleh aplikasi pengirimnya (misalnya pengelola password di Android 13 ke atas) **tidak disimpan**. Kamu bisa menghapus riwayat kapan saja lewat tombol hapus di panel clipboard.
+Aplikasi menampilkan riwayat clipboard supaya kamu bisa menempel ulang teks yang pernah disalin. Teks disimpan **apa adanya, pendek maupun panjang** (maksimal 20.000 karakter per item), hingga 15 item terakhir, secara lokal di perangkat. Karena itu, teks yang kamu salin (termasuk angka seperti nomor atau kode) ikut tersimpan di riwayat ini sampai kamu menghapusnya. Salinan yang ditandai "sensitif" oleh aplikasi pengirimnya (misalnya pengelola password di Android 13 ke atas) tidak disimpan. Kamu bisa menghapus satu item lewat tombol ✕ atau semuanya lewat "Hapus semua" di panel clipboard. Riwayat clipboard terpisah dari saran kata dan tidak pernah dipakai untuk belajar kata.
 
 ## Pengaturan
 Preferensi seperti tema, bahasa, dan ukuran huruf disimpan lokal di perangkat.
