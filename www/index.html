@@ -316,7 +316,8 @@
   .clipboard-item{
     background:var(--key-bg); color:var(--key-text); border:none; border-radius:8px;
     padding:10px 12px; text-align:left; font-family:inherit; font-size:.85rem;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
+    white-space:normal; word-break:break-word;
   }
   .clipboard-item:active{ background:var(--key-active-bg); }
   .clipboard-empty{ color:var(--muted); font-size:.8rem; padding:10px 4px; }
@@ -802,6 +803,7 @@
   // fitur prediksi kata (lihat getCurrentWordRange) dan untuk menghitung
   // berapa karakter yang perlu dihapus saat kata diganti lewat saran.
   let text = '';
+  var noLearnBefore = 0;   // teks sebelum posisi ini berasal dari tempelan (paste): jangan dipelajari jadi saran
   let cursorPos = 0;
 
   // ---------------- Jembatan ke Android InputMethodService ----------------
@@ -844,6 +846,7 @@
       const cut = text.length - TEXT_TRACK_MAX;
       text = text.slice(cut);
       cursorPos = Math.max(0, cursorPos - cut);
+      noLearnBefore = Math.max(0, noLearnBefore - cut);
     }
   }
 
@@ -896,13 +899,14 @@
       }
     }
     if(WORD_BOUNDARY_RE.test(str)){
-      const { word } = getCurrentWordRange();
-      if(word) learnWord(word);
+      const { start: ws, word } = getCurrentWordRange();
+      if(word && ws >= noLearnBefore) learnWord(word);   // kata hasil tempelan tidak dipelajari
     }
     text = text.slice(0,cursorPos) + str + text.slice(cursorPos);
     cursorPos += str.length;
     trimTrackedText();
     bridgeCommit(str);
+    if(str.length > 1){ noLearnBefore = cursorPos; lastCompletedWord = ''; }   // tempelan / emoji: bukan hasil ketikan kata
     if(didAC){ didAC.cursor = cursorPos; lastAutoCorrect = didAC; }   // ketuk hapus SEKALI lagi = urungkan koreksi
     scheduleSuggestions();
     if(document.getElementById('translatePanel').style.display==='flex') updateTranslatePreview();
@@ -933,6 +937,7 @@
       text = text.slice(0,cursorPos-1) + text.slice(cursorPos);
       cursorPos -= 1;
     }
+    if(cursorPos < noLearnBefore) noLearnBefore = cursorPos;
     scheduleSuggestions();
     if(document.getElementById('translatePanel').style.display==='flex') updateTranslatePreview();
   }
@@ -1324,7 +1329,7 @@
   // untuk menyegarkan pelacak teks lokal; PENGHAPUSAN seleksinya sendiri dilakukan Java.
   var selectionActive = false;
   window.onSelectionChanged = function(on){ selectionActive = !!on; };
-  function resetTrackedText(){ text = ''; cursorPos = 0; lastCompletedWord = ''; }
+  function resetTrackedText(){ text = ''; cursorPos = 0; lastCompletedWord = ''; noLearnBefore = 0; }
 
   window.onPrivateField = function(on){
     privateField = !!on;
@@ -1394,7 +1399,7 @@
     const cands = new Map();
     const push = (disp, score)=>{
       const key = disp.toLowerCase();
-      if(key === typedLower || disp.length > 18 || isBlocked(disp)) return;   // kepanjangan / sudah dihapus pengguna -> tidak ditampilkan
+      if(key === typedLower || disp.length > MAX_LEARN_LEN || isBlocked(disp)) return;   // kepanjangan / sudah dihapus pengguna -> tidak ditampilkan
       const cur = cands.get(key);
       if(!cur || cur.s < score) cands.set(key, { w:disp, s:score });
     };
@@ -1473,9 +1478,31 @@
   }
 
   // ---------------- Kata yang layak disimpan/disarankan: tidak kepanjangan, tidak asal-ulang ----------------
-  const MAX_LEARN_LEN = 15;
+  const MAX_LEARN_LEN = 14;   // batas SIMPAN dan batas TAMPIL saran (satu angka supaya konsisten)
+  // Kata "aneh" yang tidak layak jadi saran: asal pencet (qwert, asdfg), tanpa vokal, campur besar-kecil acak,
+  // deretan konsonan/vokal tak wajar, atau sisa alamat web. Hanya menilai huruf Latin.
+  const KEYMASH = (()=>{
+    const set = new Set();
+    ['qwertyuiop','asdfghjkl','zxcvbnm'].forEach(r => { for(let i = 0; i + 5 <= r.length; i++){ const s = r.slice(i, i+5); set.add(s); set.add([...s].reverse().join('')); } });
+    return set;
+  })();
+  const WEB_TOKENS = new Set(['http','https','www','com','net','org','html','php','png','jpg','jpeg','pdf','mp3','mp4']);
+  function looksWeird(w){
+    const core = w.replace(/['’-]/g, '');
+    const d = deaccent(core);
+    if(!/^[a-z]+$/.test(d)) return false;                                   // huruf non-Latin: tidak dinilai di sini
+    if(WEB_TOKENS.has(d)) return true;
+    if(/[a-z][A-Z]/.test(core)) return true;                                // campur besar-kecil acak / camelCase
+    if(core.length > 5 && core === core.toUpperCase()) return true;         // SEMUA HURUF BESAR yang panjang
+    if(d.length >= 4 && !/[aeiouy]/.test(d)) return true;                   // tanpa vokal
+    if(/[bcdfghjklmnpqrstvwxz]{5,}/.test(d)) return true;                   // 5+ konsonan berderet
+    if(/[aeiou]{4,}/.test(d)) return true;                                  // 4+ vokal berderet
+    for(let i = 0; i + 5 <= d.length; i++) if(KEYMASH.has(d.slice(i, i+5))) return true;   // asal pencet
+    return false;
+  }
   function isLearnable(w){
     if(!w || w.length < 2 || w.length > MAX_LEARN_LEN) return false;
+    if(looksWeird(w)) return false;
     if(!/^[\p{L}\p{M}'’-]+$/u.test(w)) return false;
     if(/(.)\1{3,}/u.test(w)) return false;            // "aaaaaa"
     if(/^(.{1,3})\1{2,}$/u.test(w)) return false;     // "hahaha", "wkwkwk"
@@ -1753,22 +1780,13 @@
   // ---------------- Fitur 2: Clipboard riwayat ----------------
   let clipboardHistory = [];
   try{ clipboardHistory = JSON.parse(localStorage.getItem('genjreng_clipboard') || '[]'); }catch(e){}
-  // Riwayat clipboard HANYA menyimpan kosakata pendek (1-2 kata), bukan kalimat / paragraf: teks panjang
-  // memenuhi panel dan sulit dihapus. Salinan yang lebih panjang dari ini diabaikan (tidak disimpan sama sekali).
-  const CLIP_MAX_WORDS = 2, CLIP_MAX_CHARS = 30;
+  // Riwayat clipboard menyimpan salinan APA ADANYA, pendek maupun panjang (maks. 15 item terakhir).
+  // Satu-satunya batas: 20.000 karakter per item, supaya penyimpanan lokal tidak jebol. Salinan yang
+  // ditandai "sensitif" oleh Android (mis. pengelola sandi) tidak disimpan -- itu dicegat lebih awal
+  // di window.onClipboardChanged. Riwayat ini TERPISAH dari saran kata: isinya tidak pernah dipelajari.
+  const CLIP_MAX_CHARS = 20000;
   function isClipSaveable(t){
-    if(typeof t !== 'string') return false;
-    const s = t.trim();
-    if(!s || s.length > CLIP_MAX_CHARS) return false;
-    if(/\d/.test(s)) return false;   // ada angka = kemungkinan sandi / kode OTP / nomor -> bukan kosakata, jangan disimpan
-    return s.split(/\s+/).length <= CLIP_MAX_WORDS;
-  }
-  { // bersihkan riwayat lama yang sudah terlanjur menyimpan teks panjang
-    const kept = clipboardHistory.filter(isClipSaveable);
-    if(kept.length !== clipboardHistory.length){
-      clipboardHistory = kept;
-      try{ localStorage.setItem('genjreng_clipboard', JSON.stringify(clipboardHistory)); }catch(e){}
-    }
+    return typeof t === 'string' && t.trim().length > 0 && t.length <= CLIP_MAX_CHARS;
   }
 
   function saveClipboardHistory(){
@@ -1780,7 +1798,7 @@
     if(clipboardHistory.length === 0){
       const empty = document.createElement('div');
       empty.className = 'clipboard-empty';
-      empty.textContent = 'Belum ada riwayat copy. Yang disimpan hanya kosakata pendek (maks. 2 kata, tanpa angka); kalimat/paragraf tidak disimpan.';
+      empty.textContent = 'Belum ada riwayat copy. Salinan (pendek maupun panjang) muncul di sini, maksimal 15 item terakhir.';
       panel.appendChild(empty);
       return;
     }
@@ -1804,7 +1822,7 @@
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'clipboard-item';
-      btn.textContent = item;
+      btn.textContent = item.length > 300 ? item.slice(0, 300) + '…' : item;   // pratinjau saja; yang ditempel tetap teks LENGKAP
       btn.addEventListener('pointerdown', () => {
         appendText(item);
         renderSuggestions();
@@ -1829,7 +1847,7 @@
   window.onClipboardChanged = function(newText, sensitive){
     if(!newText || sensitive === true) return;   // clip bertanda IS_SENSITIVE tidak disimpan
     newText = newText.trim();
-    if(!isClipSaveable(newText)) return;         // kalimat / paragraf panjang tidak disimpan
+    if(!isClipSaveable(newText)) return;         // kosong / lebih dari 20.000 karakter -> diabaikan
     clipboardHistory = clipboardHistory.filter(t => t !== newText);
     clipboardHistory.unshift(newText);
     clipboardHistory = clipboardHistory.slice(0,15);
