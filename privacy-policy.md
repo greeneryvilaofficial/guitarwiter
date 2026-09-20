@@ -1,6 +1,6 @@
 # Kebijakan Privasi — Guitarwiter
 
-Terakhir diperbarui: 1 September 2026
+Terakhir diperbarui: 20 September 2026
 
 Guitarwiter ("Aplikasi") adalah keyboard Android yang mengubah nada gitar menjadi ketikan. Karena keyboard memang berhubungan dengan apa yang kamu ketik, kebijakan ini menjelaskan secara jujur data apa yang diproses, di mana disimpan, dan bagaimana menghapusnya.
 
@@ -26,11 +26,23 @@ Aplikasi **tidak menyimpan kalimat atau paragraf**, dan teks yang kamu tempel da
 
 **Kolom yang dikecualikan:** di kolom password, kolom yang meminta tanpa personalisasi (misalnya mode incognito), Aplikasi **tidak belajar kata, tidak menyimpan pasangan kata, dan tidak menampilkan saran kata**.
 
-## Riwayat Clipboard
-Aplikasi menampilkan riwayat clipboard supaya kamu bisa menempel ulang teks yang pernah disalin. Teks disimpan **apa adanya, pendek maupun panjang** (maksimal 20.000 karakter per item), hingga 15 item terakhir, secara lokal di perangkat. Karena itu, teks yang kamu salin (termasuk angka seperti nomor atau kode) ikut tersimpan di riwayat ini sampai kamu menghapusnya. Salinan yang ditandai "sensitif" oleh aplikasi pengirimnya (misalnya pengelola password di Android 13 ke atas) tidak disimpan. Kamu bisa menghapus satu item lewat tombol ✕ atau semuanya lewat "Hapus semua" di panel clipboard. Riwayat clipboard terpisah dari saran kata dan tidak pernah dipakai untuk belajar kata.
+## Papan Klip (Riwayat Clipboard)
+Aplikasi menampilkan papan klip supaya kamu bisa menempel ulang teks yang pernah disalin. Teks disimpan **apa adanya, pendek maupun panjang** (maksimal 20.000 karakter per item), secara lokal di perangkat: hingga 15 klip terbaru dan 15 klip yang kamu sematkan.
+
+- Klip yang **tidak disematkan dihapus otomatis setelah 1 jam**. Klip yang kamu sematkan (tahan sebuah klip) tetap ada sampai kamu menghapusnya.
+- Teks yang kamu salin (termasuk angka seperti nomor atau kode) ikut tersimpan selama itu. Salinan yang ditandai "sensitif" oleh aplikasi pengirimnya (misalnya pengelola password di Android 13 ke atas) tidak disimpan.
+- Kamu bisa mematikan penyimpanan lewat sakelar di kanan atas papan klip, menghapus satu klip lewat ikon pensil, atau menghapus semuanya lewat pengaturan/hapus data aplikasi.
+- Salinan terbaru juga muncul sebagai satu chip di bar saran selama sekitar 1 menit (hanya di memori, tidak ditulis otomatis ke kolom teks).
+- Riwayat ini terpisah dari saran kata dan tidak pernah dipakai untuk belajar kata.
 
 ## Pengaturan
-Preferensi seperti tema, bahasa, dan ukuran huruf disimpan lokal di perangkat.
+Hal-hal berikut disimpan lokal di perangkat supaya pengaturanmu tidak hilang: tema, bahasa yang dipilih, ukuran huruf, **ukuran dan posisi keyboard** (menu Ubah ukuran), pilihan tombol yang kamu tampilkan/sembunyikan di kisi alat, saklar koreksi otomatis / huruf besar otomatis / saran kata, daftar kata yang kamu sembunyikan dari saran, dan **32 emoji yang terakhir dipakai**.
+
+## Tombol Bagikan
+Tombol "Bagikan" hanya membuka lembar bagikan Android dengan satu kalimat tetap tentang aplikasi ini. Aplikasi tidak mengirim data apa pun sendiri; kamu yang memilih tujuan pengiriman.
+
+## Emoji, GIF, dan Stiker
+Semua emoji, stiker-emoji, dan emotikon berasal dari data di dalam aplikasi. Aplikasi tidak mengunduh GIF atau stiker dari internet.
 
 ## Menghapus Data
 Semua data di atas tersimpan di penyimpanan lokal aplikasi. Untuk menghapusnya, buka Pengaturan Android → Aplikasi → Guitarwiter → Penyimpanan → **Hapus data**, atau cukup copot pemasangan Aplikasi. Karena tidak ada yang dikirim ke server, tidak ada salinan lain yang perlu dihapus.
