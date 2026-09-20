@@ -9,6 +9,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.PersistableBundle;
 import android.text.InputType;
+import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
@@ -159,12 +160,11 @@ public class HtmlKeyboardService extends InputMethodService {
         privateField = isPrivateField(info);
         selectionActive = info != null && info.initialSelStart != info.initialSelEnd
                 && info.initialSelStart >= 0 && info.initialSelEnd >= 0;
-        // Kolom teks biasa yang meminta kapitalisasi (kalimat/kata/semua huruf) -> boleh huruf besar otomatis.
+        // Huruf besar otomatis HANYA di awal kalimat / awal kolom (bukan tiap kata / semua huruf):
+        // kolom teks biasa yang meminta kapitalisasi awal kalimat.
         capsPolicy = info != null && !privateField
                 && (info.inputType & InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT
-                && (info.inputType & (InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
-                        | InputType.TYPE_TEXT_FLAG_CAP_WORDS
-                        | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES)) != 0;
+                && (info.inputType & InputType.TYPE_TEXT_FLAG_CAP_SENTENCES) != 0;
         if (webView != null) {
             webView.evaluateJavascript(
                     "window.onSelectionChanged && window.onSelectionChanged(" + selectionActive + ")", null);
@@ -188,7 +188,7 @@ public class HtmlKeyboardService extends InputMethodService {
         EditorInfo ei = getCurrentInputEditorInfo();
         int m = 0;
         if (capsPolicy && ic != null && ei != null) {
-            m = ic.getCursorCapsMode(ei.inputType);
+            m = ic.getCursorCapsMode(TextUtils.CAP_MODE_SENTENCES);   // hanya awal kalimat
         }
         capsMode = m;
         webView.evaluateJavascript(
