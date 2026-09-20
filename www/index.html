@@ -416,7 +416,30 @@
   body.hide-tags .key .tag, body.hide-tags .emoji-btn .tag{ display:none; }
 
   /* ---- Panel alat (muncul saat ikon grid ditekan; menggantikan area tuts) ---- */
-  .tool-panel{ display:none; padding:14px 14px 16px; background:var(--kb-bg); }
+  .tool-panel{ display:none; padding:14px 0 10px; background:var(--kb-bg); }
+  .tool-pages{ display:flex; overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:none; -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain; }
+  .tool-pages::-webkit-scrollbar{ display:none; }
+  .tool-page{ flex:0 0 100%; scroll-snap-align:start; min-width:0; padding:0 14px; box-sizing:border-box; }
+  .tool-foot{ display:grid; grid-template-columns:1fr auto 1fr; align-items:center; margin-top:12px; padding:0 14px; }
+  .tool-dots{ display:flex; gap:6px; grid-column:2; }
+  .tool-dots i{ width:6px; height:6px; border-radius:50%; background:var(--bar-icon-dim); }
+  .tool-dots i.on{ background:var(--bar-icon); }
+  .tool-hint{ grid-column:1; font-size:.72rem; color:var(--key-tag); }
+  .tool-edit{
+    grid-column:3; justify-self:end; display:flex; align-items:center; justify-content:center;
+    width:72px; height:32px; border-radius:999px; border:1.5px solid var(--bar-icon-dim); background:none;
+    color:var(--bar-icon); cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .tool-edit svg{ width:18px; height:18px; fill:currentColor; }
+  .tool-edit:active{ background:rgba(255,255,255,.1); }
+  /* item yang disembunyikan lewat pensil: hilang, kecuali saat mode sesuaikan (tampil pudar) */
+  .tool-hidden{ display:none !important; }
+  .editing .tool-hidden{ display:flex !important; opacity:.35; }
+  .editing [data-tool]{ outline:1.5px dashed var(--bar-icon-dim); outline-offset:-2px; }
+  .lp-txt{ display:flex; flex-direction:column; line-height:1.2; min-width:0; flex:1 1 auto; overflow:hidden; }
+  .lp-txt small{ font-size:.68rem; opacity:.65; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lang-row .lang-pick{ height:auto; min-height:48px; padding-top:4px; padding-bottom:4px; min-width:0; overflow:hidden; }
+  .lang-row .lang-pick .lang-tag{ flex:0 0 auto; }
   .tool-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .tool-pill{
     display:flex; align-items:center; gap:8px; min-width:0; height:42px; padding:0 12px;
@@ -500,23 +523,38 @@
     <div class="bar-center">
       <div class="suggest-bar" id="suggestBar"></div>
       <div class="gboard-toolbar" id="gboardToolbar" style="display:none;">
-        <button class="gtool-btn dim" id="stickerBtn" type="button" title="Stiker (belum tersedia)" aria-disabled="true"><span data-icon="sticker"></span></button>
-        <button class="gtool-btn gtool-gif has-gif" id="gifBtn" type="button" title="GIF">GIF</button>
-        <button class="gtool-btn" id="settingsBtn" type="button" title="Setelan"><span data-icon="gear"></span></button>
-        <button class="gtool-btn" id="translateBtn" type="button" title="Terjemahkan"><span data-icon="translate"></span></button>
-        <button class="gtool-btn" id="themeBtn" type="button" title="Tema"><span data-icon="palette"></span></button>
+        <button class="gtool-btn dim" id="stickerBtn" data-tool="sticker" type="button" title="Stiker (belum tersedia)" aria-disabled="true"><span data-icon="sticker"></span></button>
+        <button class="gtool-btn gtool-gif has-gif" id="gifBtn" data-tool="gif" type="button" title="GIF">GIF</button>
+        <button class="gtool-btn" id="settingsBtn" data-tool="gear" type="button" title="Setelan"><span data-icon="gear"></span></button>
+        <button class="gtool-btn" id="translateBtn" data-tool="translate" type="button" title="Terjemahkan"><span data-icon="translate"></span></button>
+        <button class="gtool-btn" id="themeBtn" data-tool="theme" type="button" title="Tema"><span data-icon="palette"></span></button>
       </div>
     </div>
     <button class="gb-side gb-mic" id="micToolBtn" type="button" title="Dengarkan gitar (otomatis aktif)" aria-label="Mic gitar"><span class="gb-circle" data-icon="mic"></span></button>
   </div>
   <div class="tool-panel" id="toolPanel">
-    <div class="tool-grid">
-      <button class="tool-pill" id="clipboardBtn" type="button"><span data-icon="clipboard"></span><span class="lbl">Papan klip</span><span class="chev" data-icon="chev"></span></button>
-      <button class="tool-pill" id="emojiToolBtn" type="button"><span data-icon="emoji"></span><span class="lbl">Emoji</span><span class="chev" data-icon="chev"></span></button>
-      <button class="tool-pill" id="oneHandBtn" type="button"><span data-icon="onehand"></span><span class="lbl">Satu tangan</span></button>
-      <button class="tool-pill" id="langBtn" type="button"><span data-icon="globe"></span><span class="lbl">Bahasa</span><span class="pill-tag" id="langBtnTag">ID</span><span class="chev" data-icon="chev"></span></button>
-      <button class="tool-pill" id="sizeBtn" type="button"><span data-icon="resize"></span><span class="lbl">Ubah ukuran</span></button>
-      <button class="tool-pill" id="noteTagBtn" type="button"><span data-icon="keyboard"></span><span class="lbl">Label nada</span></button>
+    <div class="tool-pages" id="toolPages">
+      <div class="tool-page"><div class="tool-grid">
+        <button class="tool-pill" id="clipboardBtn" data-tool="clip" type="button"><span data-icon="clipboard"></span><span class="lbl">Papan klip</span><span class="chev" data-icon="chev"></span></button>
+        <button class="tool-pill" id="emojiToolBtn" data-tool="emoji" type="button"><span data-icon="emoji"></span><span class="lbl">Emoji</span><span class="chev" data-icon="chev"></span></button>
+        <button class="tool-pill" id="oneHandBtn" data-tool="onehand" type="button"><span data-icon="onehand"></span><span class="lbl">Satu tangan</span></button>
+        <button class="tool-pill" id="langBtn" data-tool="lang" type="button"><span data-icon="globe"></span><span class="lbl">Bahasa</span><span class="pill-tag" id="langBtnTag">ID</span><span class="chev" data-icon="chev"></span></button>
+        <button class="tool-pill" id="sizeBtn" data-tool="size" type="button"><span data-icon="resize"></span><span class="lbl">Ubah ukuran</span></button>
+        <button class="tool-pill" id="noteTagBtn" data-tool="tags" type="button"><span data-icon="keyboard"></span><span class="lbl">Label nada</span></button>
+      </div></div>
+      <div class="tool-page"><div class="tool-grid">
+        <button class="tool-pill" id="autoCorrectBtn" data-tool="ac" title="Koreksi otomatis" type="button"><span data-icon="spell"></span><span class="lbl">Koreksi</span></button>
+        <button class="tool-pill" id="autoCapsBtn" data-tool="caps" title="Huruf besar otomatis" type="button"><span data-icon="shift"></span><span class="lbl">Kapital</span></button>
+        <button class="tool-pill" id="suggestBtn" data-tool="suggest" type="button"><span data-icon="check"></span><span class="lbl">Saran kata</span></button>
+        <button class="tool-pill" id="shareBtn" data-tool="share" type="button"><span data-icon="share"></span><span class="lbl">Bagikan</span></button>
+        <button class="tool-pill" id="settingsPill" data-tool="settings2" type="button"><span data-icon="gear"></span><span class="lbl">Setelan</span></button>
+        <button class="tool-pill" id="resetDictBtn" data-tool="reset" title="Hapus kamus pribadi" type="button"><span data-icon="trash"></span><span class="lbl">Reset kamus</span></button>
+      </div></div>
+    </div>
+    <div class="tool-foot">
+      <span class="tool-hint" id="toolHint"></span>
+      <div class="tool-dots" id="toolDots"><i class="on"></i><i></i></div>
+      <button class="tool-edit" id="toolEditBtn" type="button" title="Sesuaikan item"><span data-icon="pencil"></span></button>
     </div>
   </div>
   <div class="lang-panel" id="langPanel"></div>
@@ -592,6 +630,10 @@
     keyboard:  _svg('<path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/>'),
     globe:     _svg('<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><ellipse cx="12" cy="12" rx="4" ry="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 12h18" fill="none" stroke="currentColor" stroke-width="2"/>'),
     chev:      _svg('<path d="M9 6l6 6-6 6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'),
+    share:     _svg('<path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/>'),
+    trash:     _svg('<path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>'),
+    pencil:    _svg('<path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>'),
+    spell:     _svg('<path d="M12.45 16h2.09L9.43 3H7.57L2.46 16h2.09l1.12-3h5.64l1.14 3zm-6.02-5L8.5 5.48 10.57 11H6.43zm15.16.59l-8.09 8.09L9.83 16l-1.41 1.41 5.09 5.09L23 13l-1.41-1.41z"/>'),
     check:     _svg('<path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/>'),
     shift:     _svg('<path d="M12 4 3.8 13H9v5h6v-5h5.2z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path class="caps-bar" d="M9 21h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>', 'ic-shift'),
     backspace: _svg('<path d="M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H7.07L2.4 12l4.66-7H22v14zm-11.59-2L14 13.41 17.59 17 19 15.59 15.41 12 19 8.41 17.59 7 14 10.59 10.41 7 9 8.41 12.59 12 9 15.59z"/>'),
@@ -819,7 +861,40 @@
     requestAnimationFrame(()=>{ suggestScheduled = false; updateAutoCapsLocal(); renderSuggestions(); });
   }
   function appendText(str){
-    if(selectionActive){ resetTrackedText(); selectionActive = false; }   // ketikan menggantikan blok biru
+    if(selectionActive){ if(isComposing()) abortCompose(); resetTrackedText(); selectionActive = false; }   // ketikan menggantikan blok biru
+    const SL = scriptLang();
+    if(SL && mode === 'letters'){
+      // Huruf latin (dan tanda khusus bahasa itu, mis. ' untuk ь) disusun jadi huruf bahasa tsb.
+      if(/^[a-zA-Z]$/.test(str) || (isComposing() && SL.extraKeys && str.length === 1 && SL.extraKeys.indexOf(str) >= 0)){
+        lastAutoCorrect = null;
+        composeLetter(str);
+        return;
+      }
+      if(isComposing()){
+        if(str === ' ' && SL.noSpace){                     // Jepang: spasi = pilih kanji pertama (kalau ada)
+          const cv = SL.conv && SL.conv[composeOut];
+          if(cv && cv.length){ setComposeOut(cv[0]); finishCompose(true, true); }
+          else finishCompose(true);
+          return;
+        }
+        finishCompose(true);
+      }
+      if(SL.punct && SL.punct[str]) str = SL.punct[str];   // tanda baca khas bahasa (، ؟ 。 ।)
+    } else if(isComposing()){
+      finishCompose(true);
+    }
+    lastAutoCorrect = null;
+    let didAC = null;
+    if(str.length === 1 && AC_TRIGGERS.has(str)){
+      const ac = tryAutoCorrect();
+      if(ac){
+        bridgeDeleteBackwardN(ac.word.length);
+        bridgeCommit(ac.fixed);
+        text = text.slice(0, ac.start) + ac.fixed + text.slice(ac.end);
+        cursorPos = ac.start + ac.fixed.length;
+        didAC = { orig: ac.word, fixed: ac.fixed, trigger: str };
+      }
+    }
     if(WORD_BOUNDARY_RE.test(str)){
       const { word } = getCurrentWordRange();
       if(word) learnWord(word);
@@ -828,10 +903,25 @@
     cursorPos += str.length;
     trimTrackedText();
     bridgeCommit(str);
+    if(didAC){ didAC.cursor = cursorPos; lastAutoCorrect = didAC; }   // ketuk hapus SEKALI lagi = urungkan koreksi
     scheduleSuggestions();
     if(document.getElementById('translatePanel').style.display==='flex') updateTranslatePreview();
   }
   function backspace(){
+    if(isComposing()){ lastAutoCorrect = null; composeBackspace(); return; }
+    if(lastAutoCorrect && cursorPos === lastAutoCorrect.cursor && !selectionActive){
+      // Urungkan koreksi otomatis: kembalikan kata persis seperti yang kamu ketik.
+      const ac = lastAutoCorrect; lastAutoCorrect = null;
+      const n = ac.fixed.length + ac.trigger.length;
+      bridgeDeleteBackwardN(n);
+      bridgeCommit(ac.orig);
+      text = text.slice(0, cursorPos - n) + ac.orig + text.slice(cursorPos);
+      cursorPos = cursorPos - n + ac.orig.length;
+      learnWord(ac.orig);            // kamu memang mau kata ini -> jangan dikoreksi lagi
+      scheduleSuggestions();
+      return;
+    }
+    lastAutoCorrect = null;
     // Selalu diteruskan ke Android, walau pelacak lokal kosong: kolom bisa berisi teks yang
     // BUKAN diketik lewat keyboard ini, dan bisa ada teks terseleksi (blok biru). Java yang
     // memutuskan: ada seleksi -> seluruh blok terhapus sekali ketuk; tidak ada -> 1 karakter.
@@ -847,6 +937,8 @@
     if(document.getElementById('translatePanel').style.display==='flex') updateTranslatePreview();
   }
   function pressEnter(){
+    if(isComposing()) finishCompose(true);
+    lastAutoCorrect = null;
     const { word } = getCurrentWordRange();
     if(word) learnWord(word);
     // Panggil sendEnter() dulu (bisa memicu tombol Kirim/Cari sesuai kolom aktif),
@@ -949,6 +1041,207 @@
     su:{ name:'Basa Sunda', tag:'SU', starters:['Abdi','Wilujeng','Nuhun'], fill:['teu','jeung','di'], nx:{},
       w:`abdi anjeun manéh urang kuring henteu teu enya muhun atuh geus tos acan keur badé hoyong aya di jeung atawa tapi sabab lamun ieu éta naon kumaha naha iraha mana saha nuhun hatur punten wilujeng énjing siang sonten wengi mangga tulung alus goréng ageung alit seueur saeutik kabéh poé bulan taun waktu ayeuna engké kamari isukan imah sakola gawé dahar nginum sare indit datang ngadagoan gancang lalaunan kaulinan nyanyi gitar musik lagu`},
   };
+  // ---- Kamus tambahan (urutan = makin bawah makin jarang dipakai). Kata ganda otomatis dibuang. ----
+  LANGS.id.w += ` halo oke ok hai hehe yaudah ya nggak gak ngga banget bgt dong deh sih kok kan nih tuh wkwk membantu membaca menulis mengerjakan mengajar memasak menonton mendengarkan berbicara bertanya menjawab menjelaskan menyimpan menghapus mengubah menambah mengurangi memilih memutuskan mencoba mencapai memulai menyelesaikan melanjutkan menghentikan menyukai mencintai merindukan menyayangi membenci menghargai menghormati mempercayai mengharapkan mengingat melupakan memikirkan merasakan mengalami menghadapi menemani mengantar menjemput mengundang menolak menyetujui menyarankan mengusulkan membahas membicarakan memberitahu mengabari menghubungi menelepon mengirimkan mengunduh mengunggah membagikan menyalakan mematikan menghidupkan mengenakan meminjam meminjamkan mengembalikan meletakkan menaruh memegang mengangkat menarik mendorong memotong memecahkan memperbaiki merusak membersihkan mencuci menyapu menggoreng merebus memanggang menyajikan menikmati berenang bersepeda berkendara bepergian berlibur berwisata berkumpul berkenalan berteman bernyanyi bermusik berlatih berlomba bertanding menang kalah berhasil gagal berusaha berdoa beribadah bersyukur bersabar berpikir bermimpi tertawa menangis tersenyum berteriak berbisik berbohong berjanji bertengkar berdamai memaafkan meminta terjadi terlihat terdengar terasa terbuka tertutup tertinggal terlambat tercepat terbaik terbesar terkecil tertentu tersedia terkenal terpaksa tersebut kehidupan pertemanan hubungan kebersamaan kemampuan kemauan keinginan keadaan kejadian kenyataan kebenaran keberanian kesabaran kejujuran kebaikan keindahan keselamatan keamanan kenyamanan kesedihan kemarahan ketakutan kekuatan kelemahan kecepatan ketepatan kesalahan kelebihan kekurangan perbedaan persamaan perubahan pertumbuhan pembangunan pengetahuan pengertian pemahaman pemikiran perasaan pendapat pandangan keputusan jawaban percakapan pembicaraan perkenalan perpisahan perayaan pesta acara kegiatan pertandingan perlombaan latihan pelajaran kewajiban hak tanggung jawab peraturan hukum keadilan kebebasan kemerdekaan pemerintah bangsa rakyat masyarakat warga penduduk pemimpin presiden menteri gubernur bupati walikota polisi tentara hakim jaksa pengacara perawat pelajar petani nelayan pedagang pembeli penjual pelanggan karyawan pegawai pekerja buruh pengusaha pemilik majikan tamu tuan tetangga sepupu keponakan paman bibi kakek nenek cucu menantu mertua ipar pacar kekasih kenalan rekan kamar dapur toilet halaman kebun taman gang jembatan terminal stasiun bandara pelabuhan warung restoran kafe hotel penginapan puskesmas apotek kampus perpustakaan pabrik bank masjid gereja pura vihara lapangan stadion bioskop mal danau pulau sawah ladang kabupaten provinsi benua meja kursi lemari kasur bantal selimut lampu kipas televisi radio komputer laptop ponsel kamera kacamata tas dompet sepatu sandal baju celana rok kaos kemeja jaket topi pisau sendok garpu piring gelas mangkuk botol panci wajan kompor kulkas sabun sampo sikat handuk cermin sisir buku pena pensil penghapus penggaris kertas amplop surat kartu koin kunci pintu jendela atap dinding lantai tangga soto bakso sate rendang gulai opor bebek udang cumi kepiting tahu tempe bayam kangkung wortel kentang tomat cabai bawang timun jagung singkong ubi pisang jeruk apel mangga jambu semangka melon nanas pepaya salak durian rambutan anggur stroberi kelapa santan merica kecap saus minyak tepung biskuit coklat permen es krim jus sirup cantik tampan ganteng lucu imut pintar bodoh rajin malas sopan kasar ramah galak jahat jujur berani kaya miskin tua muda bersih kotor rapi berantakan terang gelap ramai sepi gemuk kurus tebal tipis keras lembut halus basah kering hangat sejuk segar busuk harum wangi asam gurih hambar ngantuk sibuk santai bingung yakin ragu malu bangga kecewa puas gembira bahagia cemas khawatir tenang gelisah kesal sebal jengkel kaget heran subuh senin selasa rabu kamis jumat sabtu januari februari maret april mei juni juli agustus september oktober november desember lusa dulu kelak segera sebentar sebelas seratus seribu sejuta ketiga setengah seperempat separuh sebagian beberapa internet wifi sinyal kuota paket pulsa akun sandi masuk daftar unduh unggah balas komentar bagikan ikuti unggahan cerita status grup obrolan panggilan suara notifikasi pengaturan layar tombol simbol emoji stiker tema baterai pengisi kabel colokan memori penyimpanan galeri film game hiburan sebetulnya sesungguhnya tentunya biasanya barangkali rupanya ternyata katanya menurut mengenai tentang terhadap kepada daripada sesudah sebelumnya selanjutnya sementara selama sepanjang seluruh masing-masing tanpa demi hingga sejak semenjak seraya sebab akibat melainkan padahal andaikan seandainya apabila bila asalkan guna banget bgt aja doang lah loh yah yaa ok mantul gaskeun gas santuy baper galau gabut mager kepo bucin caper alay lebay receh kuy hayuk cus otw wkwk kwkw hihi huhu anjir anjay wih waduh yaampun masyaallah alhamdulillah insyaallah subhanallah bismillah amin aamiin assalamualaikum waalaikumsalam dadah babay bye hai hallo datang ulang tahun hari raya makasih thanks sorry please nggak nggih inggih monggo ngapain dimana kemana beliau kalian gue lu lo elo engkau kau nol bass drum piano biola seruling gitaris penyanyi band lirik melodi harmoni kunci petikan genjrengan fret kapo capo tuning stem bersama-sama sama-sama terus-menerus apa-apa siapa-siapa kadang-kadang hati-hati pelan-pelan cepat-cepat tiba-tiba mungkin sekali lagi tolong bantu terima kasih kembali sampai jumpa lagi sukses selalu semangat ya jaga kesehatan kabar baik kabar buruk hati hati di jalan sudah sampai belum ada apa kenapa nggak jadi kapan kapan kita ketemu`;
+  LANGS.en.w += ` accept add agree allow appear arrive attack avoid become belong borrow break build burn carry catch cause check choose clean climb collect compare complete consider continue control copy cost count cover create cross cry cut dance decide describe design destroy develop die discover discuss divide draw dream drive drop earn enjoy enter escape exist expect explain fall fight fill finish fit fix fly forget forgive gather grow guess handle hang hide hit hold hope hurry imagine improve include increase introduce invite join jump kick kill kiss knock laugh lead lend lie lift listen lose manage mark matter mean measure mention mind miss mix notice offer order pack paint pass perform pick plan plant pour practice prefer prepare press prevent produce promise protect prove pull push reach realize recognize record reduce refuse relax remain remember remove repeat reply report require rest return ride ring rise roll rule save search seem separate serve settle share shoot shout sing skip smile solve sound speak spend spread stay steal stick study succeed suggest supply support suppose surprise survive swim teach throw touch train travel trust understand visit vote wake warn wash waste wear wish win wonder worry ability accident account action activity address adult advice afternoon age air airport animal answer apartment area arm army art baby bag ball bank bath beach bed beer bike bird birthday blood boat body bone book boss bottle box boy brain bread breakfast bridge brother building business bus butter button cake camera car card care case cat chair chance chicken chocolate church circle class clock cloth clothes cloud club coat coffee college color company computer condition contact conversation cook corner course cousin cup customer dad daughter death decision desk dinner direction doctor dog door dollar dress driver ear earth egg energy engine evening event exam example exercise eye face fact factory farm fear feeling field film finger fire fish flower foot forest form front fruit future game garden gift girl glass gold government grass ground guest gun hair hand head health heart heat height history hole holiday horse hospital hotel husband ice idea image information insect island job joke key kid king kitchen knee knife lady lake land law leader leg lesson letter library light line lip list lunch machine magazine map market marriage meal meat medicine meeting member memory middle milk mirror moment money moon mountain mouth movie neck news newspaper noise nose nurse ocean oil onion orange page pain paper parent park party passport path peace pen pencil pepper person piano picture piece pig pilot pink plane plate player pocket police pool potato power price prize problem program question rabbit race radio rain rate reason restaurant result rice river road rock roof room rose salt sand science sea season seat secret shirt shoe shop shoulder sign silver singer size skin sky smoke snow soap society sock soldier son sound soup space speech sport spring square stage star station stone store storm story street student subject sugar summer supper table tail tea team temperature tennis tent thought throat ticket tiger toe tomato tooth top tower town toy tree trip truck trouble uncle university valley village voice wall wave weather wedding weight wife wind window wine winter wood yard youth zoo able afraid alive amazing bitter black blue boring brave bright broken brown careful cheap clever comfortable common crazy cute dangerous dark dead deep different difficult dirty dry empty enough excellent expensive fair famous fat favorite fine flat foreign fresh full funny general gentle glad gray green healthy heavy helpful honest hot huge hungry interesting kind large lazy local lonely loud lovely lucky modern narrow nervous noisy normal patient perfect plain pleasant polite poor popular possible powerful proud public quick quiet real red rich ripe round safe serious sharp shy sick silent silly simple smart smooth soft sour special strange strong sudden sweet tall tasty terrible thick thin tiny tough true ugly unusual useful usual warm weak wet white whole wide wild wise wonderful wrong yellow absolutely accidentally finally simply suddenly usually easily quickly slowly carefully quietly happily especially certainly exactly generally recently seriously directly currently nearly hardly barely mostly rarely often sometimes almost either neither instead otherwise anyway anymore apart ahead abroad nowhere anywhere everywhere somewhere although beyond except inside near onto outside past since through throughout till toward under unlike upon within according against along among around behind below beneath beside besides despite following minus plus regarding versus whereas whether whose whom whatever whenever wherever whoever lol omg btw brb idk imo thx pls yeah yep nope bye goodbye goodnight wow oops cheers congrats welcome chord fret tune tuning pick strum riff solo bass drum violin band lyrics melody rhythm harmony scale capo amplifier concert album track playlist website online offline email password username account login logout download upload install delete save paste share notification setting settings screen button mouse battery charger cable wifi bluetooth photo audio volume speaker microphone application software hardware file folder document link browser server network cloud midnight noon monday tuesday wednesday thursday friday saturday sunday january february march april june july august september october november december autumn zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy eighty ninety hundred thousand million billion first second third fourth fifth half quarter double i'm i've i'll i'd you're you've you'll you'd he's she's it's we're we've we'll they're they've they'll don't doesn't didn't won't wouldn't can't couldn't shouldn't isn't aren't wasn't weren't hasn't haven't hadn't let's that's there's what's who's how's here's where's good morning good night see you later talk to you soon thank you so much no problem of course sounds good`;
+  // Tambahan ringan untuk bahasa lain (kata umum sehari-hari)
+  LANGS.es.w += ` amor vida noche día semana mes año hora minuto momento verdad problema pregunta respuesta ejemplo persona gente hombre mujer niño niña padre madre hijo hermano amigo familia casa ciudad país mundo trabajo dinero comida agua café cerveza vino pan carne pescado fruta verde rojo azul blanco negro grande pequeño bueno malo nuevo viejo joven mejor peor mucho poco todo nada algo alguien nadie siempre nunca quizás también tampoco entonces mientras aunque cuando después antes hoy mañana ayer temprano tarde cerca lejos arriba abajo dentro fuera derecha izquierda primero segundo último importante posible necesario difícil fácil feliz triste cansado enfermo listo`;
+  LANGS.pt.w += ` amor vida noite dia semana mês ano hora minuto momento verdade problema pergunta resposta exemplo pessoa gente homem mulher menino menina pai mãe filho irmão amigo família casa cidade país mundo trabalho dinheiro comida água café cerveja vinho pão carne peixe fruta verde vermelho azul branco preto grande pequeno bom mau novo velho jovem melhor pior muito pouco tudo nada algo alguém ninguém sempre nunca talvez também então enquanto embora antes cedo tarde perto longe acima abaixo dentro fora direita esquerda primeiro segundo último importante possível necessário difícil fácil feliz triste cansado doente pronto`;
+  LANGS.fr.w += ` amour vie nuit jour semaine mois année heure minute moment vérité problème question réponse exemple personne gens homme femme garçon fille père mère frère ami famille ville pays monde argent nourriture eau café bière vin pain viande poisson fruit vert rouge bleu blanc noir grand petit bon mauvais nouveau vieux jeune meilleur pire beaucoup peu rien quelque quelqu'un personne toujours jamais peut-être aussi alors pendant avant tôt tard près loin dessus dessous dedans dehors droite gauche premier deuxième dernier important possible nécessaire difficile facile heureux triste fatigué malade prêt`;
+  LANGS.de.w += ` liebe leben nacht woche monat jahr stunde minute moment wahrheit problem frage antwort beispiel person leute mann frau junge mädchen vater mutter kind bruder stadt geld essen wasser kaffee bier wein brot fleisch fisch obst grün rot blau weiß schwarz groß klein neu alt jung besser mehr wenig alles nichts etwas jemand niemand vielleicht auch dann während bevor früh spät nah weit oben unten drinnen draußen rechts links erste zweite letzte wichtig möglich notwendig schwierig einfach glücklich traurig müde krank bereit`;
+  LANGS.it.w += ` amore vita notte giorno settimana mese anno ora minuto momento verità problema domanda risposta esempio persona gente uomo donna ragazzo ragazza padre madre figlio fratello famiglia città paese soldi cibo acqua caffè birra vino pane carne pesce frutta verde rosso blu bianco nero grande piccolo buono cattivo nuovo vecchio giovane migliore peggiore molto poco niente qualcosa qualcuno nessuno sempre mai forse anche allora mentre prima presto tardi vicino lontano sopra sotto dentro fuori destra sinistra primo secondo ultimo importante possibile necessario difficile facile felice triste stanco malato pronto`;
+  LANGS.nl.w += ` liefde leven nacht dag week maand jaar uur minuut moment waarheid probleem vraag antwoord voorbeeld persoon mensen man vrouw jongen meisje vader kind broer familie geld eten water koffie bier wijn brood vlees vis fruit groen rood blauw wit zwart groot klein nieuw oud jong beter meer weinig alles niets iets iemand niemand misschien ook toen terwijl voor vroeg laat dichtbij ver boven onder binnen buiten rechts links eerste tweede laatste belangrijk mogelijk nodig moeilijk makkelijk blij verdrietig moe ziek klaar`;
+  LANGS.ms.w += ` cinta hidup malam siang minggu bulan tahun jam minit saat kebenaran masalah soalan jawapan contoh orang lelaki perempuan budak bapa ibu anak abang kakak adik keluarga bandar negara dunia duit makanan air kopi teh roti daging ikan buah hijau merah biru putih hitam baru lama muda lebih kurang semua tiada sesuatu seseorang mungkin juga kemudian semasa sebelum awal lewat dekat jauh atas bawah dalam luar kanan kiri pertama kedua terakhir penting boleh perlu susah senang gembira sedih penat sakit sedia`;
+  LANGS.tr.w += ` aşk hayat gece gün hafta ay yıl saat dakika an gerçek sorun soru cevap örnek kişi insanlar adam kadın çocuk kız baba anne oğul kardeş aile şehir para yemek su kahve bira şarap ekmek et balık meyve yeşil kırmızı mavi beyaz siyah büyük küçük yeni eski genç daha az hepsi hiçbir şey biri kimse belki de sonra sırasında önce erken geç yakın uzak üst alt iç dış sağ sol birinci ikinci son önemli mümkün gerekli zor kolay mutlu üzgün yorgun hasta hazır`;
+
+  // ---------------- Bahasa non-Latin: ketik HURUF LATIN, otomatis jadi huruf bahasa itu ----------------
+  // Cara kerjanya seperti keyboard "transliterasi" Gboard: tuts tetap QWERTY (jadi tetap nyambung ke
+  // nada gitar), tapi teks yang muncul di kolom adalah huruf Rusia/Arab/Jepang/dst. Selama masih
+  // diketik, teks berstatus "sedang disusun" (composing) sehingga bisa diganti lewat saran di bar atas.
+  function ruleTranslit(rules, opts){
+    opts = opts || {};
+    const keys = Object.keys(rules);
+    const maxLen = keys.reduce((m,k)=> Math.max(m, k.length), 1);
+    return function(buf, final){
+      let out = '', i = 0;
+      while(i < buf.length){
+        let matched = false;
+        for(let L = Math.min(maxLen, buf.length - i); L >= 1 && !matched; L--){
+          const seg = buf.substr(i, L);
+          let key = seg;
+          if(rules[key] === undefined) key = seg.toLowerCase();   // huruf besar tanpa aturan khusus = huruf kecilnya
+          if(rules[key] !== undefined){
+            let nat = rules[key];
+            if(!opts.caseSensitive){
+              const f = seg.charAt(0);
+              if(f !== f.toLowerCase()) nat = nat.charAt(0).toUpperCase() + nat.slice(1);   // "Sh" -> "Ш"
+            }
+            out += nat; i += L; matched = true;
+          }
+        }
+        if(!matched){ out += buf[i]; i++; }
+      }
+      return (final && opts.finalize) ? opts.finalize(out) : out;
+    };
+  }
+  const ruTranslit = ruleTranslit({ shch:'щ', sch:'щ', zh:'ж', kh:'х', ts:'ц', ch:'ч', sh:'ш', yo:'ё', yu:'ю', ya:'я', ye:'е', ju:'ю', ja:'я', jo:'ё',
+    a:'а', b:'б', v:'в', g:'г', d:'д', e:'е', z:'з', i:'и', j:'й', k:'к', l:'л', m:'м', n:'н', o:'о', p:'п', r:'р', s:'с', t:'т', u:'у', f:'ф', h:'х',
+    c:'ц', y:'ы', w:'в', x:'кс', q:'к', "'":'ь', '"':'ъ' });
+  const elTranslit = ruleTranslit({ th:'θ', ps:'ψ', ch:'χ', ou:'ου', ai:'αι', ei:'ει', oi:'οι', a:'α', b:'β', g:'γ', d:'δ', e:'ε', z:'ζ', h:'η', i:'ι',
+    k:'κ', l:'λ', m:'μ', n:'ν', x:'ξ', o:'ο', p:'π', r:'ρ', s:'σ', t:'τ', u:'υ', f:'φ', w:'ω', y:'υ', c:'κ', q:'κ', j:'ι' },
+    { finalize: s => s.replace(/σ$/, 'ς') });
+  const _heBase = ruleTranslit({ sh:'ש', ch:'ח', ts:'צ', tt:'ט', a:'א', b:'ב', g:'ג', d:'ד', h:'ה', v:'ו', w:'ו', z:'ז', x:'ח', t:'ת', y:'י', k:'כ',
+    l:'ל', m:'מ', n:'נ', s:'ס', e:'ע', p:'פ', f:'פ', c:'צ', q:'ק', r:'ר', i:'י', o:'ו', u:'ו' },
+    { finalize: s => s.replace(/כ$/, 'ך').replace(/מ$/, 'ם').replace(/נ$/, 'ן').replace(/פ$/, 'ף').replace(/צ$/, 'ץ') });
+  // Tulisan Ibrani umumnya tanpa vokal: a/e di tengah kata dilewati ("shalom" -> שלום), di awal kata tetap dihitung.
+  const heTranslit = (buf, final) => _heBase(buf.charAt(0) + buf.slice(1).replace(/[ae]/gi, ''), final);
+  // Arab: huruf besar = huruf "berat" (H ح, S ص, D ض, T ط, Z ظ, A ع). Huruf lain tidak peka besar-kecil.
+  const arTranslit = ruleTranslit({ sh:'ش', kh:'خ', th:'ث', dh:'ذ', gh:'غ', ch:'تش', a:'ا', b:'ب', t:'ت', j:'ج', d:'د', r:'ر', z:'ز', s:'س', f:'ف', q:'ق',
+    k:'ك', l:'ل', m:'م', n:'ن', h:'ه', w:'و', y:'ي', g:'ج', p:'ب', v:'ف', x:'خ', c:'ك', e:'ي', i:'ي', o:'و', u:'و',
+    H:'ح', S:'ص', D:'ض', T:'ط', Z:'ظ', A:'ع', E:'ع', "'":'ء' }, { caseSensitive:true });
+
+  // ---- Hindi (Devanagari) ----
+  const HI_C = { ksh:'क्ष', chh:'छ', kh:'ख', gh:'घ', ch:'च', jh:'झ', Th:'ठ', Dh:'ढ', th:'थ', dh:'ध', ph:'फ', bh:'भ', sh:'श', k:'क', g:'ग', c:'च', j:'ज',
+    T:'ट', D:'ड', N:'ण', t:'त', d:'द', n:'न', p:'प', f:'फ़', b:'ब', m:'म', y:'य', r:'र', l:'ल', v:'व', w:'व', s:'स', h:'ह', S:'ष', z:'ज़', q:'क़', x:'क्स', R:'ड़' };
+  const HI_V = { aa:['आ','ा'], ai:['ऐ','ै'], au:['औ','ौ'], ee:['ई','ी'], ii:['ई','ी'], oo:['ऊ','ू'], uu:['ऊ','ू'], ri:['ऋ','ृ'],
+    a:['अ',''], i:['इ','ि'], u:['उ','ु'], e:['ए','े'], o:['ओ','ो'], A:['आ','ा'], I:['ई','ी'], U:['ऊ','ू'], E:['ऐ','ै'], O:['औ','ौ'] };
+  const HI_X = { M:'ं', H:'ः', '~':'ँ' };
+  function hiTranslit(buf){
+    const toks = []; let i = 0;
+    while(i < buf.length){
+      let tok = null, used = 0;
+      for(let L = 3; L >= 1 && !tok; L--){
+        const s = buf.substr(i, L); if(s.length < L) continue;
+        for(const k of [s, s.toLowerCase()]){
+          if(HI_V[k]){ tok = { t:'v', d:HI_V[k] }; break; }
+          if(HI_C[k]){ tok = { t:'c', d:HI_C[k] }; break; }
+          if(HI_X[k]){ tok = { t:'x', d:HI_X[k] }; break; }
+        }
+        if(tok) used = L;
+      }
+      if(!tok){ toks.push({ t:'r', d:buf[i] }); i++; } else { toks.push(tok); i += used; }
+    }
+    let out = '', prev = null;
+    for(const tk of toks){
+      if(tk.t === 'c'){ if(prev === 'c') out += '्'; out += tk.d; prev = 'c'; }      // konsonan + konsonan -> virama
+      else if(tk.t === 'v'){ out += (prev === 'c') ? tk.d[1] : tk.d[0]; prev = 'v'; } // matra / vokal mandiri
+      else if(tk.t === 'x'){ out += tk.d; prev = 'x'; }
+      else { out += tk.d; prev = 'r'; }
+    }
+    return out;
+  }
+
+  // ---- Korea (Hangul): romaja -> jamo -> suku kata ----
+  const KO_L = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+  const KO_C = { kk:[1,2], tt:[4,-1], pp:[8,-1], ss:[10,20], jj:[13,-1], ch:[14,23], ng:[11,21], g:[0,1], n:[2,4], d:[3,7], r:[5,8], l:[5,8],
+    m:[6,16], b:[7,17], s:[9,19], j:[12,22], k:[15,24], t:[16,25], p:[17,26], h:[18,27] };
+  const KO_VW = { yae:3, yeo:6, wae:10, eu:18, ae:1, ya:2, eo:4, ye:7, wa:9, oe:11, yo:12, wo:14, we:15, wi:16, yu:17, ui:19, a:0, e:5, o:8, u:13, i:20 };
+  const KO_V = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
+  function koTranslit(buf){
+    const b = buf.toLowerCase(), jam = []; let i = 0;
+    while(i < b.length){
+      let done = false;
+      for(let L = 3; L >= 1 && !done; L--){
+        const s = b.substr(i, L); if(s.length < L) continue;
+        if(KO_VW[s] !== undefined){ jam.push({ v:KO_VW[s] }); i += L; done = true; }
+        else if(KO_C[s] !== undefined){ jam.push({ c:KO_C[s] }); i += L; done = true; }
+      }
+      if(!done){ if(b[i] !== "'") jam.push({ raw:b[i] }); i++; }   // apostrof = pemisah (n'g = ㄴ+ㄱ, bukan ng)
+    }
+    let out = '', L = null, V = null, T = null, TL = null;
+    const flush = ()=>{
+      if(L === null && V === null) return;
+      if(V !== null) out += String.fromCharCode(0xAC00 + ((L === null ? 11 : L) * 21 + V) * 28 + (T === null ? 0 : T));
+      else out += KO_L[L];
+      L = V = T = TL = null;
+    };
+    for(const j of jam){
+      if(j.raw !== undefined){ flush(); out += j.raw; continue; }
+      if(j.v !== undefined){
+        if(T === 21){ flush(); V = j.v; }                                           // ㅇ (ng) tetap final: sarang+i = 사랑이
+        else if(T !== null){ const l = TL; T = null; flush(); L = l; V = j.v; }    // final lain pindah jadi awal suku kata berikut
+        else if(L !== null && V === null){ V = j.v; }
+        else if(V !== null){ flush(); V = j.v; }                                   // vokal beruntun -> awalan ㅇ
+        else { V = j.v; }
+      } else {
+        const l = j.c[0], t = j.c[1];
+        if(L === null && V === null){ L = l; }
+        else if(L !== null && V === null){ flush(); L = l; }
+        else if(T === null){ if(t >= 0){ T = t; TL = l; } else { flush(); L = l; } }
+        else { flush(); L = l; }
+      }
+    }
+    flush();
+    return out;
+  }
+
+  // ---- Jepang (Hiragana) + kandidat Katakana / Kanji dari kamus mini ----
+  const JA_ROMA = { a:'あ',i:'い',u:'う',e:'え',o:'お', ka:'か',ki:'き',ku:'く',ke:'け',ko:'こ', ga:'が',gi:'ぎ',gu:'ぐ',ge:'げ',go:'ご',
+    sa:'さ',shi:'し',si:'し',su:'す',se:'せ',so:'そ', za:'ざ',ji:'じ',zi:'じ',zu:'ず',ze:'ぜ',zo:'ぞ', ta:'た',chi:'ち',ti:'ち',tsu:'つ',tu:'つ',te:'て',to:'と',
+    da:'だ',di:'ぢ',du:'づ',de:'で',do:'ど', na:'な',ni:'に',nu:'ぬ',ne:'ね',no:'の', ha:'は',hi:'ひ',fu:'ふ',hu:'ふ',he:'へ',ho:'ほ',
+    ba:'ば',bi:'び',bu:'ぶ',be:'べ',bo:'ぼ', pa:'ぱ',pi:'ぴ',pu:'ぷ',pe:'ぺ',po:'ぽ', ma:'ま',mi:'み',mu:'む',me:'め',mo:'も', ya:'や',yu:'ゆ',yo:'よ',
+    ra:'ら',ri:'り',ru:'る',re:'れ',ro:'ろ', wa:'わ',wo:'を', kya:'きゃ',kyu:'きゅ',kyo:'きょ', gya:'ぎゃ',gyu:'ぎゅ',gyo:'ぎょ',
+    sha:'しゃ',shu:'しゅ',sho:'しょ',sya:'しゃ',syu:'しゅ',syo:'しょ', ja_:'', jya:'じゃ',jyu:'じゅ',jyo:'じょ', cha:'ちゃ',chu:'ちゅ',cho:'ちょ',
+    cya:'ちゃ',cyu:'ちゅ',cyo:'ちょ',tya:'ちゃ',tyu:'ちゅ',tyo:'ちょ', nya:'にゃ',nyu:'にゅ',nyo:'にょ', hya:'ひゃ',hyu:'ひゅ',hyo:'ひょ',
+    bya:'びゃ',byu:'びゅ',byo:'びょ', pya:'ぴゃ',pyu:'ぴゅ',pyo:'ぴょ', mya:'みゃ',myu:'みゅ',myo:'みょ', rya:'りゃ',ryu:'りゅ',ryo:'りょ',
+    fa:'ふぁ',fi:'ふぃ',fe:'ふぇ',fo:'ふぉ', '-':'ー' };
+  JA_ROMA.ja = 'じゃ'; JA_ROMA.ju = 'じゅ'; JA_ROMA.jo = 'じょ'; delete JA_ROMA.ja_;
+  function jaTranslit(buf, final){
+    const s = buf.toLowerCase(); let out = '', i = 0;
+    while(i < s.length){
+      const c = s[i], n = s[i+1];
+      if(c === 'n'){
+        if(n === 'n'){ const n2 = s[i+2]; if(n2 && /[aiueoy]/.test(n2)){ out += 'ん'; i++; } else { out += 'ん'; i += 2; } continue; }
+        if(n === "'"){ out += 'ん'; i += 2; continue; }
+        if(n === undefined){ out += final ? 'ん' : 'n'; i++; continue; }
+        if(!/[aiueoy]/.test(n)){ out += 'ん'; i++; continue; }
+      }
+      if(n !== undefined && c === n && /[bcdfghjklmpqrstvwxz]/.test(c)){ out += 'っ'; i++; continue; }
+      if(c === 't' && n === 'c' && s[i+2] === 'h'){ out += 'っ'; i++; continue; }
+      let m = false;
+      for(let L = 3; L >= 1 && !m; L--){
+        const seg = s.substr(i, L);
+        if(seg.length === L && JA_ROMA[seg] !== undefined){ out += JA_ROMA[seg]; i += L; m = true; }
+      }
+      if(!m){ out += buf[i]; i++; }
+    }
+    return out;
+  }
+  const hiraToKata = s => s.replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60));
+  const JA_CONV = { 'わたし':['私'], 'きょう':['今日'], 'あした':['明日'], 'きのう':['昨日'], 'にほん':['日本'], 'にほんご':['日本語'], 'えいご':['英語'],
+    'ともだち':['友達'], 'がっこう':['学校'], 'せんせい':['先生'], 'おんがく':['音楽'], 'うた':['歌'], 'あい':['愛'], 'すき':['好き'], 'だいすき':['大好き'],
+    'でんわ':['電話'], 'しゃしん':['写真'], 'なまえ':['名前'], 'げんき':['元気'], 'しごと':['仕事'], 'かいしゃ':['会社'], 'いま':['今'], 'ひと':['人'],
+    'みず':['水'], 'ごはん':['ご飯'], 'くるま':['車'], 'でんしゃ':['電車'], 'じかん':['時間'], 'なに':['何'], 'だれ':['誰'],
+    'どこ':['何処'], 'いく':['行く'], 'くる':['来る'], 'みる':['見る'], 'たべる':['食べる'], 'のむ':['飲む'], 'はなす':['話す'], 'よむ':['読む'],
+    'かく':['書く'], 'きく':['聞く'], 'べんきょう':['勉強'], 'おおきい':['大きい'], 'ちいさい':['小さい'], 'あたらしい':['新しい'], 'たのしい':['楽しい'],
+    'たいせつ':['大切'], 'ぎたー':['ギター'], 'いえ':['家'], 'ほん':['本'], 'ひ':['日'], 'つき':['月'], 'やま':['山'], 'かわ':['川'], 'そら':['空'] };
+
+  // ---- Daftar bahasa non-Latin (masuk ke LANGS, jadi otomatis muncul di panel bahasa) ----
+  Object.assign(LANGS, {
+    ru:{ name:'Русский', tag:'RU', hint:'privet → привет · shch → щ · \' → ь', translit:ruTranslit, extraKeys:"'\"", cased:true,
+      starters:['Привет','Я','Спасибо'], fill:['и','в','не'], nx:{},
+      w:`и в не на я что он с как это она они но мы вы все так его только вот мне за для был бы себя уже или если есть да нет когда тоже ещё привет спасибо пожалуйста хорошо плохо друг подруга дом работа время сегодня завтра вчера сейчас всегда никогда хочу могу знаю иду вижу дать сказать делать быть идти видеть музыка гитара песня телефон сообщение фото видео номер где как почему здесь там жизнь мир страна город семья мама папа сын дочь брат сестра люблю любовь добрый день утро вечер ночь доброе извините понимаю конечно можно нужно очень много мало большой маленький новый старый красивый`},
+    ar:{ name:'العربية', tag:'AR', hint:'marhaba → مرحبا · H ح · S ص · A ع', translit:arTranslit, extraKeys:"'", cased:false, rtl:true,
+      punct:{ ',':'،', '?':'؟', ';':'؛' }, starters:['مرحبا','أنا','شكرا'], fill:['في','من','على'], nx:{},
+      w:`في من على إلى أن هذا هذه هو هي أنا أنت نحن هم كان لا نعم شكرا مرحبا أهلا سلام صباح مساء الخير تحية لو كيف أين متى لماذا ماذا هنا هناك اليوم غدا أمس الآن دائما أبدا أريد أستطيع أعرف أذهب أرى أعطي قول فعل يكون ذهب رأى بيت عمل وقت حياة عالم بلد مدينة عائلة أم أب ابن ابنة أخ أخت صديق حب جيد سيء كبير صغير جديد قديم جميل موسيقى جيتار أغنية هاتف رسالة صورة فيديو رقم`},
+    ja:{ name:'日本語', tag:'JA', hint:'arigatou → ありがとう · pilih 漢字/カタカナ di bar saran', translit:jaTranslit, extraKeys:"-'", cased:false, noSpace:true,
+      punct:{ '.':'。', ',':'、', '?':'？', '!':'！' }, conv:JA_CONV, extraCandidates:(w)=>{ const c = (JA_CONV[w]||[]).slice(); const k = hiraToKata(w); if(k !== w) c.push(k); return c; },
+      starters:['こんにちは','わたし','ありがとう'], fill:['は','を','の'], nx:{},
+      w:`ありがとう こんにちは こんばんは おはよう さようなら すみません ごめんなさい おねがいします はい いいえ わたし あなた ともだち がっこう せんせい おんがく うた ぎたー だいすき すき あい にほん にほんご えいご でんわ しゃしん なまえ げんき だいじょうぶ きょう あした きのう いま ここ そこ どこ なに だれ いつ どう なぜ たべる のむ ねる おきる いく くる みる きく はなす よむ かく べんきょう しごと かいしゃ うち いえ くるま でんしゃ ひこうき みず ごはん おいしい たのしい うれしい かなしい おおきい ちいさい あたらしい ふるい いい わるい`},
+    ko:{ name:'한국어', tag:'KO', hint:'annyeong → 안녕 · gamsahabnida → 감사합니다 · han\'gugeo (\' = pemisah)', translit:koTranslit, extraKeys:"'", cased:false,
+      starters:['안녕','저는','감사합니다'], fill:['이','그','저'], nx:{},
+      w:`안녕 안녕하세요 감사합니다 고맙습니다 미안합니다 죄송합니다 네 아니요 저 나 너 우리 그 이 것 있다 없다 하다 되다 좋아요 싫어요 사랑 친구 가족 엄마 아빠 오늘 내일 어제 지금 항상 절대 시간 사람 학교 선생님 학생 회사 일 집 차 물 밥 음악 기타 노래 전화 사진 이름 어디 언제 왜 무엇 누구 어떻게 여기 저기 크다 작다 새로운 예쁜 맛있다 먹다 마시다 자다 가다 오다 보다 듣다 말하다 읽다 쓰다 공부 주세요 괜찮아요 잘 못 너무 많이 조금 정말 진짜 그리고 하지만 그래서`},
+    el:{ name:'Ελληνικά', tag:'EL', hint:'kalhmera → καλημερα · th → θ · ps → ψ · h → η', translit:elTranslit, extraKeys:'', cased:true, punct:{ '?':';' },
+      starters:['Γεια','Εγώ','Ευχαριστώ'], fill:['και','το','να'], nx:{},
+      w:`και το να η ο του της με για δεν που σε από στο τον την ένα μια είναι θα ήταν αυτό εγώ εσύ εμείς εσείς ναι όχι γεια σας ευχαριστώ παρακαλώ καλημέρα καλησπέρα καληνύχτα συγγνώμη φίλος φίλη σπίτι δουλειά χρόνος σήμερα αύριο χθες τώρα πάντα ποτέ θέλω μπορώ ξέρω πάω βλέπω δίνω λέω κάνω ζωή κόσμος χώρα πόλη οικογένεια μητέρα πατέρας γιος κόρη αδελφός αδελφή αγάπη καλός κακός μεγάλος μικρός νέος παλιός όμορφος μουσική κιθάρα τραγούδι τηλέφωνο μήνυμα φωτογραφία βίντεο αριθμός πού πώς γιατί τι ποιος εδώ εκεί`},
+    he:{ name:'עברית', tag:'HE', hint:'shalom → שלום · vokal a/e di tengah dilewati · tt → ט', translit:heTranslit, extraKeys:'', cased:false, rtl:true,
+      starters:['שלום','אני','תודה'], fill:['ו','ה','של'], nx:{},
+      w:`ו ה של את על זה לא אני אתה הוא היא אנחנו הם כן שלום תודה בבקשה סליחה בוקר טוב ערב לילה חבר חברה בית עבודה זמן היום מחר אתמול עכשיו תמיד אף פעם רוצה יכול יודע הולך רואה נותן אומר עושה חיים עולם ארץ עיר משפחה אמא אבא בן בת אח אחות אהבה גדול קטן חדש ישן יפה מוזיקה גיטרה שיר טלפון הודעה תמונה סרטון מספר איפה איך למה מה מי כאן שם`},
+    hi:{ name:'हिन्दी', tag:'HI', hint:'namaste → नमस्ते · T ट · D ड · M ं', translit:hiTranslit, extraKeys:'~', cased:false, punct:{ '.':'।' },
+      starters:['नमस्ते','मैं','धन्यवाद'], fill:['और','का','की'], nx:{},
+      w:`और का की के में है हैं से को पर यह वह मैं तुम आप हम हाँ नहीं नमस्ते धन्यवाद कृपया माफ़ सुप्रभात शुभ रात्रि दोस्त घर काम समय आज कल अभी हमेशा कभी चाहता सकता जानता जाता देखता देता कहता करता जीवन दुनिया देश शहर परिवार माँ पिता बेटा बेटी भाई बहन प्यार अच्छा बुरा बड़ा छोटा नया पुराना सुंदर संगीत गिटार गाना फ़ोन संदेश फोटो वीडियो नंबर कहाँ कैसे क्यों क्या कौन यहाँ वहाँ`}
+  });
+
   const LANG_KEY = 'genjreng_lang', LANGS_KEY = 'genjreng_langs';
   // Bahasa yang diaktifkan (muncul di pilihan cepat: tahan spasi) & bahasa yang sedang dipakai.
   let enabledLangs = ['id','en'];
@@ -968,30 +1261,40 @@
     }
     return _dictCache[lang];
   }
-  const KB_ROWS = ['qwertyuiop','asdfghjkl','zxcvbnm'], KB_OFF = [0,.25,.75], KB_POS = {};
+  const KB_ROWS = ['qwertyuiop','asdfghjkl','zxcvbnm'], KB_OFF = [0,.25,.75], KB_POS = {}, KB_NEAR = {};
   KB_ROWS.forEach((row, ri)=> [...row].forEach((c, ci)=>{ KB_POS[c] = [ci + KB_OFF[ri], ri]; }));
-  function keyNear(a, b){
-    const p = KB_POS[a], q = KB_POS[b];
-    if(!p || !q) return false;
-    const dx = p[0]-q[0], dy = p[1]-q[1];
-    return dx*dx + dy*dy <= 1.7;
+  // Pasangan tuts bersebelahan dihitung sekali di awal (dipakai ribuan kali per ketukan).
+  for(const p in KB_POS) for(const q in KB_POS){
+    const dx = KB_POS[p][0]-KB_POS[q][0], dy = KB_POS[p][1]-KB_POS[q][1];
+    if(p !== q && dx*dx + dy*dy <= 1.7) KB_NEAR[p+q] = true;
   }
+  const keyNear = (a, b) => KB_NEAR[a+b] === true;
+  // Jarak edit berbobot (Damerau-Levenshtein). Larik dipakai ulang (tanpa alokasi) supaya ringan di HP lawas.
+  const _ec0 = new Float32Array(40), _ec1 = new Float32Array(40), _ec2 = new Float32Array(40);
   function editCost(a, b){
     const n = a.length, m = b.length;
-    let prev2 = null, prev = new Array(m+1), cur = new Array(m+1);
+    if(n > 38 || m > 38) return 99;
+    let prev2 = _ec0, prev = _ec1, cur = _ec2;
     for(let j=0;j<=m;j++) prev[j] = j;
     for(let i=1;i<=n;i++){
       cur[0] = i;
+      const ca = a[i-1];
       for(let j=1;j<=m;j++){
-        const ca = a[i-1], cb = b[j-1];
-        const sub = ca === cb ? 0 : (keyNear(ca, cb) ? 0.5 : 1);
-        let v = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + sub);
-        if(i>1 && j>1 && ca === b[j-2] && a[i-2] === cb && prev2) v = Math.min(v, prev2[j-2] + 0.7);
+        const cb = b[j-1];
+        const sub = ca === cb ? 0 : (KB_NEAR[ca+cb] === true ? 0.5 : 1);
+        let v = prev[j] + 1;
+        const ins = cur[j-1] + 1; if(ins < v) v = ins;
+        const rep = prev[j-1] + sub; if(rep < v) v = rep;
+        if(i>1 && j>1 && ca === b[j-2] && a[i-2] === cb){ const tr = prev2[j-2] + 0.7; if(tr < v) v = tr; }
         cur[j] = v;
       }
-      prev2 = prev; prev = cur; cur = new Array(m+1);
+      const t = prev2; prev2 = prev; prev = cur; cur = t;
     }
     return prev[m];
+  }
+  // Salah ketik hampir selalu mempertahankan huruf pertama (atau tertukar / bersebelahan) -> saring dulu, hemat CPU.
+  function firstLetterPlausible(t, w){
+    return t[0] === w[0] || KB_NEAR[t[0]+w[0]] === true || (t.length > 1 && w.length > 1 && t[0] === w[1] && t[1] === w[0]);
   }
 
   // ---- Kamus pribadi: belajar sendiri dari kata yang kamu ketik, persis Gboard ----
@@ -1042,8 +1345,7 @@
   function learnWord(word){
     if(privateField) return;   // jangan pernah belajar dari kolom password/incognito
     const w = (word||'').trim();
-    if(w.length < 2 || w.length > 24) return;   // saring kata kependekan/kepanjangan (kemungkinan asal ketik)
-    if(!/^[\p{L}'’-]+$/u.test(w)) return;        // cuma huruf (semua bahasa), biar angka/simbol acak nggak ikut kesimpan
+    if(!isLearnable(w)) return;   // saring kata kepanjangan / kependekan / asal-ulang ("aaaa", "hahaha") -- tidak disimpan
     const lower = w.toLowerCase();
     const bucket = learnedWords[currentLang];
     if(!bucket[lower]) bucket[lower] = {count:0, last:0, disp:w};
@@ -1066,7 +1368,7 @@
   }
 
   // Kata = huruf/angka/apostrof/tanda hubung berurutan tepat sebelum kursor (tanda baca memutus kata).
-  const WORD_CH = /[\p{L}\p{N}'’-]/u;
+  const WORD_CH = /[\p{L}\p{M}\p{N}'’-]/u;
   function getCurrentWordRange(){
     let start = cursorPos;
     while(start > 0 && WORD_CH.test(text[start-1])) start--;
@@ -1083,7 +1385,7 @@
     const cands = new Map();
     const push = (disp, score)=>{
       const key = disp.toLowerCase();
-      if(key === typedLower) return;
+      if(key === typedLower || disp.length > 18) return;   // saran kepanjangan tidak ditampilkan
       const cur = cands.get(key);
       if(!cur || cur.s < score) cands.set(key, { w:disp, s:score });
     };
@@ -1106,7 +1408,7 @@
         if(e.d !== typedD) push(e.w, 800 - e.r*0.3 - (e.d.length-len)*6);
         continue;
       }
-      if(!known && len >= 3 && Math.abs(e.d.length - len) <= 3){
+      if(!known && len >= 3 && Math.abs(e.d.length - len) <= 3 && firstLetterPlausible(typedD, e.d)){
         const maxCost = len <= 4 ? 1.2 : 2.2;
         let c = editCost(typedD, e.d);
         if(e.d.length > len){   // orang belum selesai mengetik: bandingkan juga dengan awalan kata
@@ -1136,6 +1438,162 @@
     return out.slice(0, limit);
   }
 
+  // ---------------- Preferensi (bisa dimatikan dari kisi alat halaman 2) ----------------
+  const PREFS_KEY = 'genjreng_prefs_v1';
+  const prefs = { autocorrect:true, autocaps:true, suggest:true };
+  try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); }catch(e){}
+  function savePrefs(){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }catch(e){} }
+
+  // ---------------- Kamus tambahan opsional: www/dict/<kode>.txt (satu kata per baris / dipisah spasi) ----------------
+  // Kalau file itu ada, isinya ditambahkan ke kamus bahasa tsb tanpa perlu mengubah index.html.
+  const _extraLoaded = {};
+  function loadExtraDict(lang){
+    if(_extraLoaded[lang] || !window.fetch || location.protocol === 'file:') return;   // (file:// tidak bisa fetch; di aplikasi dipakai https appassets)
+    _extraLoaded[lang] = true;
+    try{
+      fetch('dict/' + lang + '.txt').then(r => r.ok ? r.text() : '').then(t => {
+        if(!t) return;
+        const cur = getDict(lang), seen = new Set(cur.map(e => e.w.toLowerCase()));
+        let r = cur.length;
+        t.split(/\s+/).forEach(w => {
+          const k = w.toLowerCase();
+          if(w && w.length <= MAX_LEARN_LEN && !seen.has(k)){ seen.add(k); cur.push({ w, d:deaccent(w), r:r++ }); }
+        });
+      }).catch(()=>{});
+    }catch(e){}
+  }
+
+  // ---------------- Kata yang layak disimpan/disarankan: tidak kepanjangan, tidak asal-ulang ----------------
+  const MAX_LEARN_LEN = 15;
+  function isLearnable(w){
+    if(!w || w.length < 2 || w.length > MAX_LEARN_LEN) return false;
+    if(!/^[\p{L}\p{M}'’-]+$/u.test(w)) return false;
+    if(/(.)\1{3,}/u.test(w)) return false;            // "aaaaaa"
+    if(/^(.{1,3})\1{2,}$/u.test(w)) return false;     // "hahaha", "wkwkwk"
+    return true;
+  }
+  // Bersihkan kamus pribadi lama yang sudah terlanjur menyimpan kata kepanjangan / asal-ulang.
+  (function pruneLearned(){
+    let changed = false;
+    for(const lang in learnedWords){
+      const b = learnedWords[lang] || {};
+      for(const k in b){ if(!isLearnable((b[k] && b[k].disp) || k)){ delete b[k]; changed = true; } }
+    }
+    for(const lang in bigrams){
+      const b = bigrams[lang] || {};
+      for(const k in b){
+        if(!isLearnable(k)){ delete b[k]; changed = true; continue; }
+        for(const k2 in b[k]){ if(!isLearnable(k2)){ delete b[k][k2]; changed = true; } }
+      }
+    }
+    if(changed){
+      try{ localStorage.setItem(LEARN_KEY, JSON.stringify(learnedWords)); }catch(e){}
+      try{ localStorage.setItem(BIGRAM_KEY, JSON.stringify(bigrams)); }catch(e){}
+    }
+  })();
+
+  // ---------------- Menyusun teks bahasa non-Latin (composing) ----------------
+  var compose = '', composeOut = '', composeStart = 0;
+  function scriptLang(){ const L = LANGS[currentLang]; return (L && L.translit) ? L : null; }
+  function isComposing(){ return compose.length > 0; }
+  function bridgeSetComposing(out, prev){
+    const B = window.AndroidKeyboard;
+    if(!B) return;
+    try{
+      if(B.setComposingText){ B.setComposingText(out); return; }
+      // Bridge lama tanpa composing: tiru dengan hapus lalu ketik ulang.
+      if(prev && prev.length) bridgeDeleteBackwardN(prev.length);
+      if(out) B.commitText(out);
+    }catch(e){}
+  }
+  function bridgeFinishComposing(){
+    const B = window.AndroidKeyboard;
+    try{ if(B && B.finishComposing) B.finishComposing(); }catch(e){}
+  }
+  function setComposeOut(out){
+    const prev = composeOut;
+    text = text.slice(0, composeStart) + out + text.slice(composeStart + prev.length);
+    cursorPos = composeStart + out.length;
+    composeOut = out;
+    bridgeSetComposing(out, prev);
+  }
+  function composeLetter(ch){
+    const L = scriptLang();
+    if(!compose) composeStart = cursorPos;
+    compose += ch;
+    setComposeOut(L.translit(compose, false));
+    trimTrackedText();
+    scheduleSuggestions();
+  }
+  function composeBackspace(){
+    const L = scriptLang();
+    compose = compose.slice(0, -1);
+    if(compose){ setComposeOut(L.translit(compose, false)); }
+    else { setComposeOut(''); bridgeFinishComposing(); composeOut = ''; }
+    scheduleSuggestions();
+  }
+  // Selesaikan penyusunan: bentuk akhir (mis. ん di ujung kata, ς di ujung kata Yunani), lalu "kunci" teksnya.
+  function finishCompose(learn, keepOut){
+    if(!compose) return;
+    const L = scriptLang();
+    if(L && !keepOut){   // keepOut = teks sudah diganti pilihan saran, jangan dihitung ulang dari huruf latin
+      const fin = L.translit(compose, true);
+      if(fin !== composeOut) setComposeOut(fin);
+    }
+    bridgeFinishComposing();
+    const w = composeOut;
+    compose = ''; composeOut = '';
+    if(learn !== false) learnWord(w);
+  }
+  function abortCompose(){ compose = ''; composeOut = ''; bridgeFinishComposing(); }
+  // Pilih saran untuk kata yang sedang disusun: gantikan teks sementara dengan pilihan itu.
+  function commitComposeWith(word){
+    const L = scriptLang();
+    setComposeOut(word);
+    if(L && L.noSpace){ finishCompose(true, true); return; }   // Jepang tidak memakai spasi
+    finishCompose(false, true);
+    appendText(' ');                                     // spasi -> kata ikut dipelajari lewat batas kata
+  }
+  window.onComposingLost = function(){ compose = ''; composeOut = ''; };   // kursor dipindah / teks diganti aplikasi
+
+  // ---------------- Koreksi otomatis saat spasi/tanda baca (dengan "urungkan" lewat hapus) ----------------
+  const AC_TRIGGERS = new Set([' ', '.', ',', '!', '?', ';', ':']);
+  var lastAutoCorrect = null;
+  function bestCorrection(word){
+    const typedD = deaccent(word);
+    const dict = getDict(currentLang);
+    if(typedD.length < 3 || dict.some(e => e.d === typedD)) return null;   // sudah kata valid
+    // Konservatif supaya tidak "menganiaya" kata sah yang belum ada di kamus mini: kata pendek hanya dikoreksi
+    // untuk salah-tuts-bersebelahan / huruf tertukar (biaya <= 0.7); tambah/kurang satu huruf baru untuk kata >= 6 huruf.
+    const limit = typedD.length >= 6 ? 1.0 : 0.7;
+    let best = null;
+    for(let i = 0; i < dict.length && i < 2500; i++){                        // hanya kata-kata umum
+      const e = dict[i];
+      if(Math.abs(e.d.length - typedD.length) > 1 || !firstLetterPlausible(typedD, e.d)) continue;
+      const c = editCost(typedD, e.d);
+      if(c > limit) continue;
+      const score = c + Math.log2(e.r + 2) * 0.12;   // makin umum katanya, makin menang ("teh" -> "the", bukan "ten")
+      if(!best || score < best.score) best = { w:e.w, c, r:e.r, score };
+    }
+    return best;
+  }
+  function tryAutoCorrect(){
+    if(!prefs.autocorrect || privateField || mode !== 'letters' || scriptLang()) return null;
+    const { start, end, word } = getCurrentWordRange();
+    if(!word || !/^\p{L}+$/u.test(word)) return null;
+    const rest = word.slice(1);
+    if(rest !== rest.toLowerCase()) return null;                             // "iPhone", "GB" -> biarkan
+    if(word.charAt(0) !== word.charAt(0).toLowerCase()){                     // diawali huruf besar: nama? hanya koreksi di awal kalimat
+      const before = text.slice(0, start);
+      if(before && !/(^|[.!?…]["')\]]*\s+|\n)$/.test(before)) return null;
+    }
+    const bucket = learnedWords[currentLang] || {};
+    if(bucket[word.toLowerCase()]) return null;                              // kata milikmu sendiri
+    const fix = bestCorrection(word);
+    if(!fix) return null;
+    return { start, end, word, fixed: applyCase(fix.w, word) };
+  }
+
   function renderSuggestions(){
     const bar = document.getElementById('suggestBar');
     bar.innerHTML = '';
@@ -1143,14 +1601,16 @@
     // nampilin saran kata lagi -- gantian balik ke slot ini.
     if(typeof showFeatureBarMode === 'function') showFeatureBarMode('suggest');
     bar.classList.remove('status-mode','status-error','status-ok');
-    if(privateField) return;   // kolom privat: tanpa saran kata
+    if(privateField || !prefs.suggest) return;   // kolom privat / saran dimatikan: bar dibiarkan kosong
     const { word } = getCurrentWordRange();
     let candidates = [];
     if(word.length > 0){
       // Persis Gboard: slot kiri = kata yang sedang diketik apa adanya, lalu koreksi/lanjutan terbaik.
       const seen = new Set([word.toLowerCase()]);
       candidates = [word];
-      for(const w of computeWordSuggestions(word).map(x => applyCase(x, word))){
+      const SLx = scriptLang();
+      const extra = (SLx && SLx.extraCandidates && isComposing()) ? SLx.extraCandidates(word) : [];
+      for(const w of extra.concat(computeWordSuggestions(word).map(x => applyCase(x, word)))){
         const k = w.toLowerCase();
         if(!seen.has(k)){ seen.add(k); candidates.push(w); }
         if(candidates.length >= 3) break;
@@ -1178,6 +1638,7 @@
   }
 
   function applySuggestion(chosen){
+    if(isComposing()){ commitComposeWith(chosen); return; }
     const { start, end, word } = getCurrentWordRange();
     const removeCount = word.length;
     text = text.slice(0, start) + chosen + ' ' + text.slice(end);
@@ -1196,6 +1657,7 @@
   }
   function applyLang(lang){
     if(!LANGS[lang]) lang = enabledLangs[0];
+    if(isComposing()) finishCompose(false);
     currentLang = lang;
     try{ localStorage.setItem(LANG_KEY, currentLang); }catch(e){}
     if(!learnedWords[currentLang]) learnedWords[currentLang] = {};
@@ -1204,6 +1666,9 @@
     const tag = document.getElementById('langBtnTag');
     if(tag) tag.textContent = LANGS[currentLang].tag;
     updateSpaceLabel();
+    loadExtraDict(currentLang);
+    setTimeout(()=>{ try{ getDict(currentLang); }catch(e){} }, 0);   // siapkan indeks kamus sebelum ketukan pertama
+    { const SLa = scriptLang(); if(SLa && SLa.cased === false) applyAutoCaps(false); }
     renderSuggestions();
   }
   function setEnabledLangs(list){
@@ -1225,6 +1690,8 @@
   function applyAutoCaps(on){
     if(capsLock) return;
     if(on){
+      const SLc = scriptLang();
+      if(!prefs.autocaps || (SLc && SLc.cased === false)) return;   // Arab/Jepang/dst tidak punya huruf besar
       if(!shiftActive){ shiftActive = true; autoShift = true; updateShiftVisual(); }
     } else if(autoShift && shiftActive){
       shiftActive = false; updateShiftVisual();   // updateShiftVisual() juga mereset autoShift
@@ -2370,6 +2837,7 @@
   // Semua panel yang menggantikan area tuts, beserta jenis display-nya saat terbuka.
   const PANEL_DISPLAY = { toolPanel:'block', settingsPanel:'block', clipboardPanel:'flex', gifPanel:'flex', translatePanel:'flex', langPanel:'flex' };
   let lastKbHeight = 0;
+  var toolEditing = false;   // mode pensil (sesuaikan item kisi alat)
   function panelEl(id){ return document.getElementById(id); }
   function anyPanelOpen(){
     return Object.keys(PANEL_DISPLAY).some(id => { const el = panelEl(id); return el && el.style.display && el.style.display !== 'none'; });
@@ -2384,6 +2852,7 @@
     const kb = panelEl('keyboardInner'); if(kb) kb.style.display = '';
     document.querySelectorAll('.gtool-btn').forEach(b => b.classList.remove('tool-active'));
     hideLangPopup();
+    if(toolEditing && typeof setToolEditing === 'function') setToolEditing(false);   // keluar dari mode pensil
   }
   // Buka satu panel. Panel setinggi tuts yang digantikannya supaya keyboard tidak "meloncat" naik-turun.
   function openPanel(id, keepKeyboard, activeBtn){
@@ -2507,6 +2976,85 @@
   emojiToolBtn.addEventListener('click', ()=>{ closeEverything(); setMode('emoji'); });
   document.getElementById('oneHandBtn').addEventListener('click', ()=>{ toggleOneHand(); closeEverything(); });
 
+
+  // ---- Kisi alat: titik halaman, tombol pensil (sembunyikan/tampilkan item), pilihan koreksi, bagikan ----
+  const toolPages = document.getElementById('toolPages');
+  const toolDots = document.querySelectorAll('#toolDots i');
+  toolPages.addEventListener('scroll', ()=>{
+    const i = Math.round(toolPages.scrollLeft / Math.max(1, toolPages.clientWidth));
+    toolDots.forEach((d, k) => d.classList.toggle('on', k === i));
+  }, { passive:true });
+
+  const HIDDEN_KEY = 'genjreng_toolhidden_v1';
+  let hiddenTools = [];
+  try{ const s = JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]'); if(Array.isArray(s)) hiddenTools = s; }catch(e){}
+  function applyHiddenTools(){
+    document.querySelectorAll('[data-tool]').forEach(el => el.classList.toggle('tool-hidden', hiddenTools.includes(el.dataset.tool)));
+  }
+  applyHiddenTools();
+  const toolEditBtn = document.getElementById('toolEditBtn');
+  function setToolEditing(on){
+    toolEditing = !!on;
+    panelEl('toolPanel').classList.toggle('editing', toolEditing);
+    gboardToolbarEl.classList.toggle('editing', toolEditing);
+    toolEditBtn.innerHTML = ICONS[toolEditing ? 'check' : 'pencil'];
+    document.getElementById('toolHint').textContent = toolEditing ? 'Ketuk item: sembunyi/tampil' : '';
+  }
+  toolEditBtn.addEventListener('click', ()=> setToolEditing(!toolEditing));
+  // Saat mode sesuaikan, ketukan pada item = sembunyikan/tampilkan, BUKAN menjalankan fungsinya (fase capture).
+  [panelEl('toolPanel'), gboardToolbarEl].forEach(el => el.addEventListener('click', (e)=>{
+    if(!toolEditing) return;
+    const t = e.target.closest('[data-tool]');
+    if(!t) return;
+    e.stopPropagation(); e.preventDefault();
+    const k = t.dataset.tool;
+    hiddenTools = hiddenTools.includes(k) ? hiddenTools.filter(x => x !== k) : hiddenTools.concat(k);
+    try{ localStorage.setItem(HIDDEN_KEY, JSON.stringify(hiddenTools)); }catch(err){}
+    applyHiddenTools();
+  }, true));
+
+  const autoCorrectBtn = document.getElementById('autoCorrectBtn');
+  const autoCapsBtn = document.getElementById('autoCapsBtn');
+  const suggestBtn = document.getElementById('suggestBtn');
+  function syncPrefPills(){
+    autoCorrectBtn.classList.toggle('on', prefs.autocorrect);
+    autoCapsBtn.classList.toggle('on', prefs.autocaps);
+    suggestBtn.classList.toggle('on', prefs.suggest);
+  }
+  syncPrefPills();
+  autoCorrectBtn.addEventListener('click', ()=>{ prefs.autocorrect = !prefs.autocorrect; savePrefs(); syncPrefPills(); });
+  autoCapsBtn.addEventListener('click', ()=>{ prefs.autocaps = !prefs.autocaps; savePrefs(); syncPrefPills(); if(!prefs.autocaps) applyAutoCaps(false); });
+  suggestBtn.addEventListener('click', ()=>{ prefs.suggest = !prefs.suggest; savePrefs(); syncPrefPills(); });
+  document.getElementById('settingsPill').addEventListener('click', ()=> togglePanel('settingsPanel', null, ()=>{ settingsPanel.dataset.filter = 'all'; }));
+
+  // Teks yang dibagikan lewat tombol "Bagikan". Ganti sesuai keinginan (mis. tambahkan tautan repo GitHub).
+  const SHARE_TEXT = 'Guitarwiter — keyboard Android yang mengubah petikan gitar jadi ketikan otomatis.';
+  document.getElementById('shareBtn').addEventListener('click', ()=>{
+    try{
+      if(window.AndroidKeyboard && window.AndroidKeyboard.shareText){ window.AndroidKeyboard.shareText(SHARE_TEXT); return; }
+      if(navigator.share) navigator.share({ text: SHARE_TEXT });
+    }catch(e){}
+  });
+  // Hapus kamus pribadi: ketuk dua kali (yang kedua dalam 3 detik) supaya tidak kehapus tidak sengaja.
+  const resetDictBtn = document.getElementById('resetDictBtn');
+  let resetArmed = null;
+  resetDictBtn.addEventListener('click', ()=>{
+    const lbl = resetDictBtn.querySelector('.lbl');
+    if(!resetArmed){
+      lbl.textContent = 'Ketuk lagi';
+      resetDictBtn.classList.add('on');
+      resetArmed = setTimeout(()=>{ resetArmed = null; lbl.textContent = 'Reset kamus'; resetDictBtn.classList.remove('on'); }, 3000);
+      return;
+    }
+    clearTimeout(resetArmed); resetArmed = null;
+    learnedWords = {}; bigrams = {};
+    learnedWords[currentLang] = {}; bigrams[currentLang] = {};
+    lastCompletedWord = '';
+    try{ localStorage.removeItem(LEARN_KEY); localStorage.removeItem(BIGRAM_KEY); }catch(e){}
+    lbl.textContent = 'Terhapus ✓';
+    setTimeout(()=>{ lbl.textContent = 'Reset kamus'; resetDictBtn.classList.remove('on'); }, 1500);
+  });
+
   // ---- Label nada di tuts: bisa disembunyikan supaya tuts sebersih Gboard ----
   function applyTags(show){
     document.body.classList.toggle('hide-tags', !show);
@@ -2520,7 +3068,7 @@
   function renderLangPanel(){
     langPanelEl.innerHTML = '';
     const head = document.createElement('h4');
-    head.textContent = 'Ketuk untuk memakai · centang = masuk pilihan cepat (tahan spasi)';
+    head.textContent = 'Ketuk untuk memakai · centang = masuk pilihan cepat (tahan spasi). Bahasa non-Latin: ketik huruf latin, otomatis jadi hurufnya.';
     langPanelEl.appendChild(head);
     Object.keys(LANGS).forEach(code => {
       const row = document.createElement('div');
@@ -2528,7 +3076,7 @@
       const pick = document.createElement('button');
       pick.type = 'button';
       pick.className = 'lang-pick' + (code === currentLang ? ' active' : '');
-      pick.innerHTML = '<span>' + LANGS[code].name + '</span><span class="lang-tag">' + LANGS[code].tag + '</span>';
+      pick.innerHTML = '<span class="lp-txt"><span>' + LANGS[code].name + '</span>' + (LANGS[code].hint ? '<small>' + LANGS[code].hint + '</small>' : '') + '</span><span class="lang-tag">' + LANGS[code].tag + '</span>';
       pick.addEventListener('click', ()=>{
         if(!enabledLangs.includes(code)) setEnabledLangs([...enabledLangs, code]);
         applyLang(code);
