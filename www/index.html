@@ -402,14 +402,14 @@
   /* ---- Clipboard: tombol hapus per item + hapus semua ---- */
   .clipboard-toolbar{ display:flex; justify-content:flex-end; padding:0 4px 4px; }
   .clipboard-clear{
-    background:none; border:none; color:var(--muted); font-size:.72rem; font-weight:700;
-    padding:4px 6px; cursor:pointer;
+    background:none; border:1px solid var(--bar-icon-dim); border-radius:999px; color:var(--bar-icon); font-size:.78rem; font-weight:700;
+    padding:7px 14px; cursor:pointer;
   }
   .clipboard-item-row{ display:flex; align-items:stretch; gap:4px; }
   .clipboard-item-row .clipboard-item{ flex:1; }
   .clipboard-item-del{
-    flex:0 0 34px; background:var(--key-fn-bg); color:var(--muted); border:none;
-    border-radius:8px; font-size:.85rem; cursor:pointer;
+    flex:0 0 46px; min-height:40px; background:var(--key-fn-bg); color:var(--bar-icon); border:none;
+    border-radius:8px; font-size:1rem; cursor:pointer;   /* area sentuh besar: gampang dihapus */
   }
 
 
@@ -1347,6 +1347,7 @@
     const w = (word||'').trim();
     if(!isLearnable(w)) return;   // saring kata kepanjangan / kependekan / asal-ulang ("aaaa", "hahaha") -- tidak disimpan
     const lower = w.toLowerCase();
+    if(blocked[currentLang] && blocked[currentLang][lower]){ delete blocked[currentLang][lower]; saveBlocked(); }   // diketik lagi dengan sengaja
     const bucket = learnedWords[currentLang];
     if(!bucket[lower]) bucket[lower] = {count:0, last:0, disp:w};
     bucket[lower].count += 1;
@@ -1362,6 +1363,14 @@
       const bg = bigrams[currentLang];
       if(!bg[lastCompletedWord]) bg[lastCompletedWord] = {};
       bg[lastCompletedWord][lower] = (bg[lastCompletedWord][lower]||0) + 1;
+      // Yang disimpan cuma PASANGAN 2 kata (bukan kalimat): tiap kata paling banyak 8 pasangannya, total ±1500 kata awal.
+      const seconds = Object.keys(bg[lastCompletedWord]);
+      if(seconds.length > 8){
+        seconds.sort((a,b)=> bg[lastCompletedWord][a] - bg[lastCompletedWord][b]);
+        delete bg[lastCompletedWord][seconds[0]];
+      }
+      const firsts = Object.keys(bg);
+      if(firsts.length > 1500) delete bg[firsts[0]];
     }
     lastCompletedWord = lower;
     persistLearning();
@@ -1385,7 +1394,7 @@
     const cands = new Map();
     const push = (disp, score)=>{
       const key = disp.toLowerCase();
-      if(key === typedLower || disp.length > 18) return;   // saran kepanjangan tidak ditampilkan
+      if(key === typedLower || disp.length > 18 || isBlocked(disp)) return;   // kepanjangan / sudah dihapus pengguna -> tidak ditampilkan
       const cur = cands.get(key);
       if(!cur || cur.s < score) cands.set(key, { w:disp, s:score });
     };
@@ -1430,7 +1439,7 @@
   // Tebakan kata BERIKUTNYA: pasangan kata yang kamu pelajari > pasangan bawaan > kata pembuka/umum.
   function getNextWordCandidates(limit){
     const out = [], seen = new Set();
-    const add = w => { const k = w.toLowerCase(); if(!seen.has(k)){ seen.add(k); out.push(w); } };
+    const add = w => { const k = w.toLowerCase(); if(!seen.has(k) && !isBlocked(w)){ seen.add(k); out.push(w); } };
     const bg = (bigrams[currentLang] || {})[lastCompletedWord];
     if(bg) Object.keys(bg).sort((a,b)=> bg[b]-bg[a]).slice(0, limit).forEach(add);
     const nx = LANGS[currentLang].nx && LANGS[currentLang].nx[lastCompletedWord];
@@ -1491,6 +1500,28 @@
       try{ localStorage.setItem(BIGRAM_KEY, JSON.stringify(bigrams)); }catch(e){}
     }
   })();
+
+  // ---------------- Hapus saran satu per satu: TAHAN sebuah saran di bar (seperti Gboard) ----------------
+  // Kata pribadi & pasangan katanya dihapus; kata bawaan kamus disembunyikan. Mengetik kata itu lagi
+  // dengan sengaja akan memunculkannya kembali.
+  const BLOCK_KEY = 'genjreng_blocked_v1';
+  let blocked = {};
+  try{ blocked = JSON.parse(localStorage.getItem(BLOCK_KEY) || '{}'); }catch(e){ blocked = {}; }
+  function isBlocked(w){ return !!((blocked[currentLang] || {})[String(w).toLowerCase()]); }
+  function saveBlocked(){ try{ localStorage.setItem(BLOCK_KEY, JSON.stringify(blocked)); }catch(e){} }
+  function removeSuggestion(w){
+    const k = String(w).toLowerCase();
+    const lb = learnedWords[currentLang] || {};
+    delete lb[k];
+    const bg = bigrams[currentLang] || {};
+    for(const a in bg){ if(bg[a] && bg[a][k] !== undefined) delete bg[a][k]; if(bg[a] && !Object.keys(bg[a]).length) delete bg[a]; }
+    delete bg[k];
+    if(!blocked[currentLang]) blocked[currentLang] = {};
+    blocked[currentLang][k] = 1;
+    saveBlocked();
+    persistLearning();
+    showStatus('🗑 "' + w + '" dihapus dari saran');
+  }
 
   // ---------------- Menyusun teks bahasa non-Latin (composing) ----------------
   var compose = '', composeOut = '', composeStart = 0;
@@ -1569,7 +1600,7 @@
     let best = null;
     for(let i = 0; i < dict.length && i < 2500; i++){                        // hanya kata-kata umum
       const e = dict[i];
-      if(Math.abs(e.d.length - typedD.length) > 1 || !firstLetterPlausible(typedD, e.d)) continue;
+      if(Math.abs(e.d.length - typedD.length) > 1 || !firstLetterPlausible(typedD, e.d) || isBlocked(e.w)) continue;
       const c = editCost(typedD, e.d);
       if(c > limit) continue;
       const score = c + Math.log2(e.r + 2) * 0.12;   // makin umum katanya, makin menang ("teh" -> "the", bukan "ten")
@@ -1622,17 +1653,29 @@
       const seen = new Set(list.map(w => w.toLowerCase()));
       for(const w of (atStart ? L.starters : L.fill).concat(L.fill)){
         if(list.length >= 3) break;
-        if(!seen.has(w.toLowerCase())){ seen.add(w.toLowerCase()); list.push(w); }
+        if(!seen.has(w.toLowerCase()) && !isBlocked(w)){ seen.add(w.toLowerCase()); list.push(w); }
       }
       if(shiftActive) list = list.map(w => w.charAt(0).toUpperCase() + w.slice(1));
       candidates = list.slice(0, 3);
     }
-    candidates.forEach((c) => {
+    candidates.forEach((c, idx) => {
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'suggest-chip';
       chip.textContent = c;
-      chip.addEventListener('pointerdown', () => applySuggestion(c));
+      // Ketuk = pakai saran. TAHAN (±0,5 dtk) = hapus saran itu dari kamus. Slot kiri saat sedang
+      // mengetik adalah kata yang kamu ketik sendiri, jadi tidak bisa dihapus.
+      const canDelete = !(word.length > 0 && idx === 0);
+      let timer = null, fired = false, sx = 0, sy = 0;
+      const stop = ()=>{ if(timer){ clearTimeout(timer); timer = null; } };
+      chip.addEventListener('pointerdown', (e)=>{
+        fired = false; sx = e.clientX; sy = e.clientY; stop();
+        if(canDelete) timer = setTimeout(()=>{ timer = null; fired = true; if(navigator.vibrate) navigator.vibrate(12); removeSuggestion(c); }, 500);
+      });
+      chip.addEventListener('pointermove', (e)=>{ if(timer && (Math.abs(e.clientX-sx) > 14 || Math.abs(e.clientY-sy) > 14)) stop(); });
+      chip.addEventListener('pointerup', ()=>{ const wasFired = fired; stop(); if(!wasFired) applySuggestion(c); });
+      chip.addEventListener('pointercancel', stop);
+      chip.addEventListener('pointerleave', stop);
       bar.appendChild(chip);
     });
   }
@@ -1710,6 +1753,23 @@
   // ---------------- Fitur 2: Clipboard riwayat ----------------
   let clipboardHistory = [];
   try{ clipboardHistory = JSON.parse(localStorage.getItem('genjreng_clipboard') || '[]'); }catch(e){}
+  // Riwayat clipboard HANYA menyimpan kosakata pendek (1-2 kata), bukan kalimat / paragraf: teks panjang
+  // memenuhi panel dan sulit dihapus. Salinan yang lebih panjang dari ini diabaikan (tidak disimpan sama sekali).
+  const CLIP_MAX_WORDS = 2, CLIP_MAX_CHARS = 30;
+  function isClipSaveable(t){
+    if(typeof t !== 'string') return false;
+    const s = t.trim();
+    if(!s || s.length > CLIP_MAX_CHARS) return false;
+    if(/\d/.test(s)) return false;   // ada angka = kemungkinan sandi / kode OTP / nomor -> bukan kosakata, jangan disimpan
+    return s.split(/\s+/).length <= CLIP_MAX_WORDS;
+  }
+  { // bersihkan riwayat lama yang sudah terlanjur menyimpan teks panjang
+    const kept = clipboardHistory.filter(isClipSaveable);
+    if(kept.length !== clipboardHistory.length){
+      clipboardHistory = kept;
+      try{ localStorage.setItem('genjreng_clipboard', JSON.stringify(clipboardHistory)); }catch(e){}
+    }
+  }
 
   function saveClipboardHistory(){
     try{ localStorage.setItem('genjreng_clipboard', JSON.stringify(clipboardHistory.slice(0,15))); }catch(e){}
@@ -1720,7 +1780,7 @@
     if(clipboardHistory.length === 0){
       const empty = document.createElement('div');
       empty.className = 'clipboard-empty';
-      empty.textContent = 'Belum ada riwayat copy. Copy teks di aplikasi lain, nanti muncul di sini.';
+      empty.textContent = 'Belum ada riwayat copy. Yang disimpan hanya kosakata pendek (maks. 2 kata, tanpa angka); kalimat/paragraf tidak disimpan.';
       panel.appendChild(empty);
       return;
     }
@@ -1768,6 +1828,8 @@
   // Dipanggil dari sisi Java (HtmlKeyboardService) setiap kali clipboard sistem Android berubah.
   window.onClipboardChanged = function(newText, sensitive){
     if(!newText || sensitive === true) return;   // clip bertanda IS_SENSITIVE tidak disimpan
+    newText = newText.trim();
+    if(!isClipSaveable(newText)) return;         // kalimat / paragraf panjang tidak disimpan
     clipboardHistory = clipboardHistory.filter(t => t !== newText);
     clipboardHistory.unshift(newText);
     clipboardHistory = clipboardHistory.slice(0,15);
@@ -3050,7 +3112,8 @@
     learnedWords = {}; bigrams = {};
     learnedWords[currentLang] = {}; bigrams[currentLang] = {};
     lastCompletedWord = '';
-    try{ localStorage.removeItem(LEARN_KEY); localStorage.removeItem(BIGRAM_KEY); }catch(e){}
+    blocked = {};
+    try{ localStorage.removeItem(LEARN_KEY); localStorage.removeItem(BIGRAM_KEY); localStorage.removeItem(BLOCK_KEY); }catch(e){}
     lbl.textContent = 'Terhapus ✓';
     setTimeout(()=>{ lbl.textContent = 'Reset kamus'; resetDictBtn.classList.remove('on'); }, 1500);
   });
