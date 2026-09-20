@@ -179,7 +179,7 @@
   .gtool-btn.tool-active{ color:var(--key-tag); background:rgba(107,171,164,.16); }
 
 
-  .keyboard{ background:var(--kb-bg); margin-top:0; padding:5px 13px 8px; }
+  .keyboard{ background:var(--kb-bg); margin-top:0; padding:5px 13px calc(8px + var(--kb-bottom, 0px)); }
   .krow{ display:flex; gap:var(--kgap); justify-content:center; margin-bottom:9px; }
   .krow:last-child{ margin-bottom:0; }
   /* Baris a-l digeser setengah tuts (persis Gboard). Baris pertama (angka) disembunyikan,
@@ -187,7 +187,7 @@
   .krow:nth-child(3){ padding:0 calc((100% + var(--kgap)) / 20); }
 
   .key{
-    position:relative; flex:1 1 0; min-width:0; height:var(--key-h); background:var(--key-bg);
+    position:relative; flex:1 1 0; min-width:0; height:calc(var(--key-h) * var(--kscale, 1)); background:var(--key-bg);
     border:var(--key-border); border-radius:var(--key-radius);
     padding:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
     box-shadow:none; font-family:Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -487,6 +487,101 @@
   /* Setelan: bisa dibuka penuh (gear) atau cuma satu bagian (palet = tema, ubah ukuran = ukuran) */
   .settings-panel[data-filter="theme"] .sec:not(.sec-theme),
   .settings-panel[data-filter="size"] .sec:not(.sec-size){ display:none; }
+
+  /* ============ Panel media (Emoji / GIF / Stiker / Emotikon) & Papan klip: template Gboard ============ */
+  /* Panel ini menutupi SELURUH area (bar saran + tuts) dan punya kepala + baris bawah sendiri. */
+  .kb-float-wrap.full-panel #featureBar{ display:none; }
+  .media-panel, .clip-panel{ display:none; flex-direction:column; background:var(--kb-bg); min-height:0; overflow:hidden; }
+  .mp-head{ display:flex; align-items:center; gap:6px; height:44px; padding:0 8px; flex:0 0 auto; }
+  .mp-back{ width:34px; height:34px; flex:0 0 auto; border-radius:50%; border:none; background:var(--key-bg); color:var(--bar-icon);
+    display:flex; align-items:center; justify-content:center; padding:0; -webkit-tap-highlight-color:transparent; }
+  .mp-back svg{ width:20px; height:20px; fill:currentColor; }
+  .mp-search{ display:flex; align-items:center; gap:6px; height:32px; padding:0 12px; border-radius:16px; border:none; background:var(--key-bg);
+    color:var(--bar-icon-dim); font-family:inherit; font-size:.85rem; flex:0 0 auto; min-width:92px; max-width:46%; }
+  .mp-search svg{ width:16px; height:16px; fill:currentColor; flex:0 0 auto; }
+  .mp-search span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mp-search.on{ flex:1 1 auto; max-width:none; color:var(--key-text); }
+  .mp-tabs{ position:relative; display:flex; align-items:center; gap:2px; overflow-x:auto; scrollbar-width:none; flex:1 1 auto; min-width:0; }
+  .mp-tabs::-webkit-scrollbar{ display:none; }
+  .mp-tab{ flex:0 0 auto; min-width:34px; height:34px; border-radius:50%; border:none; background:none; color:var(--bar-icon);
+    font-family:inherit; font-size:1.05rem; display:flex; align-items:center; justify-content:center; padding:0; opacity:.8;
+    -webkit-tap-highlight-color:transparent; }
+  .mp-tab svg{ width:20px; height:20px; fill:currentColor; }
+  .mp-tab.on{ background:var(--key-bg); opacity:1; }
+  .mp-tab.off{ opacity:.35; }
+  .mp-tab.chip{ padding:0 12px; border-radius:17px; font-size:.8rem; background:var(--pill-bg); margin:0 2px; }
+  .mp-tab.chip.on{ background:var(--key-tag); color:#10292B; }
+  .mp-body{ flex:1 1 auto; min-height:0; overflow-y:auto; padding:0 8px 6px; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
+  .mp-sec{ font-size:.72rem; color:var(--bar-icon-dim); padding:8px 4px 2px; }
+  .mp-grid{ display:grid; grid-template-columns:repeat(8, 1fr); }
+  .mp-emo{ height:40px; border:none; background:none; font-size:1.45rem; line-height:1; padding:0; -webkit-tap-highlight-color:transparent; }
+  .mp-emo:active{ background:rgba(255,255,255,.14); border-radius:8px; }
+  .mp-guitar{ display:grid; grid-template-columns:repeat(6, 1fr); gap:5px; padding:2px 0 4px; }
+  body.hide-tags .mp-guitar, body.hide-tags .mp-guitar-h, body.hide-tags .mp-guitar-t{ display:none; }
+  .mp-empty, .mp-note{ font-size:.75rem; color:var(--bar-icon-dim); padding:8px 6px; }
+  .mp-gifgrid{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .mp-gif{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; height:82px; border:none; border-radius:10px;
+    background:var(--pill-bg); color:var(--key-text); font-family:inherit; }
+  .mp-gif .e{ font-size:2rem; line-height:1; } .mp-gif .l{ font-size:.72rem; opacity:.85; }
+  .mp-stgrid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; padding:4px 0; }
+  .mp-st{ height:62px; border:none; border-radius:10px; background:var(--pill-bg); font-size:2.1rem; line-height:1; }
+  .mp-kao{ display:flex; flex-wrap:wrap; gap:6px; padding:8px 0; }
+  .mp-kb{ min-height:36px; padding:0 14px; border:none; border-radius:18px; background:var(--pill-bg); color:var(--key-text); font-family:inherit; font-size:.95rem; }
+  .mp-bottom{ display:flex; align-items:center; justify-content:space-between; gap:6px; height:46px; padding:0 8px 6px; flex:0 0 auto; }
+  .mp-bt{ flex:1 1 0; height:36px; min-width:0; padding:0; border-radius:18px; border:none; background:var(--pill-bg); color:var(--bar-icon);
+    font-family:inherit; font-size:.9rem; display:flex; align-items:center; justify-content:center; -webkit-tap-highlight-color:transparent; }
+  .mp-bt svg{ width:20px; height:20px; fill:currentColor; }
+  .mp-bt.on{ background:var(--bar-icon-dim); color:var(--key-text); }
+  .mp-bt.gif{ font-weight:700; font-size:.8rem; letter-spacing:.05em; } .mp-bt.kao{ font-weight:600; }
+  .mp-bt:first-child{ flex:0 0 58px; background:none; font-weight:600; }
+  .mp-body.searching{ display:flex; flex-direction:column; }
+  .media-panel.searching .mp-bottom{ display:none; }
+  .mp-results{ flex:0 0 auto; min-height:40px; }
+  .mp-mini{ margin-top:auto; padding-top:4px; }
+  .mp-mini-row{ display:flex; justify-content:center; gap:3px; margin-top:3px; }
+  .mp-mk{ flex:1 1 0; max-width:32px; height:30px; border:none; border-radius:6px; background:var(--key-bg); color:var(--key-text); font-family:inherit; font-size:.95rem; padding:0; }
+  .mp-mk svg{ width:18px; height:18px; fill:currentColor; }
+  .mp-mk.wide{ max-width:52px; flex:1.6 1 0; background:var(--key-fn-bg); } .mp-mk.space{ max-width:none; flex:5 1 0; font-size:.75rem; }
+  .mp-mk.ok{ background:var(--key-enter-bg); color:#223134; }
+
+  /* ---- Papan klip (template Gboard) ---- */
+  .clip-head{ display:flex; align-items:center; gap:8px; height:46px; padding:0 8px; flex:0 0 auto; }
+  .clip-title{ flex:1 1 auto; color:var(--key-text); font-size:1rem; }
+  .clip-switch{ position:relative; width:42px; height:24px; border-radius:12px; border:none; background:var(--bar-icon-dim); padding:0; flex:0 0 auto; }
+  .clip-switch::after{ content:''; position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:#EEF3F2; transition:left .14s ease; }
+  .clip-switch.on{ background:var(--key-tag); } .clip-switch.on::after{ left:21px; }
+  .clip-pencil{ width:34px; height:34px; border-radius:50%; border:none; background:none; color:var(--bar-icon); display:flex; align-items:center; justify-content:center; padding:0; flex:0 0 auto; }
+  .clip-pencil svg{ width:20px; height:20px; fill:currentColor; }
+  .clip-body{ flex:1 1 auto; min-height:0; overflow-y:auto; padding:0 10px 10px; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
+  .clip-sec{ font-size:.75rem; color:var(--key-text); opacity:.85; padding:6px 2px 4px; }
+  .clip-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:6px; }
+  .clip-card{ position:relative; min-height:58px; padding:10px; border-radius:10px; background:var(--key-bg); color:var(--key-text); font-size:.82rem; overflow:hidden; -webkit-tap-highlight-color:transparent; }
+  .clip-card:active{ background:var(--key-active-bg); }
+  .clip-card.pinned{ box-shadow:inset 0 0 0 1.5px var(--key-tag); }
+  .clip-txt{ display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; word-break:break-word; white-space:pre-wrap; }
+  .clip-txt.link{ color:#8CC7F0; }
+  .clip-kind{ display:block; margin-bottom:4px; color:var(--bar-icon); } .clip-kind svg{ width:16px; height:16px; fill:currentColor; }
+  .clip-pinmark{ position:absolute; right:6px; bottom:5px; color:var(--key-tag); } .clip-pinmark svg{ width:14px; height:14px; fill:currentColor; }
+  .clip-acts{ position:absolute; right:4px; top:4px; display:flex; gap:4px; }
+  .clip-act{ width:28px; height:28px; border-radius:50%; border:none; background:rgba(0,0,0,.35); color:var(--key-text); display:flex; align-items:center; justify-content:center; padding:0; }
+  .clip-act svg{ width:16px; height:16px; fill:currentColor; } .clip-act.del{ color:#FF8A80; }
+  .clip-hint{ padding:12px; border-radius:10px; background:var(--key-bg); color:var(--bar-icon); font-size:.78rem; line-height:1.4; }
+  /* chip papan klip / emoji di bar saran */
+  .suggest-chip.chip-clip{ display:flex; align-items:center; justify-content:center; gap:6px; }
+  .suggest-chip.chip-clip .chip-ico svg{ width:16px; height:16px; fill:var(--key-tag); display:block; }
+  .suggest-chip.chip-clip .chip-txt{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .suggest-chip.chip-emoji{ font-size:1.35rem; }
+
+  /* ---- Ubah ukuran (Gboard): bingkai teal, pegangan atas/bawah, tombol Reset / geser / Selesai ---- */
+  .resize-overlay{ display:none; position:absolute; inset:0; z-index:60; background:rgba(6,12,14,.78); border:3px solid var(--key-tag); border-radius:22px; touch-action:none; }
+  .rz-handle{ position:absolute; left:50%; transform:translateX(-50%); width:96px; height:30px; display:flex; align-items:center; justify-content:center; touch-action:none; }
+  .rz-handle::after{ content:''; width:76px; height:6px; border-radius:3px; background:var(--key-tag); }
+  .rz-top{ top:2px; } .rz-bottom{ bottom:2px; }
+  .rz-btns{ position:absolute; left:0; right:0; top:50%; transform:translateY(-50%); display:flex; justify-content:center; align-items:center; gap:14px; }
+  .rz-pill{ display:flex; align-items:center; gap:8px; height:40px; padding:0 20px; border-radius:20px; border:none; background:#80CBC4; color:#0F2A2B; font-family:inherit; font-size:.95rem; font-weight:500; }
+  .rz-pill svg, .rz-move svg{ width:20px; height:20px; fill:currentColor; }
+  .rz-move{ width:40px; height:40px; border-radius:50%; background:#80CBC4; color:#0F2A2B; display:flex; align-items:center; justify-content:center; touch-action:none; }
+
   /* ---- Responsif: layar sangat sempit / tablet / landscape ---- */
   @media (max-width:340px){
     :root{ --kgap:3px; --key-h:36px; }
@@ -505,10 +600,15 @@
      orientation:landscape SALAH-KENA di HP portrait (lebar 360 > tinggi 240). Deteksi landscape
      sungguhan lewat lebar >= 560 dan tinggi keyboard pendek. */
   @media (min-width:560px) and (max-height:340px){
-    :root{ --key-h:32px; }
+    :root{ --key-h:34px; }
     .krow{ margin-bottom:5px; }
-    .key .tag{ display:none; }
-    .key .ch{ font-size:calc(1.15rem * var(--key-font-scale)); }
+    /* Label nada TETAP tampil di layar horizontal (bisa dimatikan lewat kisi alat -> "Label nada"), hanya diperkecil. */
+    .key{ justify-content:flex-start; padding-top:3px; }          /* huruf di atas, label nada di bawahnya (tidak bertumpuk) */
+    .key .tag{ font-size:.4rem; margin-top:1px; }
+    .key .ch{ line-height:1.15; }
+    .key .ch{ font-size:calc(1.05rem * var(--key-font-scale)); }
+    .key.fn .ch{ font-size:calc(.9rem * var(--key-font-scale)); }
+    .key .ch svg{ width:calc(1.15rem * var(--key-font-scale)); height:calc(1.15rem * var(--key-font-scale)); }
   }
 
 </style>
@@ -524,7 +624,7 @@
     <div class="bar-center">
       <div class="suggest-bar" id="suggestBar"></div>
       <div class="gboard-toolbar" id="gboardToolbar" style="display:none;">
-        <button class="gtool-btn dim" id="stickerBtn" data-tool="sticker" type="button" title="Stiker (belum tersedia)" aria-disabled="true"><span data-icon="sticker"></span></button>
+        <button class="gtool-btn" id="stickerBtn" data-tool="sticker" type="button" title="Stiker"><span data-icon="sticker"></span></button>
         <button class="gtool-btn gtool-gif has-gif" id="gifBtn" data-tool="gif" type="button" title="GIF">GIF</button>
         <button class="gtool-btn" id="settingsBtn" data-tool="gear" type="button" title="Setelan"><span data-icon="gear"></span></button>
         <button class="gtool-btn" id="translateBtn" data-tool="translate" type="button" title="Terjemahkan"><span data-icon="translate"></span></button>
@@ -586,7 +686,8 @@
     </label>
     </div>
   </div>
-  <div class="clipboard-panel" id="clipboardPanel"></div>
+  <div class="clip-panel" id="clipboardPanel"></div>
+  <div class="media-panel" id="mediaPanel"></div>
   <div class="gif-panel" id="gifPanel"></div>
   <div class="translate-panel" id="translatePanel">
     <div class="translate-bar">
@@ -607,6 +708,15 @@
   <div class="keyboard-inner" id="keyboardInner">
     <div class="keyboard" id="keyboard"></div>
     <div class="emoji-panel" id="emojiPanel"></div>
+  </div>
+  <div class="resize-overlay" id="resizeOverlay">
+    <div class="rz-handle rz-top" id="rzTop"></div>
+    <div class="rz-btns">
+      <button class="rz-pill" id="rzReset" type="button"><span data-icon="reset"></span>Reset</button>
+      <div class="rz-move" id="rzMove" title="Geser"><span data-icon="move"></span></div>
+      <button class="rz-pill" id="rzDone" type="button"><span data-icon="check"></span>Selesai</button>
+    </div>
+    <div class="rz-handle rz-bottom" id="rzBottom"></div>
   </div>
   <div class="lang-popup" id="langPopup"></div>
   <button class="one-hand-flip" id="oneHandFlip" type="button" title="Pindah sisi">⇄</button>
@@ -631,6 +741,14 @@
     keyboard:  _svg('<path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/>'),
     globe:     _svg('<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><ellipse cx="12" cy="12" rx="4" ry="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 12h18" fill="none" stroke="currentColor" stroke-width="2"/>'),
     chev:      _svg('<path d="M9 6l6 6-6 6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'),
+    back:      _svg('<path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>'),
+    search:    _svg('<path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>'),
+    history:   _svg('<path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/>'),
+    plus:      _svg('<path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>'),
+    pin:       _svg('<path d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/>'),
+    link:      _svg('<path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/>'),
+    reset:     _svg('<path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>'),
+    move:      _svg('<path d="M10 9h4V6h3l-5-5-5 5h3v3zm-1 1H6V7l-5 5 5 5v-3h3v-4zm14 2l-5-5v3h-3v4h3v3l5-5zm-9 3h-4v3H7l5 5 5-5h-3v-3z"/>'),
     share:     _svg('<path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/>'),
     trash:     _svg('<path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>'),
     pencil:    _svg('<path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>'),
@@ -1454,7 +1572,7 @@
 
   // ---------------- Preferensi (bisa dimatikan dari kisi alat halaman 2) ----------------
   const PREFS_KEY = 'genjreng_prefs_v1';
-  const prefs = { autocorrect:true, autocaps:true, suggest:true };
+  const prefs = { autocorrect:true, autocaps:true, suggest:true, clip:true };
   try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); }catch(e){}
   function savePrefs(){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }catch(e){} }
 
@@ -1684,8 +1802,37 @@
       }
       if(shiftActive) list = list.map(w => w.charAt(0).toUpperCase() + w.slice(1));
       candidates = list.slice(0, 3);
+      // Seperti Gboard: salinan terbaru CUMA muncul sebagai chip (tidak ditulis otomatis); atau emoji yang cocok dengan kata tadi.
+      if(recentClip && Date.now() < recentClip.until){
+        candidates = [{ kind:'clip', text:recentClip.t }].concat(candidates.slice(0, 2));
+      } else {
+        const eh = EMOJI_HINT[lastCompletedWord];
+        if(eh && candidates.length >= 3) candidates = candidates.slice(0, 2).concat({ kind:'emoji', text:eh });
+      }
     }
     candidates.forEach((c, idx) => {
+      if(typeof c === 'object'){                 // chip khusus: papan klip / emoji
+        const sp = document.createElement('button');
+        sp.type = 'button';
+        if(c.kind === 'clip'){
+          sp.className = 'suggest-chip chip-clip';
+          sp.innerHTML = '<span class="chip-ico">' + ICONS.clipboard + '</span><span class="chip-txt"></span>';
+          sp.querySelector('.chip-txt').textContent = c.text.replace(/\s+/g, ' ').slice(0, 60);
+          let armedC = false;
+          sp.addEventListener('pointerdown', ()=>{ armedC = true; });
+          sp.addEventListener('pointerleave', ()=>{ armedC = false; });
+          sp.addEventListener('pointerup', ()=>{ if(armedC){ armedC = false; pasteClip(c.text); } });
+        } else {
+          sp.className = 'suggest-chip chip-emoji';
+          sp.textContent = c.text;
+          let armedE = false;
+          sp.addEventListener('pointerdown', ()=>{ armedE = true; });
+          sp.addEventListener('pointerleave', ()=>{ armedE = false; });
+          sp.addEventListener('pointerup', ()=>{ if(armedE){ armedE = false; insertEmoji(c.text); } });
+        }
+        bar.appendChild(sp);
+        return;
+      }
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'suggest-chip';
@@ -1693,16 +1840,16 @@
       // Ketuk = pakai saran. TAHAN (±0,5 dtk) = hapus saran itu dari kamus. Slot kiri saat sedang
       // mengetik adalah kata yang kamu ketik sendiri, jadi tidak bisa dihapus.
       const canDelete = !(word.length > 0 && idx === 0);
-      let timer = null, fired = false, sx = 0, sy = 0;
+      let timer = null, fired = false, armed = false, sx = 0, sy = 0;
       const stop = ()=>{ if(timer){ clearTimeout(timer); timer = null; } };
       chip.addEventListener('pointerdown', (e)=>{
-        fired = false; sx = e.clientX; sy = e.clientY; stop();
-        if(canDelete) timer = setTimeout(()=>{ timer = null; fired = true; if(navigator.vibrate) navigator.vibrate(12); removeSuggestion(c); }, 500);
+        armed = true; fired = false; sx = e.clientX; sy = e.clientY; stop();
+        if(canDelete) timer = setTimeout(()=>{ timer = null; fired = true; armed = false; if(navigator.vibrate) navigator.vibrate(12); removeSuggestion(c); }, 500);
       });
       chip.addEventListener('pointermove', (e)=>{ if(timer && (Math.abs(e.clientX-sx) > 14 || Math.abs(e.clientY-sy) > 14)) stop(); });
-      chip.addEventListener('pointerup', ()=>{ const wasFired = fired; stop(); if(!wasFired) applySuggestion(c); });
-      chip.addEventListener('pointercancel', stop);
-      chip.addEventListener('pointerleave', stop);
+      chip.addEventListener('pointerup', ()=>{ const ok = armed && !fired; armed = false; stop(); if(ok) applySuggestion(c); });
+      chip.addEventListener('pointercancel', ()=>{ armed = false; stop(); });
+      chip.addEventListener('pointerleave', ()=>{ armed = false; stop(); });
       bar.appendChild(chip);
     });
   }
@@ -1777,82 +1924,129 @@
     else if(autoShift) applyAutoCaps(false);
   }
 
-  // ---------------- Fitur 2: Clipboard riwayat ----------------
-  let clipboardHistory = [];
-  try{ clipboardHistory = JSON.parse(localStorage.getItem('genjreng_clipboard') || '[]'); }catch(e){}
-  // Riwayat clipboard menyimpan salinan APA ADANYA, pendek maupun panjang (maks. 15 item terakhir).
-  // Satu-satunya batas: 20.000 karakter per item, supaya penyimpanan lokal tidak jebol. Salinan yang
-  // ditandai "sensitif" oleh Android (mis. pengelola sandi) tidak disimpan -- itu dicegat lebih awal
-  // di window.onClipboardChanged. Riwayat ini TERPISAH dari saran kata: isinya tidak pernah dipelajari.
+  // ---------------- Fitur 2: Papan klip (template Gboard: Terbaru + Disematkan) ----------------
+  // Salinan disimpan APA ADANYA (pendek maupun panjang, maks. 20.000 karakter per item). Seperti Gboard:
+  // klip yang tidak disematkan dihapus otomatis setelah 1 jam; TAHAN sebuah klip untuk menyematkannya.
+  // Salinan bertanda "sensitif" oleh Android (mis. pengelola sandi) tidak disimpan (dicegat di onClipboardChanged).
+  // Riwayat ini TERPISAH dari saran kata: isinya tidak pernah dipelajari.
+  const CLIP_KEY = 'genjreng_clipboard_v2';
+  const CLIP_TTL_MS = 60 * 60 * 1000;
   const CLIP_MAX_CHARS = 20000;
-  function isClipSaveable(t){
-    return typeof t === 'string' && t.trim().length > 0 && t.length <= CLIP_MAX_CHARS;
+  let clipItems = [];                       // [{ t:teks, at:waktu, pin:bool }], terbaru dulu
+  try{
+    const v2 = JSON.parse(localStorage.getItem(CLIP_KEY) || 'null');
+    if(Array.isArray(v2)){ clipItems = v2.filter(x => x && typeof x.t === 'string'); }
+    else {
+      const v1 = JSON.parse(localStorage.getItem('genjreng_clipboard') || '[]');   // format lama: daftar teks
+      if(Array.isArray(v1)) clipItems = v1.filter(t => typeof t === 'string').map(t => ({ t, at:Date.now(), pin:false }));
+    }
+  }catch(e){}
+  let clipEditing = false;
+  var recentClip = null;                    // { t, until } -> chip "papan klip" di bar saran (60 detik)
+  function isClipSaveable(t){ return typeof t === 'string' && t.trim().length > 0 && t.length <= CLIP_MAX_CHARS; }
+  function pruneClips(){
+    const now = Date.now();
+    clipItems = clipItems.filter(x => x.pin || now - x.at < CLIP_TTL_MS);
+    clipItems.sort((a, b) => b.at - a.at);
+    let np = 0, nu = 0;
+    clipItems = clipItems.filter(x => x.pin ? (++np <= 15) : (++nu <= 15));
   }
-
-  function saveClipboardHistory(){
-    try{ localStorage.setItem('genjreng_clipboard', JSON.stringify(clipboardHistory.slice(0,15))); }catch(e){}
+  function saveClips(){
+    try{ localStorage.setItem(CLIP_KEY, JSON.stringify(clipItems)); localStorage.removeItem('genjreng_clipboard'); }catch(e){}
+  }
+  function clipboardOpen(){ const p = document.getElementById('clipboardPanel'); return !!(p && p.style.display && p.style.display !== 'none'); }
+  function clipKind(t){
+    if(/^(https?:\/\/|www\.)\S+$/i.test(t.trim())) return 'link';
+    if(/^\+?[\d][\d\s().-]{6,}$/.test(t.trim())) return 'phone';
+    return 'text';
+  }
+  function pasteClip(t){
+    appendText(t);                                    // tempelan tidak pernah dipelajari jadi saran (lihat appendText)
+    if(recentClip && recentClip.t === t) recentClip = null;
+    if(clipboardOpen()) closeEverything(); else scheduleSuggestions();
   }
   function renderClipboardPanel(){
+    pruneClips(); saveClips();
     const panel = document.getElementById('clipboardPanel');
     panel.innerHTML = '';
-    if(clipboardHistory.length === 0){
-      const empty = document.createElement('div');
-      empty.className = 'clipboard-empty';
-      empty.textContent = 'Belum ada riwayat copy. Salinan (pendek maupun panjang) muncul di sini, maksimal 15 item terakhir.';
-      panel.appendChild(empty);
+    const mk = (tag, cls, html) => { const e = document.createElement(tag); if(cls) e.className = cls; if(html != null) e.innerHTML = html; return e; };
+    // ---- kepala: [<-] Papan klip        [sakelar] [pensil]
+    const head = mk('div', 'clip-head');
+    const back = mk('button', 'mp-back', ICONS.back); back.type = 'button'; back.title = 'Kembali';
+    back.addEventListener('pointerdown', (e)=>{ e.preventDefault(); closeEverything(); });
+    const title = mk('span', 'clip-title'); title.textContent = 'Papan klip';
+    const sw = mk('button', 'clip-switch' + (prefs.clip ? ' on' : '')); sw.type = 'button'; sw.title = 'Simpan salinan baru';
+    sw.addEventListener('click', ()=>{ prefs.clip = !prefs.clip; savePrefs(); renderClipboardPanel(); });
+    const pen = mk('button', 'clip-pencil', clipEditing ? ICONS.check : ICONS.pencil); pen.type = 'button'; pen.title = 'Sunting';
+    pen.addEventListener('click', ()=>{ clipEditing = !clipEditing; renderClipboardPanel(); });
+    head.appendChild(back); head.appendChild(title); head.appendChild(sw); head.appendChild(pen);
+    panel.appendChild(head);
+    const body = mk('div', 'clip-body');
+    panel.appendChild(body);
+    if(!prefs.clip){
+      body.appendChild(mk('div', 'clip-hint', 'Penyimpanan papan klip dimatikan. Nyalakan sakelar di kanan atas supaya salinan baru muncul di sini.'));
+    }
+    const recent = clipItems.filter(x => !x.pin), pinned = clipItems.filter(x => x.pin);
+    if(!clipItems.length){
+      const g = mk('div', 'clip-grid');
+      g.appendChild(mk('div', 'clip-hint', 'Teks apa pun yang kamu salin akan disimpan di sini. Ketuk klip untuk menempelnya.'));
+      g.appendChild(mk('div', 'clip-hint', 'Tahan sebuah klip untuk menyematkannya. Klip yang tidak disematkan dihapus setelah 1 jam.'));
+      body.appendChild(g);
       return;
     }
-    const toolbar = document.createElement('div');
-    toolbar.className = 'clipboard-toolbar';
-    const clearBtn = document.createElement('button');
-    clearBtn.type = 'button';
-    clearBtn.className = 'clipboard-clear';
-    clearBtn.textContent = 'Hapus semua';
-    clearBtn.addEventListener('pointerdown', () => {
-      clipboardHistory = [];
-      saveClipboardHistory();
-      renderClipboardPanel();
-    });
-    toolbar.appendChild(clearBtn);
-    panel.appendChild(toolbar);
-
-    clipboardHistory.forEach((item, i) => {
-      const row = document.createElement('div');
-      row.className = 'clipboard-item-row';
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'clipboard-item';
-      btn.textContent = item.length > 300 ? item.slice(0, 300) + '…' : item;   // pratinjau saja; yang ditempel tetap teks LENGKAP
-      btn.addEventListener('pointerdown', () => {
-        appendText(item);
-        renderSuggestions();
+    const card = (it) => {
+      const c = mk('div', 'clip-card' + (it.pin ? ' pinned' : ''));
+      const kind = clipKind(it.t);
+      const txt = mk('span', 'clip-txt' + (kind === 'link' ? ' link' : ''));
+      txt.textContent = it.t.length > 300 ? it.t.slice(0, 300) + '…' : it.t;    // pratinjau saja; yang ditempel tetap LENGKAP
+      if(kind === 'link'){ const ic = mk('span', 'clip-kind', ICONS.link); c.appendChild(ic); }
+      c.appendChild(txt);
+      if(it.pin && !clipEditing) c.appendChild(mk('span', 'clip-pinmark', ICONS.pin));
+      if(clipEditing){
+        const pinB = mk('button', 'clip-act', ICONS.pin); pinB.type = 'button'; pinB.title = it.pin ? 'Lepas semat' : 'Sematkan';
+        pinB.addEventListener('click', (e)=>{ e.stopPropagation(); it.pin = !it.pin; it.at = Date.now(); saveClips(); renderClipboardPanel(); });
+        const delB = mk('button', 'clip-act del', ICONS.close); delB.type = 'button'; delB.title = 'Hapus';
+        delB.addEventListener('click', (e)=>{ e.stopPropagation(); clipItems = clipItems.filter(x => x !== it); saveClips(); renderClipboardPanel(); });
+        const acts = mk('div', 'clip-acts'); acts.appendChild(pinB); acts.appendChild(delB); c.appendChild(acts);
+        return c;
+      }
+      // ketuk = tempel; tahan (0,5 dtk) = sematkan / lepas semat
+      let timer = null, fired = false, armed = false, sx = 0, sy = 0;
+      const stop = ()=>{ if(timer){ clearTimeout(timer); timer = null; } };
+      c.addEventListener('pointerdown', (e)=>{
+        armed = true; fired = false; sx = e.clientX; sy = e.clientY; stop();
+        timer = setTimeout(()=>{ timer = null; fired = true; armed = false; if(navigator.vibrate) navigator.vibrate(12); it.pin = !it.pin; it.at = Date.now(); saveClips(); renderClipboardPanel(); }, 500);
       });
-      const del = document.createElement('button');
-      del.type = 'button';
-      del.className = 'clipboard-item-del';
-      del.textContent = '✕';
-      del.title = 'Hapus item ini';
-      del.addEventListener('pointerdown', (e) => {
-        e.stopPropagation();
-        clipboardHistory.splice(i, 1);
-        saveClipboardHistory();
-        renderClipboardPanel();
-      });
-      row.appendChild(btn);
-      row.appendChild(del);
-      panel.appendChild(row);
-    });
+      c.addEventListener('pointermove', (e)=>{ if(timer && (Math.abs(e.clientX-sx) > 12 || Math.abs(e.clientY-sy) > 12)) stop(); });
+      c.addEventListener('pointerup', ()=>{ const ok = armed && !fired; armed = false; stop(); if(ok) pasteClip(it.t); });
+      c.addEventListener('pointercancel', ()=>{ armed = false; stop(); });
+      c.addEventListener('pointerleave', ()=>{ armed = false; stop(); });
+      return c;
+    };
+    const section = (label, items) => {
+      if(!items.length) return;
+      body.appendChild(mk('div', 'clip-sec', label));
+      const g = mk('div', 'clip-grid');
+      items.forEach(it => g.appendChild(card(it)));
+      body.appendChild(g);
+    };
+    section('Terbaru', recent);
+    section('Disematkan', pinned);
   }
   // Dipanggil dari sisi Java (HtmlKeyboardService) setiap kali clipboard sistem Android berubah.
   window.onClipboardChanged = function(newText, sensitive){
-    if(!newText || sensitive === true) return;   // clip bertanda IS_SENSITIVE tidak disimpan
-    newText = newText.trim();
-    if(!isClipSaveable(newText)) return;         // kosong / lebih dari 20.000 karakter -> diabaikan
-    clipboardHistory = clipboardHistory.filter(t => t !== newText);
-    clipboardHistory.unshift(newText);
-    clipboardHistory = clipboardHistory.slice(0,15);
-    saveClipboardHistory();
-    renderClipboardPanel();
+    if(!newText || sensitive === true || !prefs.clip) return;    // bertanda sensitif / penyimpanan dimatikan
+    const t = newText.trim();
+    if(!isClipSaveable(t)) return;                               // kosong / lebih dari 20.000 karakter -> diabaikan
+    const ex = clipItems.find(x => x.t === t);
+    const pin = ex ? ex.pin : false;
+    clipItems = clipItems.filter(x => x.t !== t);
+    clipItems.unshift({ t, at:Date.now(), pin });
+    pruneClips(); saveClips();
+    // Seperti Gboard: teks yang baru disalin CUMA muncul sebagai chip di bar saran (60 dtk); tidak ditulis otomatis.
+    recentClip = { t, until: Date.now() + 60000 };
+    setTimeout(()=>{ if(recentClip && Date.now() >= recentClip.until) scheduleSuggestions(); }, 60500);
+    if(clipboardOpen()) renderClipboardPanel(); else if(!anyPanelOpen()) scheduleSuggestions();   // (jangan menutup kisi alat yang sedang dibuka)
   };
 
   // ---------------- Fitur 2b: Panel GIF ----------------
@@ -2087,7 +2281,7 @@
     b.addEventListener('pointerdown', ()=>{
       flash(b);
       showBubble(b, emo);
-      appendText(emo);
+      insertEmoji(emo);
     });
     emojiPanelEl.appendChild(b);
     emojiKeys.push(b);
@@ -2113,11 +2307,12 @@
   emojiDeleteBtn.addEventListener('pointerdown', () => { flash(emojiDeleteBtn); backspace(); });
   wireLongPressRepeat(emojiDeleteBtn, backspace); // tahan = hapus berulang & makin cepat, sama seperti tuts hapus utama
   emojiPanelEl.insertBefore(emojiDeleteBtn, emojiPanelEl.firstChild);
+  emojiBackBtn.remove(); emojiDeleteBtn.remove();   // diganti tombol ABC / hapus di baris bawah panel media
 
   function setMode(newMode){
     mode = newMode;
-    keyboardEl2.style.display = (mode==='emoji') ? 'none' : '';
-    emojiPanelEl.style.display = (mode==='emoji') ? 'grid' : 'none';
+    keyboardEl2.style.display = '';          // panel emoji lama tidak dipakai lagi: diganti panel media (menutupi tuts)
+    emojiPanelEl.style.display = 'none';
     // Baris angka cuma ditampilkan di mode simbol (?123), sama seperti Gboard --
     // di mode huruf, angkanya "di belakang" lewat badge pojok + tekan-tahan.
     keyboardEl.classList.toggle('show-num-row', mode==='symbols');
@@ -2127,10 +2322,248 @@
     if(mode==='symbols'){
       showStatus(listening ? 'Mode simbol aktif — petik nada untuk mengetik tanda baca.' : 'Mode simbol aktif — lihat nada di bawah tiap tanda baca.');
     } else if(mode==='emoji'){
-      showStatus(listening ? 'Mode emoji aktif — petik nada untuk mengetik emoji.' : 'Mode emoji aktif — lihat nada di bawah tiap emoji.');
+      openMediaPanelInternal('emoji');
     } else {
+      if(mediaOpen()) closePanelsOnly();
       showStatus(listening ? 'Mendengarkan… petik satu nada per satu.' : 'Petik nada satu-satu (bukan kunci penuh) untuk hasil terbaik.');
     }
+  }
+
+  // ---------------- Data emoji panel Gboard (kategori + kata kunci pencarian) ----------------
+  const EMOJI_CATS = [
+    { id:'smile', icon:'😀', name:'Smiley & Emotikon', list:'😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 ☺️ 😚 😙 🥲 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🤧 🥵 🥶 🥴 😵 🤯 🤠 🥳 🥸 😎 🤓 🧐 😕 😟 🙁 ☹️ 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 ☠️ 💩 🤡 👹 👺 👻 👽 👾 🤖 😺 😸 😹 😻 😼 😽 🙀 😿 😾 🙈 🙉 🙊 💋 💌 💘 💝 💖 💗 💓 💞 💕 💟 ❣️ 💔 ❤️ 🧡 💛 💚 💙 💜 🤎 🖤 🤍 💯 💢 💥 💫 💦 💨 💬 💭 💤' },
+    { id:'people', icon:'🙋', name:'Orang & Tubuh', list:'👋 🤚 🖐️ ✋ 🖖 👌 🤌 🤏 ✌️ 🤞 🤟 🤘 🤙 👈 👉 👆 🖕 👇 ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 👐 🤲 🤝 🙏 ✍️ 💅 🤳 💪 🦾 🦵 🦶 👂 🦻 👃 🧠 🫀 🫁 🦷 🦴 👀 👁️ 👅 👄 👶 🧒 👦 👧 🧑 👱 👨 🧔 👩 🧓 👴 👵 🙍 🙎 🙅 🙆 💁 🙋 🧏 🙇 🤦 🤷 👮 🕵️ 💂 👷 🤴 👸 👳 👲 🧕 🤵 👰 🤰 🤱 👼 🎅 🤶 🦸 🦹 🧙 🧚 🧛 🧜 🧝 🧞 🧟 💆 💇 🚶 🏃 💃 🕺 👯 🧖 🧘' },
+    { id:'animals', icon:'🐱', name:'Hewan & Alam', list:'🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🐒 🐔 🐧 🐦 🐤 🦆 🦅 🦉 🦇 🐺 🐗 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐜 🕷️ 🦂 🐢 🐍 🦎 🦖 🐙 🦑 🦐 🦞 🦀 🐡 🐠 🐟 🐬 🐳 🐋 🦈 🐊 🐅 🐆 🦓 🦍 🐘 🦏 🐪 🐫 🦒 🦘 🐃 🐂 🐄 🐎 🐖 🐏 🐑 🐐 🦌 🐕 🐩 🐈 🐓 🦃 🦚 🦜 🦢 🕊️ 🐇 🐁 🐀 🐿️ 🦔 🌵 🎄 🌲 🌳 🌴 🌱 🌿 ☘️ 🍀 🍃 🍂 🍁 🍄 🌾 💐 🌷 🌹 🥀 🌺 🌸 🌼 🌻 🌞 🌝 🌛 🌜 🌚 🌕 🌗 🌑 🌙 🌎 🌍 🌏 ⭐ 🌟 ✨ ⚡ ☄️ 💥 🔥 🌪️ 🌈 ☀️ 🌤️ ⛅ ☁️ 🌧️ ⛈️ 🌩️ ❄️ ☃️ ⛄ 🌬️ 💧 ☔ 🌊' },
+    { id:'food', icon:'🍔', name:'Makanan & Minuman', list:'🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍈 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🍆 🥑 🥦 🥬 🥒 🌶️ 🌽 🥕 🧄 🧅 🥔 🍠 🥐 🥯 🍞 🥖 🥨 🧀 🥚 🍳 🧈 🥞 🧇 🥓 🥩 🍗 🍖 🌭 🍔 🍟 🍕 🥪 🥙 🧆 🌮 🌯 🥗 🥘 🍝 🍜 🍲 🍛 🍣 🍱 🥟 🍤 🍙 🍚 🍘 🍥 🥠 🍢 🍡 🍧 🍨 🍦 🥧 🧁 🍰 🎂 🍮 🍭 🍬 🍫 🍿 🍩 🍪 🌰 🥜 🍯 🥛 🍼 ☕ 🍵 🧃 🥤 🍶 🍺 🍻 🥂 🍷 🥃 🍸 🍹 🍾 🥄 🍴 🍽️ 🥣 🥡 🥢 🧂' },
+    { id:'act', icon:'⚽', name:'Aktivitas & Acara', list:'⚽ 🏀 🏈 ⚾ 🥎 🎾 🏐 🏉 🎱 🏓 🏸 🏒 🏑 🏏 🥅 ⛳ 🏹 🎣 🥊 🥋 🎽 🛹 ⛸️ 🎿 ⛷️ 🏂 🏋️ 🤼 🤸 ⛹️ 🤺 🤾 🏌️ 🏇 🧘 🏄 🏊 🚣 🧗 🚵 🚴 🏆 🥇 🥈 🥉 🏅 🎖️ 🎗️ 🎫 🎟️ 🎪 🤹 🎭 🎨 🎬 🎤 🎧 🎼 🎹 🥁 🎷 🎺 🎸 🪕 🎻 🎲 ♟️ 🎯 🎳 🎮 🎰 🧩 🎉 🎊 🎈 🎂 🎁 🎀 🎇 🎆 🧨 🎃 🎄 🎋 🎍 🎎 🎏 🎐 🎑 🧧' },
+    { id:'travel', icon:'🚗', name:'Perjalanan & Tempat', list:'🚗 🚕 🚙 🚌 🚎 🏎️ 🚓 🚑 🚒 🚐 🚚 🚛 🚜 🛵 🏍️ 🛺 🚲 🛴 🚨 🚔 🚍 🚘 🚖 🚡 🚠 🚃 🚋 🚞 🚝 🚄 🚅 🚈 🚂 🚆 🚇 🚊 🚉 ✈️ 🛫 🛬 🛩️ 💺 🚁 🚀 🛸 🚢 ⛵ 🛶 🚤 ⛴️ ⚓ ⛽ 🚧 🚦 🚥 🗺️ 🗿 🗽 🗼 🏰 🏯 🏟️ 🎡 🎢 🎠 ⛲ ⛱️ 🏖️ 🏝️ 🏜️ 🌋 ⛰️ 🏔️ 🗻 🏕️ ⛺ 🏠 🏡 🏘️ 🏚️ 🏗️ 🏢 🏬 🏣 🏤 🏥 🏦 🏨 🏪 🏫 🏩 💒 🏛️ ⛪ 🕌 🛕 🕍 ⛩️ 🌃 🌆 🌇 🌉 🌁 🌄 🌅' },
+    { id:'obj', icon:'💡', name:'Objek', list:'⌚ 📱 📲 💻 ⌨️ 🖥️ 🖨️ 🖱️ 🕹️ 💽 💾 💿 📀 📼 📷 📸 📹 🎥 📽️ 🎞️ 📞 ☎️ 📟 📠 📺 📻 🎙️ 🎚️ 🎛️ 🧭 ⏱️ ⏲️ ⏰ 🕰️ ⌛ ⏳ 📡 🔋 🔌 💡 🔦 🕯️ 🧯 💸 💵 💴 💶 💷 💰 💳 🧾 💎 ⚖️ 🧰 🔧 🔨 ⚒️ 🛠️ ⛏️ 🔩 ⚙️ 🧱 ⛓️ 🧲 🔫 💣 🪓 🔪 🗡️ ⚔️ 🛡️ 🚬 ⚰️ 🏺 🔮 📿 🧿 💈 ⚗️ 🔭 🔬 🩹 🩺 💊 💉 🩸 🧬 🦠 🧪 🌡️ 🧹 🧺 🧻 🚽 🚰 🚿 🛁 🛀 🧼 🪒 🧽 🧴 🛎️ 🔑 🗝️ 🚪 🪑 🛋️ 🛏️ 🧸 🖼️ 🛍️ 🛒 🎁 🏮 ✉️ 📩 📨 📧 📥 📤 📦 🏷️ 📪 📫 📬 📭 📮 📯 📜 📃 📄 📑 📊 📈 📉 🗒️ 🗓️ 📆 📅 🗑️ 📇 🗃️ 🗳️ 🗄️ 📋 📁 📂 🗂️ 🗞️ 📰 📓 📔 📒 📕 📗 📘 📙 📚 📖 🔖 🧷 🔗 📎 🖇️ 📐 📏 🧮 📌 📍 ✂️ 🖊️ 🖋️ ✒️ 🖌️ 🖍️ 📝 ✏️ 🔍 🔎 🔏 🔐 🔒 🔓' },
+    { id:'sym', icon:'❤️', name:'Simbol', list:'❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ☮️ ✝️ ☪️ 🕉️ ☸️ ✡️ 🔯 ☯️ ♈ ♉ ♊ ♋ ♌ ♍ ♎ ♏ ♐ ♑ ♒ ♓ 🆔 ⚛️ ☢️ ☣️ 📴 📳 ✴️ 🆚 💮 🅰️ 🅱️ 🆎 🆑 🅾️ 🆘 ❌ ⭕ 🛑 ⛔ 📛 🚫 💯 💢 ♨️ 🚷 🚯 🚳 🚱 🔞 📵 🚭 ❗ ❕ ❓ ❔ ‼️ ⁉️ 🔅 🔆 ⚠️ 🚸 🔱 ⚜️ 🔰 ♻️ ✅ 💹 ❇️ ✳️ ❎ 🌐 💠 🌀 💤 🏧 🚾 ♿ 🅿️ 🛂 🛃 🛄 🛅 🚹 🚺 🚼 🚻 🚮 🎦 📶 🔣 ℹ️ 🔤 🔡 🔠 🆖 🆗 🆙 🆒 🆕 🆓 0️⃣ 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣ 8️⃣ 9️⃣ 🔟 🔢 #️⃣ *️⃣ ▶️ ⏸️ ⏹️ ⏺️ ⏭️ ⏮️ ⏩ ⏪ ⏫ ⏬ ◀️ 🔼 🔽 ➡️ ⬅️ ⬆️ ⬇️ ↗️ ↘️ ↙️ ↖️ ↕️ ↔️ ↪️ ↩️ ⤴️ ⤵️ 🔀 🔁 🔂 🔄 🔃 🎵 🎶 ➕ ➖ ➗ ✖️ ♾️ 💲 ™️ ©️ ®️ 〰️ ➰ ➿ ✔️ ☑️ 🔘 🔴 🟠 🟡 🟢 🔵 🟣 ⚫ ⚪ 🟤 🔺 🔻 🔸 🔹 🔶 🔷 🔳 🔲 ▪️ ▫️ ◾ ◽ ◼️ ◻️ ⬛ ⬜ 🔈 🔇 🔉 🔊 🔔 🔕 📣 📢 💬 💭 🗯️ ♠️ ♣️ ♥️ ♦️ 🃏 🎴 🀄' },
+    { id:'flag', icon:'🏁', name:'Bendera', list:'🏁 🚩 🎌 🏴 🏳️ 🏳️‍🌈 🇮🇩 🇲🇾 🇸🇬 🇹🇭 🇻🇳 🇵🇭 🇧🇳 🇰🇭 🇱🇦 🇲🇲 🇹🇱 🇯🇵 🇰🇷 🇨🇳 🇹🇼 🇭🇰 🇮🇳 🇵🇰 🇧🇩 🇱🇰 🇳🇵 🇸🇦 🇦🇪 🇶🇦 🇰🇼 🇴🇲 🇯🇴 🇱🇧 🇸🇾 🇮🇶 🇮🇷 🇹🇷 🇪🇬 🇿🇦 🇳🇬 🇰🇪 🇲🇦 🇪🇹 🇬🇭 🇺🇸 🇨🇦 🇲🇽 🇧🇷 🇦🇷 🇨🇴 🇨🇱 🇵🇪 🇬🇧 🇮🇪 🇫🇷 🇩🇪 🇮🇹 🇪🇸 🇵🇹 🇳🇱 🇧🇪 🇨🇭 🇦🇹 🇸🇪 🇳🇴 🇩🇰 🇫🇮 🇵🇱 🇷🇺 🇺🇦 🇬🇷 🇦🇺 🇳🇿 🇵🇸 🇺🇳 🇪🇺' },
+  ].map(c => Object.assign(c, { emojis: c.list.split(/\s+/).filter(Boolean) }));
+
+  // Kata kunci pencarian (Indonesia + Inggris) -> emoji, dipisah spasi.
+  const EMOJI_KW = [
+    ['senyum senang bahagia gembira smile happy joy','😀 😃 😄 😁 😊 🙂 😌 🥰'], ['tawa ketawa lucu haha wkwk lol laugh funny','😂 🤣 😆 😹 😄'],
+    ['cinta sayang love heart hati','❤️ 💕 💖 😍 🥰 😘 💘 💝'], ['sedih nangis cry sad tears','😢 😭 😞 😔 🥺 💔'],
+    ['marah kesal angry mad','😡 😠 🤬 😤 👿'], ['takut kaget scared shock wow','😱 😨 😲 😮 🙀'], ['cium kiss','😘 😗 😚 😙 💋'],
+    ['keren cool','😎 🤙 👍 🔥 😏'], ['tidur ngantuk sleep tired','😴 😪 🥱 💤'], ['sakit sick ill','🤒 🤕 🤢 🤮 🤧 😷'],
+    ['makan makanan eat food lapar','🍽️ 🍔 🍕 🍟 🍜 🍚 🍗 🍣'], ['minum drink kopi coffee teh tea','☕ 🍵 🥤 🍺 🍷 🧃'],
+    ['musik lagu music song nyanyi','🎵 🎶 🎤 🎧 🎼 🎸'], ['gitar guitar','🎸 🪕 🎶 🎵'], ['api fire panas hot','🔥 ♨️ 🌶️'],
+    ['pesta party ulang tahun birthday selamat','🎉 🎊 🎂 🥳 🎈 🎁'], ['terima kasih thanks thank makasih doa pray','🙏 😊 🤝 💐'],
+    ['jempol bagus good ok oke mantap','👍 👌 ✅ 👏 💯'], ['tepuk tangan clap bravo','👏 🙌 👐 🎉'], ['kucing cat','🐱 😺 🐈'], ['anjing dog','🐶 🐕 🐩'],
+    ['hewan animal','🐶 🐱 🐭 🐰 🦊 🐻 🐼 🐯 🦁 🐸 🐵'], ['bunga flower','🌸 🌺 🌻 🌷 🌹 💐'], ['matahari sun cerah','☀️ 🌞 🌤️'],
+    ['hujan rain','🌧️ ☔ ⛈️ 💧'], ['bulan moon malam night','🌙 🌛 🌜 ⭐ 🌃'], ['bintang star','⭐ 🌟 ✨ 💫'], ['mobil car kendaraan','🚗 🚕 🚙 🏎️ 🚓'],
+    ['motor sepeda bike','🏍️ 🛵 🚲 🛴'], ['rumah home house','🏠 🏡 🏘️'], ['uang money duit','💰 💵 💸 💳'], ['telepon phone hp','📱 📞 ☎️ 📲'],
+    ['waktu jam time clock','⏰ ⏳ 🕰️ ⌚'], ['buku book baca','📚 📖 📕 📗'], ['sekolah school belajar','🏫 📚 ✏️'], ['olahraga sport bola ball','⚽ 🏀 🏈 ⚾ 🎾'],
+    ['bendera flag','🚩 🏁 🎌'], ['indonesia','🇮🇩'], ['tangan hand','👋 🤚 ✋ 👌 🤝 🙏'], ['mata eye lihat','👀 👁️'], ['wajah muka face','😀 😐 🙂 😶'],
+    ['salam hai halo hello hi bye','👋 🤝 🙋'], ['pikir think bingung','🤔 🧐 😕 🤨'], ['hantu setan ghost','👻 💀 👽 😈'], ['bumi earth dunia world','🌍 🌎 🌏 🌐'],
+  ].map(([k, v]) => ({ kw: k.split(' '), emojis: v.split(' ') }));
+
+  // Emoji yang ditawarkan di bar saran setelah kata tertentu diketik (seperti Gboard).
+  const EMOJI_HINT = { cinta:'❤️', love:'❤️', sayang:'😍', senang:'😊', bahagia:'😊', happy:'😊', sedih:'😢', sad:'😢', lucu:'😂', haha:'😂', wkwk:'😂', lol:'😂',
+    makasih:'🙏', thanks:'🙏', thank:'🙏', maaf:'🙏', sorry:'🙏', oke:'👍', ok:'👍', sip:'👍', mantap:'👍', bagus:'👍', good:'👍', keren:'😎', cool:'😎',
+    marah:'😡', angry:'😡', takut:'😨', kaget:'😱', tidur:'😴', sleep:'😴', makan:'🍽️', kopi:'☕', coffee:'☕', musik:'🎵', lagu:'🎶', gitar:'🎸', guitar:'🎸',
+    api:'🔥', fire:'🔥', selamat:'🎉', congrats:'🎉', halo:'👋', hai:'👋', hello:'👋', hi:'👋', bye:'👋', kucing:'🐱', cat:'🐱', anjing:'🐶', dog:'🐶',
+    pizza:'🍕', hujan:'🌧️', rain:'🌧️', mobil:'🚗', rumah:'🏠', uang:'💰', money:'💰', sakit:'🤒', rindu:'🥺', kangen:'🥺', miss:'🥺', ultah:'🎂',
+    birthday:'🎂', malam:'🌙', night:'🌙', pagi:'🌅', morning:'🌅' };
+
+  // Emotikon teks (tab ":-)")
+  const KAOMOJI = [
+    { name:'Senang', list:[':-)', ':D', 'XD', '=D', '^_^', '(＾▽＾)', '(◕‿◕)', '٩(◕‿◕)۶', '(≧▽≦)', '(⌒‿⌒)', 'ヽ(´▽`)/', '\\(^o^)/'] },
+    { name:'Sedih', list:[':-(', ':(', "; ;", 'T_T', '(T_T)', '(;_;)', '(╥_╥)', '(ಥ_ಥ)', "(´;ω;`)", ":'(", '(︶︹︺)', 'D:'] },
+    { name:'Marah', list:['>:(', ':-@', '(>_<)', '(｀Д´)', 'ヽ(`Д´)ﾉ', '(╬ Ò﹏Ó)', '(ノಠ益ಠ)ノ', '(╯°□°）╯︵ ┻━┻', '┬─┬ノ( º _ ºノ)'] },
+    { name:'Cinta', list:['<3', ':-*', '(♥ω♥)', '(´♡‿♡`)', '( ˘ ³˘)♥', '(づ｡◕‿‿◕｡)づ', '♡(◡‿◡)', '♥‿♥', '(๑˃ᴗ˂)ﻭ'] },
+    { name:'Kaget', list:[':-O', 'o_O', 'O_O', '(⊙_⊙)', '(°o°)', '¯\\_(ツ)_/¯', '(・・？)', '(；一_一)', '(¬_¬)', '(._.)', ':-/'] },
+    { name:'Lucu', list:['ʕ•ᴥ•ʔ', '(=^･ω･^=)', '(｡•̀ᴗ-)✧', '(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧', '(¬‿¬)', '( ͡° ͜ʖ ͡°)', '(づ￣ ³￣)づ', '♪(´ε` )', '(*´▽`*)'] },
+  ];
+
+  // Stiker (versi offline): emoji besar per paket. Stiker gambar asli milik aplikasi lain tidak bisa dibaca keyboard.
+  const STICKER_PACKS = [
+    { id:'exp', icon:'😀', name:'Ekspresi', list:'😀 😂 🥰 😎 🤔 😢 😡 😱 😴 🤗 🥳 😇 🤩 😭 🙄 😏 🤯 🥺 😤 🤭' },
+    { id:'mus', icon:'🎸', name:'Musik', list:'🎸 🎵 🎶 🎤 🎧 🥁 🎹 🎷 🎺 🎻 🪕 🎼 📻 🎙️ 🔊 🎚️' },
+    { id:'ani', icon:'🐱', name:'Hewan', list:'🐱 🐶 🐼 🐨 🦊 🐸 🐵 🦁 🐯 🐰 🐻 🦄 🐧 🐢 🦋 🐙' },
+    { id:'fun', icon:'🎉', name:'Pesta', list:'🎉 🎂 🎁 🎈 🎊 🥳 🍰 🍕 🍔 ☕ 🍻 🔥 💯 ✨ 🚀 🏆' },
+  ].map(p => Object.assign(p, { emojis: p.list.split(/\s+/) }));
+
+  // ---------------- Panel media ala Gboard: Emoji / GIF / Stiker / Emotikon ----------------
+  var mediaTab = 'emoji';
+  var stickerPack = 'exp', kaoCat = 0, mpSearch = { on:false, q:'' };
+  const recentEmoji = (()=>{ try{ const a = JSON.parse(localStorage.getItem('genjreng_emoji_recent') || '[]'); return Array.isArray(a) ? a.slice(0, 32) : []; }catch(e){ return []; } })();
+  function insertEmoji(e){
+    appendText(e);
+    const i = recentEmoji.indexOf(e); if(i >= 0) recentEmoji.splice(i, 1);
+    recentEmoji.unshift(e); if(recentEmoji.length > 32) recentEmoji.length = 32;
+    try{ localStorage.setItem('genjreng_emoji_recent', JSON.stringify(recentEmoji)); }catch(err){}
+  }
+  function mediaOpen(){ const p = document.getElementById('mediaPanel'); return !!(p && p.style.display && p.style.display !== 'none'); }
+  function mpMk(tag, cls, html){ const e = document.createElement(tag); if(cls) e.className = cls; if(html != null) e.innerHTML = html; if(tag === 'button') e.type = 'button'; return e; }
+  // Buka panel media pada tab tertentu tanpa mengubah `mode` (mode emoji dipegang setMode()).
+  function openMediaPanelInternal(tab){
+    mediaTab = tab; mpSearch = { on:false, q:'' };
+    renderMedia();
+    openPanel('mediaPanel', false, null);
+  }
+  function openMedia(tab){
+    if(tab === 'emoji'){ if(mode !== 'emoji') setMode('emoji'); else openMediaPanelInternal('emoji'); return; }
+    if(mode !== 'letters') setMode('letters');
+    openMediaPanelInternal(tab);
+  }
+  function mediaClose(){ closeEverything(); if(mode !== 'letters') setMode('letters'); }
+
+  function renderMedia(){
+    const p = document.getElementById('mediaPanel');
+    p.innerHTML = '';
+    p.classList.remove('searching');
+    const head = mpMk('div', 'mp-head');
+    const back = mpMk('button', 'mp-back', ICONS.back); back.title = 'Kembali';
+    back.addEventListener('pointerdown', (e)=>{ e.preventDefault(); if(mpSearch.on){ mpSearch = { on:false, q:'' }; renderMedia(); } else mediaClose(); });
+    head.appendChild(back);
+    const body = mpMk('div', 'mp-body'); body.id = 'mpBody';
+    p.appendChild(head); p.appendChild(body);
+    if(mediaTab === 'emoji') buildEmojiTab(head, body);
+    else if(mediaTab === 'gif') buildGifTab(head, body);
+    else if(mediaTab === 'sticker') buildStickerTab(head, body);
+    else buildKaomojiTab(head, body);
+    // baris bawah: ABC | emoji | GIF | stiker | :-) | hapus
+    const bot = mpMk('div', 'mp-bottom');
+    const abc = mpMk('button', 'mp-bt', 'ABC'); abc.addEventListener('pointerdown', (e)=>{ e.preventDefault(); mediaClose(); });
+    bot.appendChild(abc);
+    const mkTab = (tab, html, cls) => {
+      const b = mpMk('button', 'mp-bt icon' + (cls ? ' ' + cls : '') + (mediaTab === tab ? ' on' : ''), html);
+      b.addEventListener('pointerdown', (e)=>{ e.preventDefault(); openMedia(tab); });
+      bot.appendChild(b);
+    };
+    mkTab('emoji', ICONS.emoji); mkTab('gif', 'GIF', 'gif'); mkTab('sticker', ICONS.sticker); mkTab('kao', ':-)', 'kao');
+    const del = mpMk('button', 'mp-bt icon', ICONS.backspace); del.title = 'Hapus';
+    del.addEventListener('pointerdown', ()=>{ backspace(); });
+    wireLongPressRepeat(del, backspace);                // tahan = hapus berulang & makin cepat
+    bot.appendChild(del);
+    p.appendChild(bot);
+  }
+  function mpTabBtn(html, title, on, fn, cls){
+    const b = mpMk('button', 'mp-tab' + (cls ? ' ' + cls : '') + (on ? ' on' : ''), html); b.title = title || '';
+    b.addEventListener('click', fn);
+    return b;
+  }
+  function mpSearchPill(head, label, fn, disabled){
+    const s = mpMk('button', 'mp-search' + (disabled ? ' off' : ''), ICONS.search + '<span></span>');
+    s.querySelector('span').textContent = label;
+    if(!disabled) s.addEventListener('click', fn);
+    head.appendChild(s);
+  }
+
+  // ---------- Tab Emoji ----------
+  function buildEmojiTab(head, body){
+    if(mpSearch.on){ buildEmojiSearch(head, body); return; }
+    mpSearchPill(head, 'Telusuri', ()=>{ mpSearch = { on:true, q:'' }; renderMedia(); });
+    const tabs = mpMk('div', 'mp-tabs'); head.appendChild(tabs);
+    const secs = [];
+    const addSec = (id, icon, title, emojis, extraCls) => {
+      const h = mpMk('div', 'mp-sec'); h.textContent = title; h.dataset.sec = id;
+      const g = mpMk('div', 'mp-grid' + (extraCls ? ' ' + extraCls : ''));
+      emojis.forEach(em => { const b = mpMk('button', 'mp-emo'); b.textContent = em; b.addEventListener('click', ()=> insertEmoji(em)); g.appendChild(b); });
+      body.appendChild(h); body.appendChild(g);
+      const t = mpTabBtn(icon, title, false, ()=>{ body.scrollTop = h.offsetTop - body.offsetTop - 2; });
+      t.dataset.sec = id; tabs.appendChild(t);
+      secs.push({ id, h, t });
+    };
+    if(recentEmoji.length) addSec('recent', ICONS.history, 'Emoji Terbaru', recentEmoji);
+    EMOJI_CATS.forEach(c => addSec(c.id, c.icon, c.name, c.emojis));
+    // Emoji nada gitar: 36 tombol yang bisa dimainkan lewat petikan nada (label nada tampil di bawah tiap emoji)
+    const gh = mpMk('div', 'mp-sec mp-guitar-h'); gh.textContent = 'Emoji nada gitar — petik nada untuk mengetik'; gh.dataset.sec = 'gtr';
+    const gg = mpMk('div', 'mp-guitar');
+    emojiKeys.forEach(k => gg.appendChild(k));
+    body.appendChild(gh); body.appendChild(gg);
+    const gt = mpTabBtn(ICONS.keyboard, 'Nada gitar', false, ()=>{ body.scrollTop = gh.offsetTop - body.offsetTop - 2; }); gt.dataset.sec = 'gtr'; gt.classList.add('mp-guitar-t'); tabs.appendChild(gt);
+    secs.push({ id:'gtr', h:gh, t:gt });
+    const spy = ()=>{
+      let cur = secs[0];
+      secs.forEach(s => { if(s.h.offsetTop - body.offsetTop - 6 <= body.scrollTop) cur = s; });
+      secs.forEach(s => s.t.classList.toggle('on', s === cur));
+      if(cur.t.scrollIntoView) tabs.scrollLeft = Math.max(0, cur.t.offsetLeft - tabs.clientWidth / 2);
+    };
+    body.addEventListener('scroll', spy, { passive:true });
+    setTimeout(spy, 0);
+  }
+  function emojiSearch(q){
+    q = q.trim().toLowerCase();
+    if(!q) return [];
+    const out = [], seen = new Set();
+    EMOJI_KW.forEach(g => { if(g.kw.some(k => k.startsWith(q))) g.emojis.forEach(e => { if(!seen.has(e)){ seen.add(e); out.push(e); } }); });
+    return out;
+  }
+  function buildEmojiSearch(head, body){
+    const pill = mpMk('div', 'mp-search on', ICONS.search + '<span class="mp-q"></span>');
+    head.appendChild(pill);
+    const res = mpMk('div', 'mp-grid mp-results');
+    const msg = mpMk('div', 'mp-empty');
+    body.appendChild(res); body.appendChild(msg);
+    const upd = ()=>{
+      pill.querySelector('.mp-q').textContent = mpSearch.q || 'Telusuri';
+      res.innerHTML = ''; msg.textContent = '';
+      const r = emojiSearch(mpSearch.q);
+      r.forEach(em => { const b = mpMk('button', 'mp-emo'); b.textContent = em; b.addEventListener('click', ()=> insertEmoji(em)); res.appendChild(b); });
+      if(mpSearch.q && !r.length) msg.textContent = 'Tidak ada emoji untuk "' + mpSearch.q + '"';
+      else if(!mpSearch.q) msg.textContent = 'Ketik kata, mis. "senang", "gitar", "love".';
+    };
+    // papan ketik mini (keyboard utama tertutup panel ini)
+    const kb = mpMk('div', 'mp-mini');
+    ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'].forEach(row => {
+      const r = mpMk('div', 'mp-mini-row');
+      [...row].forEach(ch => { const k = mpMk('button', 'mp-mk'); k.textContent = ch; k.addEventListener('pointerdown', (e)=>{ e.preventDefault(); mpSearch.q += ch; upd(); }); r.appendChild(k); });
+      kb.appendChild(r);
+    });
+    const last = mpMk('div', 'mp-mini-row');
+    const del = mpMk('button', 'mp-mk wide', ICONS.backspace); del.addEventListener('pointerdown', (e)=>{ e.preventDefault(); mpSearch.q = mpSearch.q.slice(0, -1); upd(); });
+    const sp = mpMk('button', 'mp-mk space'); sp.textContent = 'spasi'; sp.addEventListener('pointerdown', (e)=>{ e.preventDefault(); mpSearch.q += ' '; upd(); });
+    const ok = mpMk('button', 'mp-mk wide ok', ICONS.check); ok.addEventListener('pointerdown', (e)=>{ e.preventDefault(); mpSearch.on = false; renderMedia(); });
+    last.appendChild(del); last.appendChild(sp); last.appendChild(ok); kb.appendChild(last);
+    body.appendChild(kb);
+    body.classList.add('searching');
+    document.getElementById('mediaPanel').classList.add('searching');   // baris bawah disembunyikan supaya papan ketik mini muat
+    upd();
+  }
+
+  // ---------- Tab GIF (tampilan Gboard; GIF sungguhan butuh internet -> lihat catatan di renderGifPanel) ----------
+  function buildGifTab(head, body){
+    mpSearchPill(head, 'Telusuri', null, true);
+    const tabs = mpMk('div', 'mp-tabs'); head.appendChild(tabs);
+    tabs.appendChild(mpTabBtn(ICONS.history, 'Terbaru', true, ()=>{}));
+    ['Semangat', 'Ketawa', 'Cinta', 'Oke', 'Sedih', 'Kaget'].forEach(n => tabs.appendChild(mpTabBtn(n, n, false, ()=>{}, 'chip')));
+    body.appendChild(mpMk('div', 'mp-note', 'Mode offline: GIF asli (Tenor/GIPHY) butuh internet, jadi ini stiker-emoji besar bertata letak GIF.'));
+    const g = mpMk('div', 'mp-gifgrid');
+    GIF_STICKERS.forEach(s => {
+      const b = mpMk('button', 'mp-gif', '<span class="e"></span><span class="l"></span>');
+      b.querySelector('.e').textContent = s.emoji; b.querySelector('.l').textContent = s.label;
+      b.addEventListener('click', ()=>{
+        if(window.AndroidKeyboard && window.AndroidKeyboard.commitGif){ try{ window.AndroidKeyboard.commitGif(s.label); return; }catch(e){} }
+        insertEmoji(s.emoji);
+      });
+      g.appendChild(b);
+    });
+    body.appendChild(g);
+  }
+  // ---------- Tab Stiker ----------
+  function buildStickerTab(head, body){
+    const s = mpMk('button', 'mp-tab off', ICONS.search); s.title = 'Cari'; head.appendChild(s);
+    const tabs = mpMk('div', 'mp-tabs'); head.appendChild(tabs);
+    const plus = mpTabBtn(ICONS.plus, 'Tambah paket (belum tersedia)', false, ()=>{}); plus.classList.add('off'); tabs.appendChild(plus);
+    STICKER_PACKS.forEach(pk => tabs.appendChild(mpTabBtn(pk.icon, pk.name, pk.id === stickerPack, ()=>{ stickerPack = pk.id; renderMedia(); })));
+    const pk = STICKER_PACKS.find(x => x.id === stickerPack) || STICKER_PACKS[0];
+    const t = mpMk('div', 'mp-sec'); t.textContent = pk.name + ' (stiker emoji — stiker gambar aplikasi lain tidak bisa dibaca keyboard)';
+    body.appendChild(t);
+    const g = mpMk('div', 'mp-stgrid');
+    pk.emojis.forEach(em => { const b = mpMk('button', 'mp-st'); b.textContent = em; b.addEventListener('click', ()=> insertEmoji(em)); g.appendChild(b); });
+    body.appendChild(g);
+  }
+  // ---------- Tab Emotikon teks ":-)" ----------
+  function buildKaomojiTab(head, body){
+    const tabs = mpMk('div', 'mp-tabs'); tabs.style.marginLeft = '4px'; head.appendChild(tabs);
+    KAOMOJI.forEach((c, i) => tabs.appendChild(mpTabBtn(c.name, c.name, i === kaoCat, ()=>{ kaoCat = i; renderMedia(); }, 'chip')));
+    const g = mpMk('div', 'mp-kao');
+    KAOMOJI[kaoCat].list.forEach(k => { const b = mpMk('button', 'mp-kb'); b.textContent = k; b.addEventListener('click', ()=> appendText(k)); g.appendChild(b); });
+    body.appendChild(g);
   }
 
   // ---------------- Tekan-tahan tuts q-p buat ambil angka pojok (persis Gboard) ----------------
@@ -2257,7 +2690,7 @@
       flash(el);
       const emo = el.dataset.emoji;
       showBubble(el, emo);
-      appendText(emo);
+      insertEmoji(emo);
       return emo;
     }
 
@@ -2915,8 +3348,9 @@
   const suggestBarEl = document.getElementById('suggestBar');
   const featureToggleBtn = document.getElementById('featureToggleBtn');
   // Semua panel yang menggantikan area tuts, beserta jenis display-nya saat terbuka.
-  const PANEL_DISPLAY = { toolPanel:'block', settingsPanel:'block', clipboardPanel:'flex', gifPanel:'flex', translatePanel:'flex', langPanel:'flex' };
-  let lastKbHeight = 0;
+  const PANEL_DISPLAY = { toolPanel:'block', settingsPanel:'block', clipboardPanel:'flex', mediaPanel:'flex', gifPanel:'flex', translatePanel:'flex', langPanel:'flex' };
+  const FULL_PANELS = ['mediaPanel', 'clipboardPanel'];   // menutupi bar saran + tuts (punya kepala sendiri)
+  let lastKbHeight = 0, lastBarH = 0;
   var toolEditing = false;   // mode pensil (sesuaikan item kisi alat)
   function panelEl(id){ return document.getElementById(id); }
   function anyPanelOpen(){
@@ -2928,7 +3362,8 @@
   }
   function hideLangPopup(){ const p = panelEl('langPopup'); if(p) p.style.display = 'none'; }
   function closePanelsOnly(){
-    Object.keys(PANEL_DISPLAY).forEach(id => { const p = panelEl(id); p.style.display = 'none'; p.style.minHeight = ''; });
+    Object.keys(PANEL_DISPLAY).forEach(id => { const p = panelEl(id); p.style.display = 'none'; p.style.minHeight = ''; p.style.height = ''; });
+    const wrapEl = panelEl('kbWrap'); if(wrapEl) wrapEl.classList.remove('full-panel');
     const kb = panelEl('keyboardInner'); if(kb) kb.style.display = '';
     document.querySelectorAll('.gtool-btn').forEach(b => b.classList.remove('tool-active'));
     hideLangPopup();
@@ -2938,10 +3373,16 @@
   function openPanel(id, keepKeyboard, activeBtn){
     const kb = panelEl('keyboardInner');
     const kh = kb.offsetHeight; if(kh > 0) lastKbHeight = kh;
+    const bh = panelEl('featureBar').offsetHeight; if(bh > 0) lastBarH = bh;
     closePanelsOnly();
     const p = panelEl(id);
     p.style.display = PANEL_DISPLAY[id];
-    if(!keepKeyboard){ kb.style.display = 'none'; if(lastKbHeight) p.style.minHeight = lastKbHeight + 'px'; }
+    if(FULL_PANELS.includes(id)){
+      // menutupi bar + tuts: tingginya = tinggi keduanya, supaya keyboard tidak "meloncat" saat panel dibuka
+      panelEl('kbWrap').classList.add('full-panel');
+      kb.style.display = 'none';
+      if(lastKbHeight) p.style.height = (lastKbHeight + lastBarH) + 'px';
+    } else if(!keepKeyboard){ kb.style.display = 'none'; if(lastKbHeight) p.style.minHeight = lastKbHeight + 'px'; }
     if(activeBtn) activeBtn.classList.add('tool-active');
     syncLeftIcon();
   }
@@ -3044,9 +3485,10 @@
   }
   settingsBtn.addEventListener('click', ()=> togglePanel('settingsPanel', settingsBtn, ()=>{ settingsPanel.dataset.filter = 'all'; }));
   themeBtn.addEventListener('click',    ()=> togglePanel('settingsPanel', themeBtn,    ()=>{ settingsPanel.dataset.filter = 'theme'; }));
-  sizeBtn.addEventListener('click',     ()=> togglePanel('settingsPanel', null,        ()=>{ settingsPanel.dataset.filter = 'size'; }));
+  sizeBtn.addEventListener('click',     ()=> openResize());          // tampilan Gboard: bingkai + pegangan + Reset/Selesai
   clipboardBtn.addEventListener('click', ()=> togglePanel('clipboardPanel', null, renderClipboardPanel));
-  gifBtn.addEventListener('click',       ()=> togglePanel('gifPanel', gifBtn, renderGifPanel));
+  gifBtn.addEventListener('click',       ()=>{ closeEverything(); openMedia('gif'); });
+  document.getElementById('stickerBtn').addEventListener('click', ()=>{ closeEverything(); openMedia('sticker'); });
   translateBtn.addEventListener('click', ()=>{
     // Mode terjemah tetap menampilkan tuts (bukan cuma panel) supaya bisa langsung mengetik / memetik nada.
     togglePanel('translatePanel', translateBtn, null, true);
@@ -3135,6 +3577,46 @@
     lbl.textContent = 'Terhapus ✓';
     setTimeout(()=>{ lbl.textContent = 'Reset kamus'; resetDictBtn.classList.remove('on'); }, 1500);
   });
+
+  // ---------------- Ubah ukuran (tampilan Gboard: bingkai teal + pegangan atas/bawah + Reset / Selesai) ----------------
+  // Seret pegangan ATAS = tinggi tuts. Seret pegangan BAWAH atau tombol geser (✥) = naikkan/turunkan posisi keyboard.
+  // Memakai screenY (bukan clientY): saat jendela keyboard membesar, origin viewport ikut bergeser, sehingga clientY
+  // jari yang diam berubah dan gerakannya jadi tidak stabil.
+  const SIZE_KEY = 'genjreng_size_v1';
+  let sizeCfg = { s:1, b:0 };
+  const clampN = (v, a, b) => Math.min(b, Math.max(a, v));
+  try{
+    const c = JSON.parse(localStorage.getItem(SIZE_KEY) || 'null');
+    if(c && typeof c.s === 'number') sizeCfg = { s:clampN(c.s, 0.7, 1.45), b:clampN(+c.b || 0, 0, 64) };
+  }catch(e){}
+  function applySize(){
+    const r = document.documentElement.style;
+    r.setProperty('--kscale', String(sizeCfg.s));
+    r.setProperty('--kb-bottom', sizeCfg.b + 'px');
+  }
+  applySize();
+  const rzEl = document.getElementById('resizeOverlay');
+  function openResize(){
+    closeEverything();
+    if(mode !== 'letters') setMode('letters');
+    rzEl.style.display = 'block';
+  }
+  function closeResize(save){
+    rzEl.style.display = 'none';
+    if(save){ try{ localStorage.setItem(SIZE_KEY, JSON.stringify(sizeCfg)); }catch(e){} }
+  }
+  function dragY(el, onMove){
+    let sy = 0, st = null;
+    el.addEventListener('pointerdown', (e)=>{ e.preventDefault(); try{ el.setPointerCapture(e.pointerId); }catch(err){} sy = e.screenY; st = { s:sizeCfg.s, b:sizeCfg.b }; });
+    el.addEventListener('pointermove', (e)=>{ if(st) onMove(e.screenY - sy, st); });
+    const end = ()=>{ st = null; };
+    el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+  }
+  dragY(document.getElementById('rzTop'),    (dy, st)=>{ sizeCfg.s = clampN(st.s - dy / 160, 0.7, 1.45); applySize(); });   // seret ke atas = lebih tinggi
+  dragY(document.getElementById('rzBottom'), (dy, st)=>{ sizeCfg.b = clampN(st.b - dy, 0, 64); applySize(); });
+  dragY(document.getElementById('rzMove'),   (dy, st)=>{ sizeCfg.b = clampN(st.b - dy, 0, 64); applySize(); });
+  document.getElementById('rzReset').addEventListener('click', ()=>{ sizeCfg = { s:1, b:0 }; applySize(); });
+  document.getElementById('rzDone').addEventListener('click', ()=> closeResize(true));
 
   // ---- Label nada di tuts: bisa disembunyikan supaya tuts sebersih Gboard ----
   function applyTags(show){
