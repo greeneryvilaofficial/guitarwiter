@@ -648,7 +648,7 @@
         <button class="tool-pill" id="autoCapsBtn" data-tool="caps" title="Huruf besar otomatis" type="button"><span data-icon="shift"></span><span class="lbl">Kapital</span></button>
         <button class="tool-pill" id="suggestBtn" data-tool="suggest" type="button"><span data-icon="check"></span><span class="lbl">Saran kata</span></button>
         <button class="tool-pill" id="shareBtn" data-tool="share" type="button"><span data-icon="share"></span><span class="lbl">Bagikan</span></button>
-        <button class="tool-pill" id="settingsPill" data-tool="settings2" type="button"><span data-icon="gear"></span><span class="lbl">Setelan</span></button>
+        <button class="tool-pill" id="infoBtn" data-tool="info" title="Tampilkan info nada di bar saran" type="button"><span data-icon="mic"></span><span class="lbl">Info nada</span></button>
         <button class="tool-pill" id="resetDictBtn" data-tool="reset" title="Hapus kamus pribadi" type="button"><span data-icon="trash"></span><span class="lbl">Reset kamus</span></button>
       </div></div>
     </div>
@@ -933,17 +933,21 @@
   function hasAndroidBridge(){
     return !!(window.AndroidKeyboard && window.AndroidKeyboard.commitText);
   }
+  var lastLocalEdit = 0;   // waktu terakhir KITA mengubah isi kolom (dipakai window.onFieldText)
   function bridgeCommit(str){
+    lastLocalEdit = Date.now();
     if(hasAndroidBridge()){
       try{ window.AndroidKeyboard.commitText(str); }catch(e){}
     }
   }
   function bridgeDeleteBackward(){
+    lastLocalEdit = Date.now();
     if(window.AndroidKeyboard && window.AndroidKeyboard.deleteBackward){
       try{ window.AndroidKeyboard.deleteBackward(); }catch(e){}
     }
   }
   function bridgeEnter(){
+    lastLocalEdit = Date.now();
     if(window.AndroidKeyboard && window.AndroidKeyboard.sendEnter){
       try{ window.AndroidKeyboard.sendEnter(); return true; }catch(e){}
     }
@@ -1090,11 +1094,11 @@
     // tidak pernah berubah gara-gara status muncul/hilang, persis Gboard.
     const bar = document.getElementById('suggestBar');
     if(!bar) return;
-    // Umpan balik (nada terdeteksi, tap, error izin, dst) harus selalu
-    // kelihatan -- kalau tadinya baris ikon fitur yang lagi dibuka, otomatis
-    // gantian balik ke slot ini dulu.
+    const isError = /❌|ditolak|tidak tersedia|gagal|error/i.test(msg);
+    // Seperti Gboard: bar HANYA berisi saran. Info nada / status mikrofon / pesan mode disembunyikan, kecuali error
+    // (mis. izin mikrofon) atau kalau kamu menyalakan "Info nada" di kisi alat halaman 2.
+    if(!isError && !(typeof prefs !== 'undefined' && prefs.info)) return;
     if(typeof showFeatureBarMode === 'function') showFeatureBarMode('suggest');
-    const isError = /ditolak|tidak tersedia|gagal|error/i.test(msg);
     bar.innerHTML = '';
     bar.classList.add('status-mode');
     bar.classList.toggle('status-error', isError);
@@ -1116,6 +1120,7 @@
 
   // ---------------- Bridge tambahan: hapus beberapa karakter sekaligus (dipakai saat ganti kata via prediksi) ----------------
   function bridgeDeleteBackwardN(n){
+    lastLocalEdit = Date.now();
     if(window.AndroidKeyboard && window.AndroidKeyboard.deleteBackwardN){
       try{ window.AndroidKeyboard.deleteBackwardN(n); return; }catch(e){}
     }
@@ -1449,8 +1454,26 @@
   window.onSelectionChanged = function(on){ selectionActive = !!on; };
   function resetTrackedText(){ text = ''; cursorPos = 0; lastCompletedWord = ''; noLearnBefore = 0; }
 
+  // Pelacak teks lokal (text/cursorPos) bisa "ketinggalan" kalau isi kolom diubah TANPA lewat keyboard ini:
+  // tombol ✕ pada kolom pencarian, pilih-semua lalu hapus, ganti kolom, saran dari aplikasi, dsb. Akibatnya kata di bar
+  // saran makin panjang tiap mengetik. Java mengirim teks asli sebelum kursor (maks. 60 huruf) lewat fungsi ini.
+  window.onFieldText = function(before, force){
+    if(typeof before !== 'string') return;
+    if(!force && Date.now() - lastLocalEdit < 200) return;   // masih mengetik: tunggu ketukan/pembaruan berikutnya
+    const cur = text.slice(0, cursorPos);
+    const n = before.length;
+    if(n < 60 ? cur === before : cur.slice(-n) === before) return;   // sudah sama -> tidak ada yang perlu dilakukan
+    compose = ''; composeOut = '';                            // penyusunan (huruf non-Latin) dibatalkan: kolom sudah berubah
+    lastAutoCorrect = null;
+    text = before; cursorPos = before.length;
+    lastCompletedWord = '';
+    noLearnBefore = cursorPos;                                // isi yang sudah ada di kolom tidak dipelajari jadi saran
+    renderSuggestions();
+  };
+
   window.onPrivateField = function(on){
     privateField = !!on;
+    resetTrackedText();                                       // jangan bawa teks kolom lain (apalagi password) ke kolom berikutnya
     if(typeof lastCompletedWord !== 'undefined') lastCompletedWord = '';
     if(typeof renderSuggestions === 'function') renderSuggestions();
   };
@@ -1572,7 +1595,7 @@
 
   // ---------------- Preferensi (bisa dimatikan dari kisi alat halaman 2) ----------------
   const PREFS_KEY = 'genjreng_prefs_v1';
-  const prefs = { autocorrect:true, autocaps:true, suggest:true, clip:true };
+  const prefs = { autocorrect:true, autocaps:true, suggest:true, clip:true, info:false };
   try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); }catch(e){}
   function savePrefs(){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }catch(e){} }
 
@@ -1665,7 +1688,7 @@
     blocked[currentLang][k] = 1;
     saveBlocked();
     persistLearning();
-    showStatus('🗑 "' + w + '" dihapus dari saran');
+    renderSuggestions();          // saran itu langsung hilang dari bar (itulah umpan baliknya; bar tidak dipakai untuk pesan)
   }
 
   // ---------------- Menyusun teks bahasa non-Latin (composing) ----------------
@@ -1673,6 +1696,7 @@
   function scriptLang(){ const L = LANGS[currentLang]; return (L && L.translit) ? L : null; }
   function isComposing(){ return compose.length > 0; }
   function bridgeSetComposing(out, prev){
+    lastLocalEdit = Date.now();
     const B = window.AndroidKeyboard;
     if(!B) return;
     try{
@@ -1780,10 +1804,14 @@
     if(privateField || !prefs.suggest) return;   // kolom privat / saran dimatikan: bar dibiarkan kosong
     const { word } = getCurrentWordRange();
     let candidates = [];
+    let keepLiteral = false;
     if(word.length > 0){
-      // Persis Gboard: slot kiri = kata yang sedang diketik apa adanya, lalu koreksi/lanjutan terbaik.
+      // HANYA saran (lanjutan kata / koreksi): kata yang sedang kamu ketik TIDAK diulang di bar, jadi tidak ada
+      // tulisan yang menumpuk saat mengetik. Pengecualian: bahasa yang disusun (Jepang, Rusia, dst) tetap
+      // menampilkan hasil susunannya di slot pertama karena itu yang dipilih/dikunci.
       const seen = new Set([word.toLowerCase()]);
-      candidates = [word];
+      keepLiteral = !!scriptLang() && isComposing();
+      candidates = keepLiteral ? [word] : [];
       const SLx = scriptLang();
       const extra = (SLx && SLx.extraCandidates && isComposing()) ? SLx.extraCandidates(word) : [];
       for(const w of extra.concat(computeWordSuggestions(word).map(x => applyCase(x, word)))){
@@ -1810,6 +1838,7 @@
         if(eh && candidates.length >= 3) candidates = candidates.slice(0, 2).concat({ kind:'emoji', text:eh });
       }
     }
+    if(word.length > 20) candidates = [];   // kata sangat panjang = hampir pasti asal ketik: bar dikosongkan
     candidates.forEach((c, idx) => {
       if(typeof c === 'object'){                 // chip khusus: papan klip / emoji
         const sp = document.createElement('button');
@@ -1837,9 +1866,8 @@
       chip.type = 'button';
       chip.className = 'suggest-chip';
       chip.textContent = c;
-      // Ketuk = pakai saran. TAHAN (±0,5 dtk) = hapus saran itu dari kamus. Slot kiri saat sedang
-      // mengetik adalah kata yang kamu ketik sendiri, jadi tidak bisa dihapus.
-      const canDelete = !(word.length > 0 && idx === 0);
+      // Ketuk = pakai saran. TAHAN (±0,5 dtk) = hapus saran itu dari kamus. (Slot hasil susunan bahasa non-Latin tidak bisa dihapus.)
+      const canDelete = !(keepLiteral && idx === 0);
       let timer = null, fired = false, armed = false, sx = 0, sy = 0;
       const stop = ()=>{ if(timer){ clearTimeout(timer); timer = null; } };
       chip.addEventListener('pointerdown', (e)=>{
@@ -3542,12 +3570,14 @@
     autoCorrectBtn.classList.toggle('on', prefs.autocorrect);
     autoCapsBtn.classList.toggle('on', prefs.autocaps);
     suggestBtn.classList.toggle('on', prefs.suggest);
+    document.getElementById('infoBtn').classList.toggle('on', prefs.info);
   }
   syncPrefPills();
   autoCorrectBtn.addEventListener('click', ()=>{ prefs.autocorrect = !prefs.autocorrect; savePrefs(); syncPrefPills(); });
   autoCapsBtn.addEventListener('click', ()=>{ prefs.autocaps = !prefs.autocaps; savePrefs(); syncPrefPills(); if(!prefs.autocaps) applyAutoCaps(false); });
   suggestBtn.addEventListener('click', ()=>{ prefs.suggest = !prefs.suggest; savePrefs(); syncPrefPills(); });
-  document.getElementById('settingsPill').addEventListener('click', ()=> togglePanel('settingsPanel', null, ()=>{ settingsPanel.dataset.filter = 'all'; }));
+  const infoBtn = document.getElementById('infoBtn');
+  infoBtn.addEventListener('click', ()=>{ prefs.info = !prefs.info; savePrefs(); syncPrefPills(); });
 
   // Teks yang dibagikan lewat tombol "Bagikan". Ganti sesuai keinginan (mis. tambahkan tautan repo GitHub).
   const SHARE_TEXT = 'Guitarwiter — keyboard Android yang mengubah petikan gitar jadi ketikan otomatis.';
