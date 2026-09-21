@@ -22,6 +22,8 @@ Agar saran kata makin sesuai denganmu, Aplikasi menyimpan **secara lokal di pera
 - kata-kata yang sering kamu ketik (hanya kosakata berupa huruf, 2–14 karakter; kata asal-ulang, asal pencet, atau kepanjangan tidak disimpan), dan
 - pasangan 2 kata yang sering muncul berurutan.
 
+Agar saran tetap sesuai isi kolom (misalnya saat kolom dikosongkan dengan tombol ✕), aplikasi membaca sampai 60 huruf sebelum kursor di kolom yang sedang aktif. Ini **tidak dilakukan di kolom password**, hanya diproses di dalam perangkat, dan tidak disimpan.
+
 Aplikasi **tidak menyimpan kalimat atau paragraf**, dan teks yang kamu tempel dari clipboard tidak pernah dipelajari sebagai saran. Kamu bisa menghapus satu saran dengan menahannya di bar saran, atau semuanya lewat tombol "Reset kamus".
 
 **Kolom yang dikecualikan:** di kolom password, kolom yang meminta tanpa personalisasi (misalnya mode incognito), Aplikasi **tidak belajar kata, tidak menyimpan pasangan kata, dan tidak menampilkan saran kata**.
