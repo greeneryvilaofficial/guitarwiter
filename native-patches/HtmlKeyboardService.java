@@ -50,6 +50,8 @@ public class HtmlKeyboardService extends InputMethodService {
     private volatile boolean capsPolicy = false;
     private final Handler capsHandler = new Handler(Looper.getMainLooper());
     private final Runnable capsRunnable = this::updateCapsNow;
+    // Sinkronisasi pelacak teks di JS dengan isi kolom SEBENARNYA (tombol X pada kolom cari, pilih-semua+hapus, ganti kolom, dst).
+    private final Runnable syncRunnable = () -> syncFieldText(false);
     // Bahasa non-Latin (Rusia, Arab, Jepang, dst): teks yang sedang diketik berstatus "composing" di
     // aplikasi tujuan. Kalau kursor dipindah / aplikasi menutup composing-nya, JS diberi tahu supaya
     // tidak lagi mengganti teks yang sudah "terkunci".
@@ -179,6 +181,23 @@ public class HtmlKeyboardService extends InputMethodService {
         if (webView != null) {
             webView.evaluateJavascript("window.onComposingLost && window.onComposingLost()", null);
         }
+        capsHandler.removeCallbacks(syncRunnable);
+        syncFieldText(true);   // kolom baru / keyboard muncul lagi: mulai dari isi kolom yang sebenarnya
+    }
+
+    /**
+     * Kirim ke JS teks asli SEBELUM kursor (maks. 60 huruf) supaya pelacak teks keyboard tidak "ketinggalan".
+     * Tanpa ini, kalau kolom dikosongkan lewat tombol X / diganti aplikasi, kata di bar saran terus menumpuk.
+     * Dilewati untuk kolom password. Teks ini hanya dikirim ke WebView lokal, tidak disimpan & tidak keluar perangkat.
+     */
+    private void syncFieldText(boolean force) {
+        if (webView == null || privateField) return;
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+        CharSequence before = ic.getTextBeforeCursor(60, 0);
+        if (before == null) return;
+        webView.evaluateJavascript(
+                "window.onFieldText && window.onFieldText(" + JSONObject.quote(before.toString()) + "," + force + ")", null);
     }
 
     /** Tanya Android: di posisi kursor sekarang, apakah huruf berikutnya harus kapital? Hasilnya dikirim ke JS. */
@@ -208,6 +227,8 @@ public class HtmlKeyboardService extends InputMethodService {
                 webView.evaluateJavascript("window.onComposingLost && window.onComposingLost()", null);
             }
         }
+        capsHandler.removeCallbacks(syncRunnable);
+        capsHandler.postDelayed(syncRunnable, 120);   // didebounce: satu kali setelah rentetan ketikan/perubahan berhenti
         if (capsPolicy) {
             capsHandler.removeCallbacks(capsRunnable);
             capsHandler.postDelayed(capsRunnable, 50);
@@ -262,6 +283,7 @@ public class HtmlKeyboardService extends InputMethodService {
     public void onWindowHidden() {
         super.onWindowHidden();
         capsHandler.removeCallbacks(capsRunnable);
+        capsHandler.removeCallbacks(syncRunnable);
         if (composingActive) {
             InputConnection ic = getCurrentInputConnection();
             if (ic != null) ic.finishComposingText();
@@ -300,6 +322,7 @@ public class HtmlKeyboardService extends InputMethodService {
     @Override
     public void onDestroy() {
         capsHandler.removeCallbacks(capsRunnable);
+        capsHandler.removeCallbacks(syncRunnable);
         if (clipboardManager != null) {
             clipboardManager.removePrimaryClipChangedListener(clipListener);
         }
