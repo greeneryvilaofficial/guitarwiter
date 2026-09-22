@@ -10,6 +10,8 @@ import android.os.Looper;
 import android.os.PersistableBundle;
 import android.text.InputType;
 import android.text.TextUtils;
+import android.view.HapticFeedbackConstants;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
@@ -466,6 +468,29 @@ public class HtmlKeyboardService extends InputMethodService {
                 InputConnection ic = getCurrentInputConnection();
                 if (ic != null) ic.finishComposingText();
                 composingActive = false;
+            });
+        }
+
+        /** Getaran halus saat tombol disentuh (Setelan: "Getaran keyboard"). Tidak butuh izin tambahan; mengikuti pengaturan getar sistem. */
+        @JavascriptInterface
+        public void haptic() {
+            runOnUiThreadSafe(() -> {
+                if (webView != null) webView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+            });
+        }
+
+        /** Geser di tombol spasi: pindahkan kursor ke kiri (delta < 0) / kanan (delta > 0) sebanyak |delta| karakter. */
+        @JavascriptInterface
+        public void moveCursor(final int delta) {
+            runOnUiThreadSafe(() -> {
+                InputConnection ic = getCurrentInputConnection();
+                if (ic == null || delta == 0) return;
+                int code = delta < 0 ? KeyEvent.KEYCODE_DPAD_LEFT : KeyEvent.KEYCODE_DPAD_RIGHT;
+                int n = Math.min(Math.abs(delta), 40);
+                for (int i = 0; i < n; i++) {
+                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
+                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code));
+                }
             });
         }
 
