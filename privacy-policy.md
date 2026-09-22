@@ -1,6 +1,6 @@
 # Kebijakan Privasi — Guitarwiter
 
-Terakhir diperbarui: 20 September 2026
+Terakhir diperbarui: 22 September 2026
 
 Guitarwiter ("Aplikasi") adalah keyboard Android yang mengubah nada gitar menjadi ketikan. Karena keyboard memang berhubungan dengan apa yang kamu ketik, kebijakan ini menjelaskan secara jujur data apa yang diproses, di mana disimpan, dan bagaimana menghapusnya.
 
@@ -38,7 +38,9 @@ Aplikasi menampilkan papan klip supaya kamu bisa menempel ulang teks yang pernah
 - Riwayat ini terpisah dari saran kata dan tidak pernah dipakai untuk belajar kata.
 
 ## Pengaturan
-Hal-hal berikut disimpan lokal di perangkat supaya pengaturanmu tidak hilang: tema, bahasa yang dipilih, ukuran huruf, **ukuran dan posisi keyboard** (menu Ubah ukuran), pilihan tombol yang kamu tampilkan/sembunyikan di kisi alat, saklar koreksi otomatis / huruf besar otomatis / saran kata, daftar kata yang kamu sembunyikan dari saran, dan **32 emoji yang terakhir dipakai**.
+Hal-hal berikut disimpan lokal di perangkat supaya pengaturanmu tidak hilang: tema, bahasa yang dipilih, ukuran huruf, **ukuran dan posisi keyboard** (menu Ubah ukuran), pilihan tombol yang kamu tampilkan/sembunyikan di kisi alat, saklar koreksi otomatis / huruf besar otomatis / saran kata, daftar kata yang kamu sembunyikan dari saran, dan **32 emoji yang terakhir dipakai**, serta semua pilihan di menu Setelan (getar, suara klik, baris angka, tombol yang ditampilkan, ketik geser, dan seterusnya).
+
+Fitur **ketik geser** hanya menghitung jalur jarimu di layar untuk menebak satu kata; jalur itu tidak disimpan. Getar dan suara klik dibuat di dalam perangkat dan tidak memakai data apa pun.
 
 ## Tombol Bagikan
 Tombol "Bagikan" hanya membuka lembar bagikan Android dengan satu kalimat tetap tentang aplikasi ini. Aplikasi tidak mengirim data apa pun sendiri; kamu yang memilih tujuan pengiriman.
