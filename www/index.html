@@ -582,6 +582,35 @@
   .rz-pill svg, .rz-move svg{ width:20px; height:20px; fill:currentColor; }
   .rz-move{ width:40px; height:40px; border-radius:50%; background:#80CBC4; color:#0F2A2B; display:flex; align-items:center; justify-content:center; touch-action:none; }
 
+
+  /* ============ Setelan ala Gboard, kamus pribadi, tombol yang bisa disembunyikan ============ */
+  .gb-settings, .dict-panel{ display:none; flex-direction:column; background:var(--kb-bg); min-height:0; overflow:hidden; }
+  .gs-body{ flex:1 1 auto; min-height:0; overflow-y:auto; padding:0 12px 12px; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
+  .gs-sec{ font-size:.78rem; font-weight:600; color:var(--key-tag); padding:14px 4px 4px; }
+  .gs-row{ display:flex; align-items:center; gap:12px; width:100%; padding:10px 4px; border:none; background:none; color:var(--key-text); font-family:inherit; text-align:left; }
+  .gs-row.link{ cursor:pointer; } .gs-row.link:active{ background:rgba(255,255,255,.06); border-radius:10px; }
+  .gs-txt{ flex:1 1 auto; min-width:0; }
+  .gs-t{ font-size:.92rem; } .gs-s{ font-size:.72rem; color:var(--bar-icon-dim); margin-top:2px; line-height:1.3; }
+  .gs-ico svg{ width:22px; height:22px; fill:none; stroke:none; color:var(--bar-icon); } .gs-ico{ display:flex; width:26px; color:var(--bar-icon); } .gs-ico svg{ fill:currentColor; }
+  .gs-range{ flex:0 0 42%; accent-color:var(--key-tag); }
+  .gs-clear{ border:none; background:var(--pill-bg); color:var(--key-text); border-radius:16px; padding:6px 12px; font-family:inherit; font-size:.8rem; }
+  .dict-list{ display:flex; flex-direction:column; }
+  .dict-item{ display:flex; align-items:center; gap:10px; padding:6px 4px; border-bottom:1px solid var(--divider); }
+  .dict-w{ flex:1 1 auto; font-size:.95rem; overflow:hidden; text-overflow:ellipsis; } .dict-c{ font-size:.72rem; color:var(--bar-icon-dim); }
+  .dict-del{ width:30px; height:30px; border-radius:50%; border:none; background:none; color:#FF8A80; padding:0; } .dict-del svg{ width:16px; height:16px; fill:currentColor; }
+  body.no-emoji-key #emojiBtn{ display:none; }
+  body.no-comma-key .key-punct[data-char=","]{ display:none; }
+  body.no-period-key .key-punct[data-char="."]{ display:none; }
+
+
+  /* ---- Gestur: pilihan saat ditahan, jejak ketik geser ---- */
+  .alt-popup{ position:absolute; z-index:70; display:flex; gap:2px; padding:5px; background:var(--key-bubble-bg); border-radius:12px; box-shadow:0 4px 14px rgba(0,0,0,.5); pointer-events:none; }
+  .alt-item{ min-width:30px; height:40px; padding:0 4px; display:flex; align-items:center; justify-content:center; font-size:1.4rem; color:var(--key-text); border-radius:9px; }
+  .alt-item.on{ background:var(--key-tag); color:#10292B; }
+  #glideCanvas{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:45; }
+  .suggest-chip.chip-undo{ display:flex; align-items:center; justify-content:center; gap:6px; font-weight:500; }
+  .suggest-chip.chip-undo svg{ width:16px; height:16px; fill:var(--key-tag); display:block; }
+
   /* ---- Responsif: layar sangat sempit / tablet / landscape ---- */
   @media (max-width:340px){
     :root{ --kgap:3px; --key-h:36px; }
@@ -688,6 +717,8 @@
   </div>
   <div class="clip-panel" id="clipboardPanel"></div>
   <div class="media-panel" id="mediaPanel"></div>
+  <div class="gb-settings" id="gbSettings"></div>
+  <div class="dict-panel" id="dictPanel"></div>
   <div class="gif-panel" id="gifPanel"></div>
   <div class="translate-panel" id="translatePanel">
     <div class="translate-bar">
@@ -709,6 +740,7 @@
     <div class="keyboard" id="keyboard"></div>
     <div class="emoji-panel" id="emojiPanel"></div>
   </div>
+  <canvas id="glideCanvas"></canvas>
   <div class="resize-overlay" id="resizeOverlay">
     <div class="rz-handle rz-top" id="rzTop"></div>
     <div class="rz-btns">
@@ -749,6 +781,7 @@
     link:      _svg('<path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/>'),
     reset:     _svg('<path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>'),
     move:      _svg('<path d="M10 9h4V6h3l-5-5-5 5h3v3zm-1 1H6V7l-5 5 5 5v-3h3v-4zm14 2l-5-5v3h-3v4h3v3l5-5zm-9 3h-4v3H7l5 5 5-5h-3v-3z"/>'),
+    undo:      _svg('<path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/>'),
     share:     _svg('<path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/>'),
     trash:     _svg('<path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>'),
     pencil:    _svg('<path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>'),
@@ -844,39 +877,37 @@
       btn.dataset.origChar = def.char;
       const cornerBadge = (def.cornerNum!==undefined) ? '<span class="corner-num">'+def.cornerNum+'</span>' : '';
       btn.innerHTML = '<span class="ch">'+def.char+'</span><span class="tag">'+note.name+'</span>'+cornerBadge+'<span class="bubble"></span>';
-      if(def.cornerNum!==undefined){
-        btn.dataset.cornerNum = def.cornerNum;
-        wireLongPressNumber(btn);
-      } else {
-        btn.addEventListener('pointerdown', ()=> manualPress(btn));
-      }
+      if(def.cornerNum!==undefined) btn.dataset.cornerNum = def.cornerNum;
+      wireLetterKey(btn);            // ketuk = ketik langsung; tahan = pilihan; geser = ketik geser
       keyMap[def.char] = btn;
     } else if(def.type==='shift'){
       btn.className='key fn key-shift';
       btn.id='shiftBtn';
       btn.innerHTML='<span class="ch">'+ICONS.shift+'</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
-      btn.addEventListener('pointerdown', ()=> shiftToggle(btn));
+      btn.addEventListener('pointerdown', ()=>{ keyFeedback(); shiftToggle(btn); });
       keyMap['shift'] = btn;
     } else if(def.type==='backspace'){
       btn.className='key fn key-backspace';
       btn.dataset.type='backspace';
       btn.innerHTML='<span class="ch">'+ICONS.backspace+'</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
+      wireSwipeDelete(btn);          // geser ke kiri = hapus kata (didaftarkan SEBELUM ketukan hapus biasa)
       btn.addEventListener('pointerdown', ()=> functionalPress(btn)); // tekan sebentar = hapus 1 karakter, langsung, tanpa jeda
       wireLongPressRepeat(btn, backspace); // tahan = mulai berulang otomatis & makin cepat (lihat wireLongPressRepeat)
       keyMap['backspace'] = btn;
     } else if(def.type==='emoji-toggle'){
       btn.className='key fn key-emoji'; btn.id='emojiBtn';
       btn.innerHTML='<span class="ch">'+ICONS.emoji+'</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
-      btn.addEventListener('pointerdown', ()=>{ flash(btn); setMode(mode==='emoji' ? 'letters' : 'emoji'); });
+      btn.addEventListener('pointerdown', ()=>{ keyFeedback(); flash(btn); setMode(mode==='emoji' ? 'letters' : 'emoji'); });
     } else if(def.type==='num-toggle'){
       btn.className='key fn'; btn.id='numBtn';
       btn.innerHTML='<span class="ch">?123</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
-      btn.addEventListener('pointerdown', ()=>{ flash(btn); setMode(mode==='symbols' ? 'letters' : 'symbols'); });
+      btn.addEventListener('pointerdown', ()=>{ keyFeedback(); flash(btn); setMode(mode==='symbols' ? 'letters' : 'symbols'); });
     } else if(def.type==='literal'){
       btn.className = def.big ? 'key space' : 'key key-punct';
       btn.dataset.type='literal';
       btn.dataset.char = def.char;
       btn.innerHTML = '<span class="ch">'+(def.label||def.char)+'</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
+      if(def.big) wireSpaceSwipe(btn);   // geser di spasi = pindahkan kursor
       btn.addEventListener('pointerdown', ()=> functionalPress(btn));
       keyMap[def.char] = btn;
     } else if(def.type==='enter'){
@@ -933,6 +964,7 @@
   function hasAndroidBridge(){
     return !!(window.AndroidKeyboard && window.AndroidKeyboard.commitText);
   }
+  var undoInfo = null, lastSpaceAt = 0;
   var lastLocalEdit = 0;   // waktu terakhir KITA mengubah isi kolom (dipakai window.onFieldText)
   function bridgeCommit(str){
     lastLocalEdit = Date.now();
@@ -987,6 +1019,23 @@
   }
   function appendText(str){
     if(selectionActive){ if(isComposing()) abortCompose(); resetTrackedText(); selectionActive = false; }   // ketikan menggantikan blok biru
+    undoInfo = null; glideAlt = null;
+    // ---- Titik spasi ganda: ketuk spasi 2x cepat -> ". " (huruf berikutnya otomatis besar) ----
+    if(str === ' ' && prefs.dblSpace && !privateField && mode === 'letters' && !isComposing() && Date.now() - lastSpaceAt < 450 && /[\p{L}\p{N}] $/u.test(text.slice(0, cursorPos))){
+      lastSpaceAt = 0;
+      bridgeDeleteBackward(); text = text.slice(0, cursorPos - 1) + text.slice(cursorPos); cursorPos -= 1;
+      appendText('.'); appendText(' ');
+      return;
+    }
+    if(str === ' ') lastSpaceAt = Date.now();
+    // ---- Spasi otomatis setelah tanda baca (mati secara bawaan; tidak menyentuh alamat web / email / angka) ----
+    if(prefs.autoSpacePunct && mode === 'letters' && !privateField && !isComposing() && str.length === 1 && /\p{L}/u.test(str)){
+      const before = text.slice(0, cursorPos);
+      if(/\p{L}[.,!?;:]$/u.test(before)){
+        const run = (before.match(/\S+$/) || [''])[0];
+        if(!/[\/@\d]/.test(run) && (run.match(/\./g) || []).length <= 1) appendText(' ');
+      }
+    }
     const SL = scriptLang();
     if(SL && mode === 'letters'){
       // Huruf latin (dan tanda khusus bahasa itu, mis. ' untuk ь) disusun jadi huruf bahasa tsb.
@@ -1030,10 +1079,12 @@
     bridgeCommit(str);
     if(str.length > 1){ noLearnBefore = cursorPos; lastCompletedWord = ''; }   // tempelan / emoji: bukan hasil ketikan kata
     if(didAC){ didAC.cursor = cursorPos; lastAutoCorrect = didAC; }   // ketuk hapus SEKALI lagi = urungkan koreksi
+    if(mode === 'symbols' && str === "'" && prefs.aposSwitch) setMode('letters');   // beralih otomatis setelah apostrof
     scheduleSuggestions();
     if(document.getElementById('translatePanel').style.display==='flex') updateTranslatePreview();
   }
   function backspace(){
+    undoInfo = null; glideAlt = null;
     if(isComposing()){ lastAutoCorrect = null; composeBackspace(); return; }
     if(lastAutoCorrect && cursorPos === lastAutoCorrect.cursor && !selectionActive){
       // Urungkan koreksi otomatis: kembalikan kata persis seperti yang kamu ketik.
@@ -1080,6 +1131,7 @@
   // ---------------- Bubble + flash ----------------
   function flash(el){ el.classList.add('is-active'); setTimeout(()=> el.classList.remove('is-active'), 80); }
   function showBubble(el, label){
+    if(typeof prefs !== 'undefined' && !prefs.popup) return;   // Setelan: "Pop-up tombol"
     const bubble = el.querySelector('.bubble');
     if(!bubble) return;
     bubble.textContent = label;
@@ -1473,6 +1525,7 @@
 
   window.onPrivateField = function(on){
     privateField = !!on;
+    if(typeof updateNumRow === 'function') updateNumRow();          // baris angka otomatis untuk kolom sandi
     resetTrackedText();                                       // jangan bawa teks kolom lain (apalagi password) ke kolom berikutnya
     if(typeof lastCompletedWord !== 'undefined') lastCompletedWord = '';
     if(typeof renderSuggestions === 'function') renderSuggestions();
@@ -1540,7 +1593,7 @@
     const cands = new Map();
     const push = (disp, score)=>{
       const key = disp.toLowerCase();
-      if(key === typedLower || disp.length > MAX_LEARN_LEN || isBlocked(disp)) return;   // kepanjangan / sudah dihapus pengguna -> tidak ditampilkan
+      if(key === typedLower || disp.length > MAX_LEARN_LEN || isBlocked(disp) || isOffensive(disp)) return;   // kepanjangan / sudah dihapus pengguna -> tidak ditampilkan
       const cur = cands.get(key);
       if(!cur || cur.s < score) cands.set(key, { w:disp, s:score });
     };
@@ -1595,7 +1648,12 @@
 
   // ---------------- Preferensi (bisa dimatikan dari kisi alat halaman 2) ----------------
   const PREFS_KEY = 'genjreng_prefs_v1';
-  const prefs = { autocorrect:true, autocaps:true, suggest:true, clip:true, info:false };
+  const prefs = { autocorrect:true, autocaps:true, suggest:true, clip:true, info:false,
+    dblSpace:true, autoSpacePunct:false, aposSwitch:true, longAlts:true, longSym:false,
+    sound:false, soundVol:60, haptic:true, popup:true,
+    numRowAlways:false, numRowPass:true, showEmojiKey:true, showComma:true, showPeriod:true,
+    glide:true, glideTrail:true, swipeDel:true, spaceCursor:true,
+    nextWord:true, emojiHint:true, noOffensive:true };
   try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); }catch(e){}
   function savePrefs(){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }catch(e){} }
 
@@ -1769,7 +1827,7 @@
     let best = null;
     for(let i = 0; i < dict.length && i < 2500; i++){                        // hanya kata-kata umum
       const e = dict[i];
-      if(Math.abs(e.d.length - typedD.length) > 1 || !firstLetterPlausible(typedD, e.d) || isBlocked(e.w)) continue;
+      if(Math.abs(e.d.length - typedD.length) > 1 || !firstLetterPlausible(typedD, e.d) || isBlocked(e.w) || isOffensive(e.w)) continue;
       const c = editCost(typedD, e.d);
       if(c > limit) continue;
       const score = c + Math.log2(e.r + 2) * 0.12;   // makin umum katanya, makin menang ("teh" -> "the", bukan "ten")
@@ -1781,6 +1839,7 @@
     if(!prefs.autocorrect || privateField || mode !== 'letters' || scriptLang()) return null;
     const { start, end, word } = getCurrentWordRange();
     if(!word || !/^\p{L}+$/u.test(word)) return null;
+    if(/\p{L}/u.test(text.charAt(cursorPos))) return null;      // kursor di TENGAH kata: jangan dikoreksi
     const rest = word.slice(1);
     if(rest !== rest.toLowerCase()) return null;                             // "iPhone", "GB" -> biarkan
     if(word.charAt(0) !== word.charAt(0).toLowerCase()){                     // diawali huruf besar: nama? hanya koreksi di awal kalimat
@@ -1829,16 +1888,20 @@
         if(!seen.has(w.toLowerCase()) && !isBlocked(w)){ seen.add(w.toLowerCase()); list.push(w); }
       }
       if(shiftActive) list = list.map(w => w.charAt(0).toUpperCase() + w.slice(1));
-      candidates = list.slice(0, 3);
+      candidates = prefs.nextWord ? list.slice(0, 3) : [];
       // Seperti Gboard: salinan terbaru CUMA muncul sebagai chip (tidak ditulis otomatis); atau emoji yang cocok dengan kata tadi.
       if(recentClip && Date.now() < recentClip.until){
         candidates = [{ kind:'clip', text:recentClip.t }].concat(candidates.slice(0, 2));
       } else {
-        const eh = EMOJI_HINT[lastCompletedWord];
-        if(eh && candidates.length >= 3) candidates = candidates.slice(0, 2).concat({ kind:'emoji', text:eh });
+        const eh = prefs.emojiHint ? EMOJI_HINT[lastCompletedWord] : null;
+        if(eh) candidates = candidates.slice(0, 2).concat({ kind:'emoji', text:eh });
       }
+      if(undoInfo) candidates = [{ kind:'undo' }];
+      if(glideAlt) candidates = glideAlt.cands.map(t => ({ kind:'glide', text:t }));   // alternatif kata hasil ketik geser
     }
     if(word.length > 20) candidates = [];   // kata sangat panjang = hampir pasti asal ketik: bar dikosongkan
+    if(undoInfo) candidates = [{ kind:'undo' }];
+    if(glideAlt) candidates = glideAlt.cands.map(t => ({ kind:'glide', text:t }));
     candidates.forEach((c, idx) => {
       if(typeof c === 'object'){                 // chip khusus: papan klip / emoji
         const sp = document.createElement('button');
@@ -1851,6 +1914,20 @@
           sp.addEventListener('pointerdown', ()=>{ armedC = true; });
           sp.addEventListener('pointerleave', ()=>{ armedC = false; });
           sp.addEventListener('pointerup', ()=>{ if(armedC){ armedC = false; pasteClip(c.text); } });
+        } else if(c.kind === 'undo'){
+          sp.className = 'suggest-chip chip-undo';
+          sp.innerHTML = ICONS.undo + '<span>Urungkan</span>';
+          let armedU = false;
+          sp.addEventListener('pointerdown', ()=>{ armedU = true; });
+          sp.addEventListener('pointerleave', ()=>{ armedU = false; });
+          sp.addEventListener('pointerup', ()=>{ if(armedU){ armedU = false; doUndo(); } });
+        } else if(c.kind === 'glide'){
+          sp.className = 'suggest-chip';
+          sp.textContent = c.text;
+          let armedG = false;
+          sp.addEventListener('pointerdown', ()=>{ armedG = true; });
+          sp.addEventListener('pointerleave', ()=>{ armedG = false; });
+          sp.addEventListener('pointerup', ()=>{ if(armedG){ armedG = false; replaceGlideWord(c.text); } });
         } else {
           sp.className = 'suggest-chip chip-emoji';
           sp.textContent = c.text;
@@ -1990,6 +2067,8 @@
   }
   function pasteClip(t){
     appendText(t);                                    // tempelan tidak pernah dipelajari jadi saran (lihat appendText)
+    undoInfo = { kind:'paste', len:t.length };         // muncul chip "Urungkan" seperti Gboard
+    setTimeout(()=>{ if(undoInfo && undoInfo.kind === 'paste'){ undoInfo = null; scheduleSuggestions(); } }, 8000);
     if(recentClip && recentClip.t === t) recentClip = null;
     if(clipboardOpen()) closeEverything(); else scheduleSuggestions();
   }
@@ -2076,6 +2155,176 @@
     setTimeout(()=>{ if(recentClip && Date.now() >= recentClip.until) scheduleSuggestions(); }, 60500);
     if(clipboardOpen()) renderClipboardPanel(); else if(!anyPanelOpen()) scheduleSuggestions();   // (jangan menutup kisi alat yang sedang dibuka)
   };
+
+  // ---------------- Setelan ala Gboard (Preferensi / Pintasan / Pengetikan tombol / Koreksi & saran / Ketik geser) ----------------
+  const GS_SECTIONS = [
+    { title:'Preferensi', items:[
+      { k:'numRowAlways', t:'Baris angka', s:'Selalu tampilkan baris angka di atas huruf' },
+      { k:'numRowPass', t:'Baris angka untuk sandi', s:'Tampilkan baris angka saat mengisi kolom kata sandi' },
+      { k:'showEmojiKey', t:'Tombol emoji', s:'Akses emoji dengan tombol khusus di baris bawah' },
+      { k:'showComma', t:'Tombol koma', s:'Tampilkan tombol koma di baris bawah' },
+      { k:'showPeriod', t:'Tombol titik', s:'Tampilkan tombol titik di baris bawah' } ] },
+    { title:'Pintasan', items:[
+      { k:'dblSpace', t:'Titik spasi ganda', s:'Ketuk dua kali tombol spasi untuk menambahkan titik diikuti satu spasi' },
+      { k:'autoSpacePunct', t:'Spasi otomatis setelah tanda baca', s:'Tambah spasi otomatis saat mengetik huruf tepat setelah tanda baca' },
+      { k:'aposSwitch', t:'Otomatis beralih setelah tanda apostrof', s:'Kembali ke keyboard huruf setelah mengetik apostrof (\')' },
+      { k:'longAlts', t:'Sentuh lama untuk huruf beraksen & angka', s:'Tahan tombol huruf untuk memilih é, ü, ñ, angka, dst' },
+      { k:'longSym', t:'Sentuh lama tombol untuk menampilkan simbol', s:'Tambahkan simbol terkait ke pilihan saat tombol ditahan' } ] },
+    { title:'Pengetikan tombol', items:[
+      { k:'sound', t:'Suara', s:'Putar suara klik saat tombol diketuk' },
+      { slider:'soundVol', t:'Volume', s:'Volume suara klik', min:10, max:100 },
+      { k:'haptic', t:'Getaran keyboard', s:'Getar saat tombol ditekan' },
+      { k:'popup', t:'Pop-up tombol', s:'Tampilkan pratinjau huruf saat tombol ditekan' } ] },
+    { title:'Koreksi & saran', items:[
+      { k:'autocorrect', t:'Koreksi otomatis', s:'Perbaiki salah ketik saat spasi atau tanda baca' },
+      { k:'autocaps', t:'Huruf besar otomatis', s:'Huruf besar di awal kalimat' },
+      { k:'noOffensive', t:'Jangan sarankan kata yang menyinggung', s:'Sembunyikan kata kasar dari saran' },
+      { k:'suggest', t:'Saran kata', s:'Tampilkan di kolom saran' },
+      { k:'nextWord', t:'Saran kata berikutnya', s:'Gunakan konteks sebelumnya untuk membuat saran' },
+      { k:'emojiHint', t:'Menampilkan emoji', s:'Tawarkan emoji yang cocok di kolom saran' } ] },
+    { title:'Ketik geser', items:[
+      { k:'glide', t:'Ketik geser', s:'Geser jari dari huruf ke huruf untuk mengetik satu kata' },
+      { k:'glideTrail', t:'Jejak geser', s:'Tampilkan pergerakan jari Anda di keyboard' },
+      { k:'swipeDel', t:'Hapus dengan geser', s:'Hapus kata dengan menggeser ke kiri dari tombol "Hapus"' },
+      { k:'spaceCursor', t:'Kontrol kursor dengan geser', s:'Geser di sepanjang tombol spasi untuk memindahkan kursor' } ] },
+  ];
+  const GS_LINKS = [
+    { id:'lang',  icon:'globe',     t:'Bahasa', s:() => LANGS[currentLang].name },
+    { id:'theme', icon:'palette',   t:'Tema', s:() => 'Warna keyboard' },
+    { id:'font',  icon:'resize',    t:'Ukuran font & batas tuts', s:() => 'Sesuaikan tampilan tuts' },
+    { id:'dict',  icon:'spell',     t:'Kamus', s:() => 'Kelola kata pribadi' },
+    { id:'clip',  icon:'clipboard', t:'Papan klip', s:() => 'Riwayat salinan' },
+    { id:'share', icon:'share',     t:'Bagikan Guitarwiter', s:() => 'Ajak teman mencoba' },
+  ];
+  // Menerapkan pilihan yang punya efek langsung ke tampilan.
+  function updateNumRow(){
+    keyboardEl.classList.toggle('show-num-row', mode === 'symbols' || prefs.numRowAlways || (privateField && prefs.numRowPass));
+  }
+  function applyPrefs(){
+    const b = document.body.classList;
+    b.toggle('no-emoji-key', !prefs.showEmojiKey);
+    b.toggle('no-comma-key', !prefs.showComma);
+    b.toggle('no-period-key', !prefs.showPeriod);
+    updateNumRow();
+    try{ syncPrefPills(); }catch(e){}   // (di awal, pil-pil kisi alat belum dibuat)
+  }
+  function gsMk(tag, cls, html){ const e = document.createElement(tag); if(cls) e.className = cls; if(html != null) e.innerHTML = html; if(tag === 'button') e.type = 'button'; return e; }
+  function renderGbSettings(){
+    const p = document.getElementById('gbSettings');
+    p.innerHTML = '';
+    const head = gsMk('div', 'clip-head');
+    const back = gsMk('button', 'mp-back', ICONS.back);
+    back.addEventListener('pointerdown', (e)=>{ e.preventDefault(); closeEverything(); });
+    const title = gsMk('span', 'clip-title'); title.textContent = 'Setelan Guitarwiter';
+    head.appendChild(back); head.appendChild(title);
+    p.appendChild(head);
+    const body = gsMk('div', 'gs-body');
+    p.appendChild(body);
+    GS_SECTIONS.forEach(sec => {
+      const h = gsMk('div', 'gs-sec'); h.textContent = sec.title; body.appendChild(h);
+      sec.items.forEach(it => {
+        const row = gsMk('div', 'gs-row');
+        const txt = gsMk('div', 'gs-txt');
+        txt.appendChild(gsMk('div', 'gs-t')).textContent = it.t;
+        txt.appendChild(gsMk('div', 'gs-s')).textContent = it.s;
+        row.appendChild(txt);
+        if(it.slider){
+          const r = gsMk('input', 'gs-range'); r.type = 'range'; r.min = it.min; r.max = it.max; r.value = prefs[it.slider];
+          r.addEventListener('input', ()=>{ prefs[it.slider] = +r.value; savePrefs(); });
+          r.addEventListener('change', ()=>{ clickSound(true); });
+          row.appendChild(r);
+        } else {
+          const sw = gsMk('button', 'clip-switch' + (prefs[it.k] ? ' on' : ''));
+          sw.addEventListener('click', ()=>{ prefs[it.k] = !prefs[it.k]; savePrefs(); sw.classList.toggle('on', prefs[it.k]); applyPrefs(); if(it.k === 'autocaps' && !prefs.autocaps) applyAutoCaps(false); });
+          row.appendChild(sw);
+        }
+        body.appendChild(row);
+      });
+    });
+    const h = gsMk('div', 'gs-sec'); h.textContent = 'Lainnya'; body.appendChild(h);
+    GS_LINKS.forEach(l => {
+      const row = gsMk('button', 'gs-row link');
+      row.innerHTML = '<span class="gs-ico">' + ICONS[l.icon] + '</span>';
+      const txt = gsMk('div', 'gs-txt');
+      txt.appendChild(gsMk('div', 'gs-t')).textContent = l.t;
+      txt.appendChild(gsMk('div', 'gs-s')).textContent = l.s();
+      row.appendChild(txt);
+      row.addEventListener('click', ()=> gsLink(l.id));
+      body.appendChild(row);
+    });
+  }
+  function gsLink(id){
+    if(id === 'lang'){ renderLangPanel(); openPanel('langPanel', false, null); }
+    else if(id === 'theme'){ settingsPanel.dataset.filter = 'theme'; openPanel('settingsPanel', false, null); }
+    else if(id === 'font'){ settingsPanel.dataset.filter = 'all'; openPanel('settingsPanel', false, null); }
+    else if(id === 'dict'){ renderDictPanel(); openPanel('dictPanel', false, null); }
+    else if(id === 'clip'){ renderClipboardPanel(); openPanel('clipboardPanel', false, null); }
+    else if(id === 'share'){ document.getElementById('shareBtn').click(); }
+  }
+
+  // ---------------- Getar & suara tombol (hanya untuk sentuhan jari, bukan nada gitar) ----------------
+  let _audioCtx = null;
+  function clickSound(force){
+    if(!prefs.sound && !force) return;
+    try{
+      _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const o = _audioCtx.createOscillator(), g = _audioCtx.createGain();
+      o.type = 'square'; o.frequency.value = 1700;
+      g.gain.value = Math.max(0.01, (prefs.soundVol || 60) / 100 * 0.12);
+      g.gain.exponentialRampToValueAtTime(0.0001, _audioCtx.currentTime + 0.03);
+      o.connect(g); g.connect(_audioCtx.destination);
+      o.start(); o.stop(_audioCtx.currentTime + 0.03);
+    }catch(e){}
+  }
+  function keyFeedback(){
+    if(prefs.haptic){
+      try{
+        if(window.AndroidKeyboard && window.AndroidKeyboard.haptic) window.AndroidKeyboard.haptic();
+        else if(navigator.vibrate) navigator.vibrate(6);
+      }catch(e){}
+    }
+    if(prefs.sound) clickSound();
+  }
+
+  // ---------------- Kamus pribadi: lihat & hapus kata yang dipelajari ----------------
+  function renderDictPanel(){
+    const p = document.getElementById('dictPanel');
+    p.innerHTML = '';
+    const head = gsMk('div', 'clip-head');
+    const back = gsMk('button', 'mp-back', ICONS.back);
+    back.addEventListener('pointerdown', (e)=>{ e.preventDefault(); closeEverything(); openPanel('gbSettings', false, null); renderGbSettings(); });
+    const title = gsMk('span', 'clip-title'); title.textContent = 'Kamus · ' + LANGS[currentLang].name;
+    const clr = gsMk('button', 'gs-clear'); clr.textContent = 'Hapus semua';
+    let armed = null;
+    clr.addEventListener('click', ()=>{
+      if(!armed){ clr.textContent = 'Ketuk lagi'; armed = setTimeout(()=>{ armed = null; clr.textContent = 'Hapus semua'; }, 2500); return; }
+      clearTimeout(armed); armed = null;
+      learnedWords[currentLang] = {}; bigrams[currentLang] = {}; persistLearning(); renderDictPanel();
+    });
+    head.appendChild(back); head.appendChild(title); head.appendChild(clr);
+    p.appendChild(head);
+    const body = gsMk('div', 'gs-body');
+    p.appendChild(body);
+    const bucket = learnedWords[currentLang] || {};
+    const words = Object.keys(bucket).sort((a, b) => (bucket[b].count || 0) - (bucket[a].count || 0)).slice(0, 300);
+    if(!words.length){ body.appendChild(gsMk('div', 'clip-hint', 'Belum ada kata pribadi. Kata yang sering kamu ketik akan muncul di sini.')); return; }
+    const g = gsMk('div', 'dict-list');
+    words.forEach(k => {
+      const it = gsMk('div', 'dict-item');
+      const w = gsMk('span', 'dict-w'); w.textContent = bucket[k].disp || k;
+      const c = gsMk('span', 'dict-c'); c.textContent = '×' + (bucket[k].count || 1);
+      const d = gsMk('button', 'dict-del', ICONS.close); d.title = 'Hapus';
+      d.addEventListener('click', ()=>{ removeSuggestion(bucket[k].disp || k); renderDictPanel(); });
+      it.appendChild(w); it.appendChild(c); it.appendChild(d); g.appendChild(it);
+    });
+    body.appendChild(g);
+  }
+
+  // ---------------- Kata menyinggung: tidak disarankan (daftar ringkas, hanya untuk MENYARINGKAN saran) ----------------
+  const OFFENSIVE = new Set(['bangsat','bajingan','kontol','memek','ngentot','goblok','tolol','brengsek','sialan','kampret','jancok','jancuk','asu','pantek','pepek','titit',
+    'fuck','fucking','fucker','shit','bitch','asshole','dick','pussy','cunt','bastard','motherfucker','slut','whore','wtf','damn','crap']);
+  function isOffensive(w){ return prefs.noOffensive && OFFENSIVE.has(String(w).toLowerCase()); }
+
 
   // ---------------- Fitur 2b: Panel GIF ----------------
   // CATATAN JUJUR: ini BELUM nyambung ke pencarian GIF asli (mis. Tenor/GIPHY),
@@ -2241,6 +2490,14 @@
   let autoShift = false;   // true = shift menyala karena huruf-besar-otomatis (bukan ditekan pengguna)
 
   const SYMBOLS = ['@','#','$','_','&','-','+','(',')','/', '*','"',"'",':',';','!','?','~','`', '%','^','=','[',']','{','}'];
+  const SYMBOLS2 = ['~','`','|','•','√','π','÷','×','¶','∆', '£','¢','€','¥','^','°','=','[',']', '\\','%','©','®','™','<','>'];
+  var symPage = 1;
+  function updateShiftLabel(){
+    const sh = allKeys[29]; if(!sh) return;
+    const c = sh.querySelector('.ch');
+    if(mode === 'symbols') c.textContent = (symPage === 1) ? '=\\<' : '?123';   // seperti Gboard: ganti halaman simbol
+    else c.innerHTML = ICONS.shift;
+  }
   const numBtnEl = document.getElementById('numBtn');
   const emojiBtnEl = document.getElementById('emojiBtn');
   const keyboardEl2 = document.getElementById('keyboard');
@@ -2248,6 +2505,7 @@
 
   function shiftToggle(el){
     flash(el);
+    if(mode === 'symbols'){ symPage = (symPage === 1) ? 2 : 1; applySymbolMode(true); updateShiftLabel(); return; }   // di mode simbol: ganti halaman
     autoShift = false;   // pengguna sendiri yang menyentuh shift -> bukan otomatis lagi
     const now = performance.now();
     const isDoubleTap = (now - lastShiftTap) < 350;
@@ -2283,7 +2541,7 @@
       const el = allKeys[i];
       const chSpan = el.querySelector('.ch');
       if(isSymbol){
-        const symbol = SYMBOLS[si];
+        const symbol = (symPage === 2 ? SYMBOLS2 : SYMBOLS)[si];
         el.dataset.symbolChar = symbol;
         chSpan.textContent = symbol;
       } else {
@@ -2338,13 +2596,15 @@
   emojiBackBtn.remove(); emojiDeleteBtn.remove();   // diganti tombol ABC / hapus di baris bawah panel media
 
   function setMode(newMode){
+    if(newMode === 'symbols' && mode !== 'symbols') symPage = 1;
     mode = newMode;
     keyboardEl2.style.display = '';          // panel emoji lama tidak dipakai lagi: diganti panel media (menutupi tuts)
     emojiPanelEl.style.display = 'none';
     // Baris angka cuma ditampilkan di mode simbol (?123), sama seperti Gboard --
     // di mode huruf, angkanya "di belakang" lewat badge pojok + tekan-tahan.
-    keyboardEl.classList.toggle('show-num-row', mode==='symbols');
+    updateNumRow();
     applySymbolMode(mode==='symbols');
+    updateShiftLabel();
     numBtnEl.querySelector('.ch').textContent = (mode==='symbols') ? 'ABC' : '?123';
     { const ec = emojiBtnEl.querySelector('.ch'); if(mode==='emoji') ec.textContent = 'ABC'; else ec.innerHTML = ICONS.emoji; }
     if(mode==='symbols'){
@@ -2594,6 +2854,329 @@
     body.appendChild(g);
   }
 
+  // ==================== Gestur tuts ala Gboard ====================
+  // Tuts huruf: ketuk = ketik langsung (tanpa jeda). TAHAN = pilihan (angka pojok / huruf beraksen / simbol).
+  // GESER ke huruf lain = "ketik geser" (glide typing): satu kata dari jalur jari. Tombol hapus: geser ke kiri = hapus kata
+  // per kata. Spasi: geser kiri/kanan = pindahkan kursor.
+  var G = null;                 // gestur tuts huruf yang sedang berlangsung
+  var glideAlt = null;          // { cands, len, capital } -> alternatif kata setelah ketik geser (tampil di bar saran)
+  function insertRaw(str){
+    text = text.slice(0, cursorPos) + str + text.slice(cursorPos);
+    cursorPos += str.length;
+    trimTrackedText();
+    bridgeCommit(str);
+  }
+  const ALT_ACCENTS = {
+    _: { a:'àáâäãåāæ', e:'éèêëēėę', i:'íìîïī', o:'óòôöõøōœ', u:'úùûüū', c:'çćč', n:'ñń', s:'śšß', y:'ýÿ', z:'žźż', l:'ł' },
+    es: { a:'á', e:'é', i:'í', o:'ó', u:'úü', n:'ñ' },
+    pt: { a:'áàâãä', e:'éêè', i:'í', o:'óôõ', u:'úü', c:'ç' },
+    fr: { a:'àâæä', e:'éèêë', i:'îï', o:'ôœö', u:'ùûü', c:'ç', y:'ÿ' },
+    de: { a:'ä', o:'ö', u:'ü', s:'ß' },
+    it: { a:'à', e:'èé', i:'ì', o:'òó', u:'ù' },
+    nl: { e:'ëéè', i:'ï', o:'ö', u:'ü', a:'ä' },
+    tr: { c:'ç', g:'ğ', i:'ıİ', o:'ö', s:'ş', u:'ü' },
+  };
+  function altItemsFor(btn){
+    const base = btn.dataset.origChar;
+    const items = [];
+    if(btn.dataset.cornerNum !== undefined) items.push(btn.dataset.cornerNum);             // angka pojok selalu pertama (tahan = angka)
+    if(prefs.longAlts && !scriptLang()){
+      const map = ALT_ACCENTS[currentLang] || ALT_ACCENTS._;
+      const al = map[base]; if(al) [...al].forEach(c => items.push(c));
+    }
+    if(prefs.longSym){
+      const si = LETTER_INDICES.indexOf(allKeys.indexOf(btn));
+      if(si >= 0){ const s = SYMBOLS[si]; if(s && !items.includes(s)) items.push(s); }
+    }
+    return items;
+  }
+  function wireLetterKey(btn){
+    btn.addEventListener('pointerdown', (e)=>{
+      if(G) endGesture();
+      keyFeedback();
+      const wasShift = shiftActive, wasAuto = autoShift;
+      manualPress(btn);                                   // ketikan langsung, tanpa menunggu jari diangkat
+      G = { btn, x0:e.clientX, y0:e.clientY, wasShift, wasAuto, glide:false, path:[btn.dataset.origChar], pts:[[e.clientX, e.clientY]], popup:null, timer:null };
+      const items = altItemsFor(btn);
+      if(items.length) G.timer = setTimeout(()=> openAlt(items), LONG_PRESS_MS);
+      document.addEventListener('pointermove', onGMove, true);
+      document.addEventListener('pointerup', onGUp, true);
+      document.addEventListener('pointercancel', onGCancel, true);
+    });
+  }
+  function endGesture(){
+    document.removeEventListener('pointermove', onGMove, true);
+    document.removeEventListener('pointerup', onGUp, true);
+    document.removeEventListener('pointercancel', onGCancel, true);
+    if(G){ if(G.timer) clearTimeout(G.timer); if(G.popup && G.popup.el) G.popup.el.remove(); }
+    const g = G; G = null; return g;
+  }
+  function onGCancel(){ endGesture(); trailEnd(); }
+  function onGMove(e){
+    if(!G) return;
+    if(G.popup){ highlightAlt(e.clientX); return; }
+    const dist = Math.hypot(e.clientX - G.x0, e.clientY - G.y0);
+    if(!G.glide){
+      if(G.timer && dist > LONG_PRESS_MOVE_TOLERANCE){ clearTimeout(G.timer); G.timer = null; }   // jari bergeser: batal "tahan"
+      if(prefs.glide && !scriptLang() && mode === 'letters' && /^[a-z]$/.test(G.btn.dataset.origChar) && dist > 22) startGlide(e);
+      return;
+    }
+    extendGlide(e);
+  }
+  function onGUp(e){
+    const g = endGesture();
+    if(!g) return;
+    if(g.popup){ commitAlt(g); return; }
+    if(g.glide) finishGlide(g);
+  }
+
+  // ---------- Pilihan saat ditahan (angka / huruf beraksen / simbol) ----------
+  function openAlt(items){
+    if(!G) return;
+    G.timer = null;
+    const wrap = document.getElementById('kbWrap');
+    const el = document.createElement('div'); el.className = 'alt-popup';
+    const up = G.wasShift;
+    const shown = items.map(it => (up && /\p{L}/u.test(it)) ? it.toUpperCase() : it);
+    shown.forEach((it, i) => { const d = document.createElement('div'); d.className = 'alt-item' + (i === 0 ? ' on' : ''); d.textContent = it; el.appendChild(d); });
+    wrap.appendChild(el);
+    const wr = wrap.getBoundingClientRect(), kr = G.btn.getBoundingClientRect(), pr = el.getBoundingClientRect();
+    let left = kr.left - wr.left + kr.width / 2 - pr.width / 2;
+    left = Math.max(2, Math.min(wr.width - pr.width - 2, left));
+    el.style.left = left + 'px';
+    el.style.top = Math.max(0, kr.top - wr.top - pr.height - 4) + 'px';
+    G.popup = { items: shown, idx: 0, el };
+    if(window.AndroidKeyboard && window.AndroidKeyboard.haptic && prefs.haptic){ try{ window.AndroidKeyboard.haptic(); }catch(err){} }
+  }
+  function highlightAlt(x){
+    const p = G.popup; if(!p) return;
+    const kids = [...p.el.children];
+    let best = p.idx, bd = 1e9;
+    kids.forEach((k, i) => { const r = k.getBoundingClientRect(); const c = (r.left + r.right) / 2; const d = (x >= r.left && x <= r.right) ? 0 : Math.abs(x - c); if(d < bd){ bd = d; best = i; } });
+    if(best !== p.idx){ kids[p.idx].classList.remove('on'); kids[best].classList.add('on'); p.idx = best; }
+  }
+  function commitAlt(g){
+    const item = g.popup.items[g.popup.idx];
+    backspace();                       // hapus huruf yang tadi langsung diketik
+    if(g.wasShift && !capsLock){ shiftActive = false; updateShiftVisual(); }
+    showBubble(g.btn, item);
+    appendText(item);
+  }
+
+  // ---------- Ketik geser (glide typing) ----------
+  const _trail = { pts:[], raf:0, fade:0, ctx:null };
+  function trailStart(){
+    if(!prefs.glideTrail) return;
+    const c = document.getElementById('glideCanvas'), w = document.getElementById('kbWrap').getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    c.width = Math.round(w.width * dpr); c.height = Math.round(w.height * dpr);
+    _trail.ctx = c.getContext('2d'); _trail.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    _trail.pts = []; _trail.fade = 0; _trail.dpr = dpr; _trail.box = w;
+    cancelAnimationFrame(_trail.raf); trailDraw();
+  }
+  function trailAdd(x, y){ if(_trail.ctx) _trail.pts.push({ x: x - _trail.box.left, y: y - _trail.box.top, t: performance.now() }); }
+  function trailDraw(){
+    const ctx = _trail.ctx; if(!ctx) return;
+    const now = performance.now();
+    ctx.clearRect(0, 0, _trail.box.width, _trail.box.height);
+    _trail.pts = _trail.pts.filter(p => now - p.t < 380);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for(let i = 1; i < _trail.pts.length; i++){
+      const a = _trail.pts[i-1], b = _trail.pts[i], age = (now - b.t) / 380;
+      ctx.strokeStyle = 'rgba(128,203,196,' + Math.max(0, 0.85 - age) + ')';
+      ctx.lineWidth = Math.max(2, 9 * (1 - age));
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    if(_trail.pts.length || G) _trail.raf = requestAnimationFrame(trailDraw);
+  }
+  function trailEnd(){ /* jejak memudar sendiri (380 ms) lalu berhenti */ }
+  function startGlide(e){
+    G.glide = true;
+    if(G.timer){ clearTimeout(G.timer); G.timer = null; }
+    backspace();                                                        // batalkan huruf pertama yang sudah terlanjur diketik
+    if(G.wasShift){ shiftActive = true; autoShift = G.wasAuto; updateShiftVisual(); }   // pulihkan status shift (kapital awal kalimat)
+    trailStart(); trailAdd(G.x0, G.y0);
+    extendGlide(e);
+  }
+  function keyAtPoint(x, y){
+    const el = document.elementFromPoint(x, y);
+    const k = el && el.closest ? el.closest('.key') : null;
+    return (k && k.dataset.origChar && /^[a-z]$/.test(k.dataset.origChar)) ? k.dataset.origChar : null;
+  }
+  function extendGlide(e){
+    const last = G.pts[G.pts.length - 1];
+    const dx = e.clientX - last[0], dy = e.clientY - last[1], len = Math.hypot(dx, dy);
+    const steps = Math.max(1, Math.ceil(len / 6));                     // cuplik tiap ±6px supaya tidak ada tuts yang terlewat
+    for(let s = 1; s <= steps; s++){
+      const x = last[0] + dx * s / steps, y = last[1] + dy * s / steps;
+      G.pts.push([x, y]); trailAdd(x, y);
+      const ch = keyAtPoint(x, y);
+      if(ch && G.path[G.path.length - 1] !== ch) G.path.push(ch);
+    }
+  }
+  function resamplePts(pts, n){
+    if(pts.length < 2) return Array.from({ length:n }, () => pts[0] || [0, 0]);
+    const d = [0]; for(let i = 1; i < pts.length; i++) d.push(d[i-1] + Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]));
+    const total = d[d.length - 1] || 1, out = []; let j = 1;
+    for(let k = 0; k < n; k++){
+      const target = total * k / (n - 1);
+      while(j < d.length - 1 && d[j] < target) j++;
+      const seg = (d[j] - d[j-1]) || 1, t = (target - d[j-1]) / seg;
+      out.push([pts[j-1][0] + (pts[j][0] - pts[j-1][0]) * t, pts[j-1][1] + (pts[j][1] - pts[j-1][1]) * t]);
+    }
+    return out;
+  }
+  // Cocokkan jalur jari ke kata: saring cepat (huruf awal/akhir + urutan huruf) lalu nilai KEMIRIPAN BENTUK jalur.
+  function glideCandidates(g){
+    const seq = g.path;
+    if(seq.length < 2) return [];
+    const first = seq[0], last = seq[seq.length - 1];
+    const centers = {};
+    for(const ch in keyMap){ if(/^[a-z]$/.test(ch) && keyMap[ch]){ const r = keyMap[ch].getBoundingClientRect(); centers[ch] = [(r.left + r.right) / 2, (r.top + r.bottom) / 2]; } }
+    const keyW = (keyMap.a ? keyMap.a.getBoundingClientRect().width : 30) || 30;
+    const N = 32, user = resamplePts(g.pts, N);
+    const dict = getDict(currentLang), bucket = learnedWords[currentLang] || {}, out = [], seen = new Set();
+    const consider = (disp, rank, bonus) => {
+      const low = disp.toLowerCase(); if(seen.has(low)) return;
+      const d = deaccent(disp).replace(/[^a-z]/g, '');
+      if(d.length < 2 || d.length > 14) return;
+      if(!(d[0] === first || keyNear(first, d[0]))) return;
+      const l = d[d.length - 1]; if(!(l === last || keyNear(last, l))) return;
+      const dd = d.replace(/(.)\1+/g, '$1');
+      let j = 0; for(let i = 0; i < seq.length && j < dd.length; i++) if(seq[i] === dd[j]) j++;
+      if(j < dd.length && !(dd.length >= 5 && j >= dd.length - 1)) return;     // urutan huruf harus terlewati (kata panjang boleh luput 1)
+      const tpl = []; for(const ch of dd){ if(centers[ch]) tpl.push(centers[ch]); }
+      if(tpl.length < 2) return;
+      const w = resamplePts(tpl, N);
+      let s = 0; for(let i = 0; i < N; i++) s += Math.hypot(user[i][0] - w[i][0], user[i][1] - w[i][1]);
+      const dist = s / N / keyW;                                          // rata-rata jarak dalam satuan lebar tuts
+      seen.add(low);
+      out.push({ w:disp, score: dist + Math.log2(rank + 2) * 0.05 - bonus });
+    };
+    dict.forEach(e => { if(!isBlocked(e.w) && !isOffensive(e.w)) consider(e.w, e.r, 0); });
+    for(const k in bucket){ const e = bucket[k]; if(e && !isBlocked(k) && !isOffensive(k)) consider(e.disp || k, 0, 0.25 + Math.min(e.count || 1, 20) * 0.01); }
+    out.sort((a, b) => a.score - b.score);
+    return out.slice(0, 3);
+  }
+  function finishGlide(g){
+    const cands = glideCandidates(g);
+    if(!cands.length || cands[0].score > 3.2){                          // jalur tidak cocok dengan kata mana pun: pulihkan huruf awal saja
+      const base = g.path[0];
+      appendText((g.wasShift && /^[a-z]$/.test(base)) ? base.toUpperCase() : base);
+      return;
+    }
+    const cap = g.wasShift;
+    const words = cands.map(c => cap ? c.w.charAt(0).toUpperCase() + c.w.slice(1) : c.w);
+    commitGlideWord(words[0]);
+    if(cap && !capsLock){ shiftActive = false; updateShiftVisual(); }
+    glideAlt = { cands: words, len: words[0].length + 1 };
+    scheduleSuggestions();
+  }
+  function commitGlideWord(word){
+    insertRaw(word + ' ');
+    lastCompletedWord = word.toLowerCase();
+    learnWord(word);
+  }
+  function replaceGlideWord(word){
+    if(!glideAlt) return;
+    const n = glideAlt.len;
+    bridgeDeleteBackwardN(n);
+    text = text.slice(0, Math.max(0, cursorPos - n)) + text.slice(cursorPos); cursorPos = Math.max(0, cursorPos - n);
+    commitGlideWord(word);
+    glideAlt = { cands: glideAlt.cands, len: word.length + 1 };
+    scheduleSuggestions();
+  }
+
+  // ---------- Hapus dengan geser (tombol hapus) ----------
+  function deleteWordBack(){
+    const before = text.slice(0, cursorPos);
+    const m = before.match(/\s*\S+\s*$/) || before.match(/\s+$/);
+    if(!m) return '';
+    const n = m[0].length;
+    bridgeDeleteBackwardN(n);
+    text = text.slice(0, cursorPos - n) + text.slice(cursorPos); cursorPos -= n;
+    return m[0];
+  }
+  function wireSwipeDelete(btn){
+    let st = null;
+    btn.addEventListener('pointerdown', (e)=>{      // didaftarkan SEBELUM ketukan hapus biasa, jadi karakter yang akan terhapus masih tercatat
+      st = { x0:e.clientX, on:false, steps:0, acc:'', pre: text.slice(Math.max(0, cursorPos - 1), cursorPos) };
+      document.addEventListener('pointermove', mv, true);
+      document.addEventListener('pointerup', up, true);
+      document.addEventListener('pointercancel', up, true);
+    });
+    function mv(e){
+      if(!st || !prefs.swipeDel || isComposing()) return;
+      const dx = st.x0 - e.clientX;
+      if(!st.on){
+        if(dx < 28) return;
+        st.on = true;
+        btn.dispatchEvent(new PointerEvent('pointerleave'));            // hentikan hapus-berulang
+        if(st.pre) insertRaw(st.pre);                                   // kembalikan 1 karakter yang tadi terhapus saat disentuh
+      }
+      const want = Math.floor((dx - 28) / 34) + 1;
+      while(st.steps < want){ const d = deleteWordBack(); if(!d){ st.steps = want; break; } st.acc = d + st.acc; st.steps++; }
+    }
+    function up(){
+      document.removeEventListener('pointermove', mv, true);
+      document.removeEventListener('pointerup', up, true);
+      document.removeEventListener('pointercancel', up, true);
+      const s = st; st = null;
+      if(s && s.on && s.acc){ undoInfo = { kind:'restore', text:s.acc }; scheduleSuggestions(); setTimeout(()=>{ if(undoInfo && undoInfo.text === s.acc){ undoInfo = null; scheduleSuggestions(); } }, 8000); }
+    }
+  }
+  // ---------- Kursor dengan geser (tombol spasi) ----------
+  function moveCursorBy(n){
+    if(!n) return;
+    lastLocalEdit = Date.now();
+    try{ if(window.AndroidKeyboard && window.AndroidKeyboard.moveCursor) window.AndroidKeyboard.moveCursor(n); }catch(e){}
+    cursorPos = Math.max(0, Math.min(text.length, cursorPos + n));
+    lastAutoCorrect = null; glideAlt = null;
+    scheduleSuggestions();
+  }
+  function wireSpaceSwipe(btn){
+    let st = null;
+    btn.addEventListener('pointerdown', (e)=>{
+      st = { x0:e.clientX, on:false, moved:0 };
+      document.addEventListener('pointermove', mv, true);
+      document.addEventListener('pointerup', up, true);
+      document.addEventListener('pointercancel', up, true);
+    });
+    function mv(e){
+      if(!st || !prefs.spaceCursor) return;
+      const dx = e.clientX - st.x0;
+      if(!st.on){
+        if(Math.abs(dx) < 16) return;
+        st.on = true; st.x0 = e.clientX; st.moved = 0;
+        // batalkan spasi yang tadi langsung diketik saat disentuh (tanpa memicu "urungkan koreksi")
+        if(text.slice(cursorPos - 1, cursorPos) === ' '){ lastAutoCorrect = null; bridgeDeleteBackward(); text = text.slice(0, cursorPos - 1) + text.slice(cursorPos); cursorPos -= 1; }
+        return;
+      }
+      const steps = Math.trunc((e.clientX - st.x0) / 14);
+      if(steps !== st.moved){ moveCursorBy(steps - st.moved); st.moved = steps; }
+    }
+    function up(){
+      document.removeEventListener('pointermove', mv, true);
+      document.removeEventListener('pointerup', up, true);
+      document.removeEventListener('pointercancel', up, true);
+      st = null;
+    }
+  }
+  // ---------- Urungkan (setelah tempel / hapus dengan geser) ----------
+  function doUndo(){
+    const u = undoInfo; undoInfo = null;
+    if(!u) return;
+    if(u.kind === 'paste'){
+      const n = Math.min(u.len, cursorPos);
+      bridgeDeleteBackwardN(u.len);
+      text = text.slice(0, cursorPos - n) + text.slice(cursorPos); cursorPos -= n;
+    } else if(u.kind === 'restore'){
+      insertRaw(u.text);
+    }
+    scheduleSuggestions();
+  }
+
+
   // ---------------- Tekan-tahan tuts q-p buat ambil angka pojok (persis Gboard) ----------------
   const LONG_PRESS_MS = 300;         // ambang lama tekan sebelum dianggap "tahan"
   const LONG_PRESS_MOVE_TOLERANCE = 18; // px -- geser lebih dari ini sebelum ambang = batal (ketarik keluar)
@@ -2610,6 +3193,7 @@
     btn.addEventListener('pointerdown', (e)=>{
       startX = e.clientX; startY = e.clientY;
       clearTimer();
+      keyFeedback();
       manualPress(btn);                      // huruf langsung masuk, tanpa jeda
       timer = setTimeout(()=>{
         timer = null;
@@ -2692,6 +3276,7 @@
     appendText(ch);
   }
   function functionalPress(el){
+    keyFeedback();
     flash(el);
     const type = el.dataset.type;
     if(type==='backspace'){ showBubble(el,'⌫'); backspace(); }
@@ -3376,8 +3961,8 @@
   const suggestBarEl = document.getElementById('suggestBar');
   const featureToggleBtn = document.getElementById('featureToggleBtn');
   // Semua panel yang menggantikan area tuts, beserta jenis display-nya saat terbuka.
-  const PANEL_DISPLAY = { toolPanel:'block', settingsPanel:'block', clipboardPanel:'flex', mediaPanel:'flex', gifPanel:'flex', translatePanel:'flex', langPanel:'flex' };
-  const FULL_PANELS = ['mediaPanel', 'clipboardPanel'];   // menutupi bar saran + tuts (punya kepala sendiri)
+  const PANEL_DISPLAY = { toolPanel:'block', settingsPanel:'block', clipboardPanel:'flex', mediaPanel:'flex', gbSettings:'flex', dictPanel:'flex', gifPanel:'flex', translatePanel:'flex', langPanel:'flex' };
+  const FULL_PANELS = ['mediaPanel', 'clipboardPanel', 'gbSettings', 'dictPanel'];   // menutupi bar saran + tuts (punya kepala sendiri)
   let lastKbHeight = 0, lastBarH = 0;
   var toolEditing = false;   // mode pensil (sesuaikan item kisi alat)
   function panelEl(id){ return document.getElementById(id); }
@@ -3442,6 +4027,7 @@
   loadSavedFontScale();
   loadSavedKeyBorder();
   applyLang(currentLang);
+  applyPrefs();
   renderClipboardPanel();
   // Keadaan huruf-besar-otomatis awal (Android sudah tahu kolom ini kosong / awal kalimat atau bukan).
   try{
@@ -3511,7 +4097,7 @@
     suggestBarEl.style.display = 'none';
     openPanel(id, keepKeyboard, btn);
   }
-  settingsBtn.addEventListener('click', ()=> togglePanel('settingsPanel', settingsBtn, ()=>{ settingsPanel.dataset.filter = 'all'; }));
+  settingsBtn.addEventListener('click', ()=> togglePanel('gbSettings', settingsBtn, renderGbSettings));   // Setelan ala Gboard
   themeBtn.addEventListener('click',    ()=> togglePanel('settingsPanel', themeBtn,    ()=>{ settingsPanel.dataset.filter = 'theme'; }));
   sizeBtn.addEventListener('click',     ()=> openResize());          // tampilan Gboard: bingkai + pegangan + Reset/Selesai
   clipboardBtn.addEventListener('click', ()=> togglePanel('clipboardPanel', null, renderClipboardPanel));
