@@ -151,12 +151,26 @@ jobs:
         if: env.KEYSTORE_BASE64 != ''
         run: mv android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/Guitarwiter.apk
 
-      - name: Unggah APK release sebagai artifact (kalau ada)
+      - name: Build App Bundle (.aab) untuk Play Store
+        if: env.KEYSTORE_BASE64 != ''
+        working-directory: android
+        env:
+          KEYSTORE_PATH: release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew bundleRelease --stacktrace
+
+      - name: Ganti nama AAB jadi Guitarwiter.aab
+        if: env.KEYSTORE_BASE64 != ''
+        run: mv android/app/build/outputs/bundle/release/app-release.aab android/app/build/outputs/bundle/release/Guitarwiter.aab
+
+      - name: Unggah AAB sebagai artifact (INI yang diupload ke Play Console)
         if: env.KEYSTORE_BASE64 != ''
         uses: actions/upload-artifact@v6
         with:
-          name: Guitarwiter-apk
-          path: android/app/build/outputs/apk/release/Guitarwiter.apk
+          name: Guitarwiter-aab
+          path: android/app/build/outputs/bundle/release/Guitarwiter.aab
 
       # ---- Bagian ini yang bikin APK-nya nongol di tab "Releases" depan repo,
       # bukan cuma terkubur di tab Actions -> buka run -> scroll ke Artifacts.
@@ -171,10 +185,12 @@ jobs:
           body: |
             Build otomatis dari commit ${{ github.sha }}.
             - `Guitarwiter-debug.apk` selalu ada (tidak perlu keystore).
-            - `Guitarwiter.apk` cuma ada kalau secret KEYSTORE_BASE64 dkk sudah diisi.
+            - `Guitarwiter.apk` dan `Guitarwiter.aab` cuma ada kalau secret KEYSTORE_BASE64 dkk sudah diisi.
+            - `Guitarwiter.aab` adalah file yang diupload ke Google Play Console (APK cuma untuk tes manual).
           # fail_on_unmatched_files:false -> kalau release.apk belum ada (keystore
           # belum disetel), step ini tetap sukses & cuma lampirin yang ada saja.
           fail_on_unmatched_files: false
           files: |
             android/app/build/outputs/apk/debug/Guitarwiter-debug.apk
             android/app/build/outputs/apk/release/Guitarwiter.apk
+            android/app/build/outputs/bundle/release/Guitarwiter.aab
