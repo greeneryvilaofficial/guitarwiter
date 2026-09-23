@@ -1,0 +1,117 @@
+--- a/www/index.html
++++ b/www/index.html
+@@ -3400,7 +3400,7 @@
+   };
+ 
+   // ---------------- Mic: monophonic pitch detection (autocorrelation) ----------------
+-  let listening=false, micCtx=null, analyser=null, stream=null, rafId=null;
++  let listening=false, micCtx=null, analyser=null, stream=null, rafId=null, micHopLen=735;
+   // state: 'idle' (siap deteksi onset baru) -> 'sampling' (lagi mengukur nada) ->
+   // 'releasing' (nunggu senar benar-benar mereda) -> balik ke 'idle'.
+   let state='idle', sampleAt=0, cooldownUntil=0, smoothedRms=0.001;
+@@ -3449,6 +3449,17 @@
+   // RETRIGGER_RATIO + RELEASE_RMS). HARUS sama persis dengan COOLDOWN_MS di
+   // NativeMicPitchDetector.java.
+   const COOLDOWN_MS = 70;
++  // FIX SINKRONISASI LATENSI (ketemu 23 Sep 2026): NativeMicPitchDetector.java
++  // sudah lebih dulu diturunkan dari 45 -> 30 (mulai baca nada 1 hop lebih
++  // awal), tapi micLoop() di sini kelupaan ikut diubah -- padahal komentar di
++  // kedua file sama-sama bilang "HARUS sama persis". Selisih 15ms ini kerasa
++  // sebagai delay tambahan tiap kali jalur mic WebView/browser dipakai.
++  // HARUS sama persis dengan SETTLE_MS di NativeMicPitchDetector.java.
++  const SETTLE_MS = 30;
++  // Idem: Java sudah naik dari 4 -> 5 (kompensasi supaya batas akhir percobaan
++  // tetap ~sama walau SETTLE_MS lebih pendek), micLoop() di sini juga kelupaan.
++  // HARUS sama persis dengan MAX_SAMPLE_TRIES di NativeMicPitchDetector.java.
++  const MAX_SAMPLE_TRIES = 5;
+   // PENTING (fix "kedeteksi ganda / dobel ketikan"): dulu, begitu COOLDOWN_MS
+   // lewat, sistem langsung siap mendeteksi onset baru lagi -- padahal senar
+   // gitar yang baru dipetik itu MASIH BERDENGUNG jauh lebih lama dari 180ms.
+@@ -3717,8 +3728,17 @@
+     if(!listening) return;
+     const buf = new Float32Array(analyser.fftSize);
+     analyser.getFloatTimeDomainData(buf);
+-    let sum=0; for(let i=0;i<buf.length;i++) sum+=buf[i]*buf[i];
+-    const rms = Math.sqrt(sum/buf.length);
++    // rms dipakai buat onset/retrigger/release HARUS dihitung dari hop
++    // TERBARU saja (bukan seluruh buf 4096 sampel) -- lihat penjelasan
++    // lengkap di komentar micHopLen pada startMic(). getFloatTimeDomainData()
++    // selalu menaruh sampel paling baru di ujung array, jadi cukup ambil
++    // micHopLen sampel terakhir. yinDetect() di bawah tetap dikasih buf penuh
++    // supaya akurasi nada rendah tidak berubah -- cuma RMS onset yang
++    // dipercepat. HARUS sama persis dengan rms di recordLoop()
++    // NativeMicPitchDetector.java.
++    const hopStart = Math.max(0, buf.length - micHopLen);
++    let sum=0; for(let i=hopStart;i<buf.length;i++) sum+=buf[i]*buf[i];
++    const rms = Math.sqrt(sum/(buf.length-hopStart));
+     const now = performance.now();
+ 
+     if(state==='idle'){
+@@ -3732,10 +3752,10 @@
+         state='sampling';
+         sampleTries=0;
+         candidateIdx=-1; candidateCount=0;
+-        // Kasih jeda dikit dulu (~45ms) biar transien petikan gitar mereda dan
++        // Kasih jeda dikit dulu biar transien petikan gitar mereda dan
+         // gelombangnya udah cukup stabil buat diukur. HARUS sama persis dengan
+         // SETTLE_MS di NativeMicPitchDetector.java.
+-        sampleAt = now + 45;
++        sampleAt = now + SETTLE_MS;
+         lastOnsetAt = now;
+         onsetPeakRms = rms;
+         showStatus('Mendengar petikan…');
+@@ -3774,7 +3794,7 @@
+             // requiredConfirm ADAPTIF -- HARUS sama persis dengan requiredConfirm
+             // di NativeMicPitchDetector.java.
+             const requiredConfirm = chk.centsOff < 12 ? 1 : (chk.centsOff < 22 ? 2 : 3);
+-            if(candidateCount >= requiredConfirm || sampleTries >= 4){
++            if(candidateCount >= requiredConfirm || sampleTries >= MAX_SAMPLE_TRIES){
+               // Sudah dapat cukup bacaan berturut yang sepakat (paling umum),
+               // ATAU jatah percobaan sudah habis -- pakai bacaan TERAKHIR yang
+               // lolos ini (lebih baik daripada nyerah total).
+@@ -3795,7 +3815,7 @@
+             state='releasing';
+             cooldownUntil = now + COOLDOWN_MS;
+             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
+-          } else if(sampleTries < 4){
++          } else if(sampleTries < MAX_SAMPLE_TRIES){
+             // Bacaannya persis di batas dua kategori tuts berbeda (mis. angka vs
+             // huruf/tanda baca) dan belum cukup yakin -- coba baca ulang dulu
+             // daripada asal tebak dan salah kategori.
+@@ -3806,7 +3826,7 @@
+             cooldownUntil = now + COOLDOWN_MS;
+             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
+           }
+-        } else if(sampleTries >= 4){
++        } else if(sampleTries >= MAX_SAMPLE_TRIES){
+           // Beberapa frame berturut SAMA SEKALI tidak dapat sinyal periodik
+           // (yinDetect() balikin null terus) walau tadinya cukup keras buat
+           // memicu onset -- ini ciri khas TAP/ketukan ke badan gitar (bukan
+@@ -3839,7 +3859,7 @@
+         state='sampling';
+         sampleTries=0;
+         candidateIdx=-1; candidateCount=0;
+-        sampleAt = now + 45;
++        sampleAt = now + SETTLE_MS;
+         lastOnsetAt = now;
+         onsetPeakRms = rms;
+         releaseBelowCount = 0;
+@@ -3898,6 +3918,18 @@
+     analyser = micCtx.createAnalyser();
+     analyser.fftSize = 4096;
+     src.connect(analyser);
++    // FIX SINKRONISASI LATENSI: dulu RMS onset dihitung dari SELURUH buffer
++    // 4096 sampel (~93ms) tiap frame, sama seperti dulu di NativeMicPitchDetector.java
++    // sebelum diperbaiki -- akibatnya onset ikut "diencerkan" ~3300 sampel
++    // histori lama yang masih diam, jadi telat kedeteksi. Java sudah dibenahi
++    // (RMS onset cuma dari hop terbaru, ~16.6ms), micLoop() di sini kelupaan
++    // ikut dibenahi. micHopLen di bawah dipakai buat meniru itu: getFloatTimeDomainData()
++    // selalu mengembalikan sampel PALING BARU di ujung array, jadi cukup ambil
++    // ~micHopLen sampel terakhir buat RMS onset -- yinDetect() tetap dikasih
++    // buffer 4096 penuh seperti biasa (jendela tetap lebar, akurasi nada rendah
++    // tidak terpengaruh). HARUS sama persis konsepnya dengan hopSamples di
++    // NativeMicPitchDetector.java.
++    micHopLen = Math.max(1, Math.round(micCtx.sampleRate / 60));
+     listening = true;
+     document.getElementById('micToolBtn').classList.add('on');
+     showStatus('Mendengarkan… petik satu nada per satu.');

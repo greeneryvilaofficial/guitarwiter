@@ -1,0 +1,181 @@
+--- a/www/index.html
++++ b/www/index.html
+@@ -964,22 +964,45 @@
+   function hasAndroidBridge(){
+     return !!(window.AndroidKeyboard && window.AndroidKeyboard.commitText);
+   }
++  // ---- BOOSTER LATENSI KETIK (baru) ----
++  // window.AndroidKeyboard.* (JavascriptInterface) dipanggil Android di thread
++  // LAIN, bukan UI thread -- Java-nya WAJIB lompat balik ke UI thread dulu
++  // (runOnUiThreadSafe) sebelum boleh menyentuh InputConnection. Lompatan ekstra
++  // ini bisa molor kalau UI thread lagi sibuk (render tuts, saran kata, dst) --
++  // paling kerasa pas ngetik cepat pakai deteksi nada.
++  // window.AndroidKeyboardFast (kalau ada -- didaftarkan lewat androidx.webkit
++  // WebMessageListener di HtmlKeyboardService.java) callback-nya DIJAMIN jalan
++  // di UI thread, jadi lompatan balik itu tidak perlu lagi buat 4 aksi paling
++  // sering dipanggil saat mengetik. window.AndroidKeyboard.* yang lama TETAP
++  // dipertahankan penuh sebagai fallback (WebView lawas yang belum dukung
++  // fitur ini, atau kalau AndroidKeyboardFast gagal didaftarkan).
++  function fastBridge(cmd, extra){
++    if(!window.AndroidKeyboardFast) return false;
++    try{
++      const msg = extra ? Object.assign({cmd}, extra) : {cmd};
++      window.AndroidKeyboardFast.postMessage(JSON.stringify(msg));
++      return true;
++    }catch(e){ return false; }
++  }
+   var undoInfo = null, lastSpaceAt = 0;
+   var lastLocalEdit = 0;   // waktu terakhir KITA mengubah isi kolom (dipakai window.onFieldText)
+   function bridgeCommit(str){
+     lastLocalEdit = Date.now();
++    if(fastBridge('commitText', {text: str})) return;
+     if(hasAndroidBridge()){
+       try{ window.AndroidKeyboard.commitText(str); }catch(e){}
+     }
+   }
+   function bridgeDeleteBackward(){
+     lastLocalEdit = Date.now();
++    if(fastBridge('deleteBackward')) return;
+     if(window.AndroidKeyboard && window.AndroidKeyboard.deleteBackward){
+       try{ window.AndroidKeyboard.deleteBackward(); }catch(e){}
+     }
+   }
+   function bridgeEnter(){
+     lastLocalEdit = Date.now();
++    if(fastBridge('sendEnter')) return true;
+     if(window.AndroidKeyboard && window.AndroidKeyboard.sendEnter){
+       try{ window.AndroidKeyboard.sendEnter(); return true; }catch(e){}
+     }
+@@ -1173,6 +1196,7 @@
+   // ---------------- Bridge tambahan: hapus beberapa karakter sekaligus (dipakai saat ganti kata via prediksi) ----------------
+   function bridgeDeleteBackwardN(n){
+     lastLocalEdit = Date.now();
++    if(fastBridge('deleteBackwardN', {n})) return;
+     if(window.AndroidKeyboard && window.AndroidKeyboard.deleteBackwardN){
+       try{ window.AndroidKeyboard.deleteBackwardN(n); return; }catch(e){}
+     }
+--- a/native-patches/HtmlKeyboardService.java
++++ b/native-patches/HtmlKeyboardService.java
+@@ -25,10 +25,14 @@
+ import android.webkit.WebSettings;
+ import androidx.webkit.WebViewAssetLoader;
+ import androidx.webkit.WebViewClientCompat;
++import androidx.webkit.WebViewCompat;
++import androidx.webkit.WebViewFeature;
+ import android.webkit.WebView;
+ 
+ import org.json.JSONObject;
+ 
++import java.util.Collections;
++
+ /**
+  * InputMethodService yang menampilkan file HTML keyboard sebagai WebView,
+  * dan menjembatani ketikan dari JavaScript ke InputConnection sistem Android
+@@ -96,6 +100,37 @@
+         // Daftarkan jembatan: di JavaScript akan muncul sebagai window.AndroidKeyboard
+         webView.addJavascriptInterface(new KeyboardBridge(), "AndroidKeyboard");
+ 
++        // BOOSTER LATENSI KETIK (baru): window.AndroidKeyboard.* di atas method-nya
++        // dipanggil Android di THREAD LAIN, bukan UI thread -- makanya tiap panggilan
++        // commitText/deleteBackward/dst harus loncat balik ke UI thread dulu lewat
++        // runOnUiThreadSafe() sebelum boleh menyentuh InputConnection. Loncatan ekstra
++        // ini nambah 1 antrean message-loop lagi yang bisa molor kalau UI thread
++        // lagi sibuk (render animasi tuts, saran kata, dst) -- paling kerasa pas
++        // ngetik cepat pakai deteksi nada gitar.
++        // WebMessageListener (androidx.webkit) BEDA: callback onPostMessage()-nya
++        // DIJAMIN jalan di UI thread, jadi loncatan balik itu tidak perlu lagi buat
++        // 4 aksi paling sering dipanggil saat mengetik (commitText, deleteBackward,
++        // deleteBackwardN, sendEnter) -- lihat handleFastTypingMessage() di bawah.
++        // Didaftarkan dengan nama beda ("AndroidKeyboardFast") supaya
++        // window.AndroidKeyboard.* yang lama TETAP ada utuh sebagai fallback penuh
++        // (dipakai semua aksi lain + WebView lawas yang belum dukung fitur ini) --
++        // JS yang otomatis pilih jalur cepat ini KALAU tersedia (lihat fastBridge()
++        // di index.html), jadi tidak ada risiko keyboard rusak kalau fitur ini
++        // ternyata tidak tersedia di sebagian HP.
++        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
++            try {
++                WebViewCompat.addWebMessageListener(
++                        webView,
++                        "AndroidKeyboardFast",
++                        Collections.singleton("https://appassets.androidplatform.net"),
++                        (view, message, sourceOrigin, isMainFrame, replyProxy) ->
++                                handleFastTypingMessage(message.getData()));
++            } catch (Exception e) {
++                // Gagal daftar (mis. origin ditolak) -> diamkan saja. JS otomatis
++                // balik pakai window.AndroidKeyboard.* biasa, tidak ada yang rusak.
++            }
++        }
++
+         nativeMic = new NativeMicPitchDetector(this);
+ 
+         // Fitur clipboard: pantau perubahan clipboard sistem Android, lalu
+@@ -587,4 +622,69 @@
+             r.run();
+         }
+     }
++
++    /**
++     * Penerima pesan dari window.AndroidKeyboardFast.postMessage() di JS
++     * (fastBridge() di index.html) -- lihat komentar panjang di onCreateInputView().
++     * Callback ini SUDAH DIJAMIN androidx.webkit jalan di UI thread, jadi BOLEH
++     * langsung menyentuh InputConnection di sini, TANPA runOnUiThreadSafe() lagi
++     * -- itu inti penghematan latensinya (1 loncatan thread lebih sedikit
++     * dibanding window.AndroidKeyboard.* / KeyboardBridge di atas).
++     * Format pesan JSON kecil: {"cmd":"commitText","text":"a"} dst -- HARUS
++     * sama persis dengan yang dikirim fastBridge() di index.html. Sengaja
++     * cuma menangani 4 aksi paling sering dipanggil saat mengetik (yang lain
++     * tetap lewat window.AndroidKeyboard.* biasa, tidak perlu secepat ini).
++     * Kalau parsing gagal / cmd tidak dikenal, diam saja -- tidak ada risiko
++     * keyboard rusak karena JS selalu punya window.AndroidKeyboard.* sebagai
++     * cadangan untuk semua aksi.
++     */
++    private void handleFastTypingMessage(String data) {
++        if (data == null) return;
++        try {
++            JSONObject msg = new JSONObject(data);
++            InputConnection ic = getCurrentInputConnection();
++            if (ic == null) return;
++            switch (msg.optString("cmd", "")) {
++                case "commitText": {
++                    String text = msg.isNull("text") ? null : msg.optString("text", null);
++                    if (text != null) ic.commitText(text, 1);
++                    break;
++                }
++                case "deleteBackward": {
++                    if (!deleteSelectionIfAny(ic)) {
++                        ic.deleteSurroundingText(1, 0);
++                    }
++                    break;
++                }
++                case "deleteBackwardN": {
++                    int n = msg.optInt("n", 1);
++                    if (n > 0 && !deleteSelectionIfAny(ic)) {
++                        ic.deleteSurroundingText(n, 0);
++                    }
++                    break;
++                }
++                case "sendEnter": {
++                    // HARUS sama persis dengan KeyboardBridge.sendEnter() di atas.
++                    EditorInfo ei = getCurrentInputEditorInfo();
++                    int action = (ei != null)
++                            ? (ei.imeOptions & EditorInfo.IME_MASK_ACTION)
++                            : EditorInfo.IME_ACTION_UNSPECIFIED;
++                    boolean noEnterFlag = ei != null
++                            && (ei.imeOptions & EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0;
++                    if (!noEnterFlag
++                            && action != EditorInfo.IME_ACTION_NONE
++                            && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
++                        ic.performEditorAction(action);
++                    } else {
++                        ic.commitText("\n", 1);
++                    }
++                    break;
++                }
++                default:
++                    break;
++            }
++        } catch (Exception e) {
++            // Pesan rusak / format tak terduga -- abaikan, jangan sampai keyboard crash.
++        }
++    }
+ }
