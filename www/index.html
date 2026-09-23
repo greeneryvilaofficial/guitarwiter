@@ -3421,13 +3421,6 @@
   // ONSET_RATIO di NativeMicPitchDetector.java.
   const ONSET_RMS = 0.012;
   const ONSET_RATIO = 1.6;
-  // Tunda sedikit sesudah onset sebelum mulai yinDetect(), biar transien
-  // petikan gitar (bunyi "tak" pick menyentuh senar) sempat mereda dulu.
-  // HARUS SAMA PERSIS dengan SETTLE_MS di NativeMicPitchDetector.java --
-  // sempat 45ms, diturunkan ke 30ms di sisi native tapi lupa disamakan di
-  // sini. Sekarang disatukan lagi jadi satu konstanta biar tidak ketinggalan
-  // lagi kalau salah satu diubah ke depannya.
-  const SETTLE_MS = 30;
   // BARU -- fix "nada cepat/tapping ketimpa dengungan nada sebelumnya jadi
   // gak kepick": lihat penjelasan lengkap di RETRIGGER_RATIO
   // NativeMicPitchDetector.java. HARUS sama persis dengan RETRIGGER_RATIO &
@@ -3739,10 +3732,10 @@
         state='sampling';
         sampleTries=0;
         candidateIdx=-1; candidateCount=0;
-        // Kasih jeda dikit dulu (SETTLE_MS) biar transien petikan gitar mereda dan
+        // Kasih jeda dikit dulu (~45ms) biar transien petikan gitar mereda dan
         // gelombangnya udah cukup stabil buat diukur. HARUS sama persis dengan
         // SETTLE_MS di NativeMicPitchDetector.java.
-        sampleAt = now + SETTLE_MS;
+        sampleAt = now + 45;
         lastOnsetAt = now;
         onsetPeakRms = rms;
         showStatus('Mendengar petikan…');
@@ -3846,7 +3839,7 @@
         state='sampling';
         sampleTries=0;
         candidateIdx=-1; candidateCount=0;
-        sampleAt = now + SETTLE_MS;
+        sampleAt = now + 45;
         lastOnsetAt = now;
         onsetPeakRms = rms;
         releaseBelowCount = 0;
