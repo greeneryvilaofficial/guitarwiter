@@ -93,25 +93,6 @@ public class HtmlKeyboardService extends InputMethodService {
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
 
-        // PENTING untuk HP RAM kecil (2-4GB, mis. Oppo A3s/Snapdragon 450):
-        // proses renderer WebView (terpisah dari proses app sejak Android 8+)
-        // BISA diturunkan prioritasnya atau bahkan dimatikan Android begitu
-        // WebView ini "tidak terlihat" sesaat -- padahal keyboard custom SERING
-        // disembunyikan sebentar (pindah kolom, buka papan klip, dsb), bukan
-        // benar-benar ditutup. Kalau proses renderer sempat mati, kemunculan
-        // keyboard berikutnya terasa "lag sesaat" karena Android diam-diam
-        // membuat ulang proses & re-attach WebView sebelum bisa dipakai lagi --
-        // ironisnya justru meniadakan manfaat "WebView dibuat sekali" di atas.
-        // RENDERER_PRIORITY_IMPORTANT + waivedWhenNotVisible=false memaksa
-        // Android memperlakukan proses ini SAMA PENTING dengan proses utama
-        // terus-menerus, walau sedang tidak kelihatan. Method ini baru ada
-        // dari API 26 (Oreo) -- dijaga dengan cek versi supaya tidak crash
-        // (NoSuchMethodError) kalau minSdkVersion proyek ini di bawah 26.
-        // Android 8.1 di Oppo A3s (API 27) sudah lolos cek ini dengan aman.
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
-        }
-
         // Daftarkan jembatan: di JavaScript akan muncul sebagai window.AndroidKeyboard
         webView.addJavascriptInterface(new KeyboardBridge(), "AndroidKeyboard");
 
