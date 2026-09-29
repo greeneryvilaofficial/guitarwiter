@@ -964,45 +964,22 @@
   function hasAndroidBridge(){
     return !!(window.AndroidKeyboard && window.AndroidKeyboard.commitText);
   }
-  // ---- BOOSTER LATENSI KETIK (baru) ----
-  // window.AndroidKeyboard.* (JavascriptInterface) dipanggil Android di thread
-  // LAIN, bukan UI thread -- Java-nya WAJIB lompat balik ke UI thread dulu
-  // (runOnUiThreadSafe) sebelum boleh menyentuh InputConnection. Lompatan ekstra
-  // ini bisa molor kalau UI thread lagi sibuk (render tuts, saran kata, dst) --
-  // paling kerasa pas ngetik cepat pakai deteksi nada.
-  // window.AndroidKeyboardFast (kalau ada -- didaftarkan lewat androidx.webkit
-  // WebMessageListener di HtmlKeyboardService.java) callback-nya DIJAMIN jalan
-  // di UI thread, jadi lompatan balik itu tidak perlu lagi buat 4 aksi paling
-  // sering dipanggil saat mengetik. window.AndroidKeyboard.* yang lama TETAP
-  // dipertahankan penuh sebagai fallback (WebView lawas yang belum dukung
-  // fitur ini, atau kalau AndroidKeyboardFast gagal didaftarkan).
-  function fastBridge(cmd, extra){
-    if(!window.AndroidKeyboardFast) return false;
-    try{
-      const msg = extra ? Object.assign({cmd}, extra) : {cmd};
-      window.AndroidKeyboardFast.postMessage(JSON.stringify(msg));
-      return true;
-    }catch(e){ return false; }
-  }
   var undoInfo = null, lastSpaceAt = 0;
   var lastLocalEdit = 0;   // waktu terakhir KITA mengubah isi kolom (dipakai window.onFieldText)
   function bridgeCommit(str){
     lastLocalEdit = Date.now();
-    if(fastBridge('commitText', {text: str})) return;
     if(hasAndroidBridge()){
       try{ window.AndroidKeyboard.commitText(str); }catch(e){}
     }
   }
   function bridgeDeleteBackward(){
     lastLocalEdit = Date.now();
-    if(fastBridge('deleteBackward')) return;
     if(window.AndroidKeyboard && window.AndroidKeyboard.deleteBackward){
       try{ window.AndroidKeyboard.deleteBackward(); }catch(e){}
     }
   }
   function bridgeEnter(){
     lastLocalEdit = Date.now();
-    if(fastBridge('sendEnter')) return true;
     if(window.AndroidKeyboard && window.AndroidKeyboard.sendEnter){
       try{ window.AndroidKeyboard.sendEnter(); return true; }catch(e){}
     }
@@ -1196,7 +1173,6 @@
   // ---------------- Bridge tambahan: hapus beberapa karakter sekaligus (dipakai saat ganti kata via prediksi) ----------------
   function bridgeDeleteBackwardN(n){
     lastLocalEdit = Date.now();
-    if(fastBridge('deleteBackwardN', {n})) return;
     if(window.AndroidKeyboard && window.AndroidKeyboard.deleteBackwardN){
       try{ window.AndroidKeyboard.deleteBackwardN(n); return; }catch(e){}
     }
@@ -3453,7 +3429,8 @@
   // ---- Klasifikasi kick drum (jalur WebView) -- HARUS sama persis dengan KICK_* di
   // NativeMicPitchDetector.java. Energi pita-rendah (<~150Hz, low-pass 2 tahap)
   // dibanding energi total, diakumulasi sejak onset sampai keputusan.
-  const KICK_CUTOFF_HZ = 150, KICK_BASS_RATIO = 0.60, KICK_MIN_PEAK_RMS = 0.04;
+  const KICK_CUTOFF_HZ = 150, KICK_BASS_RATIO = 0.72, KICK_MIN_PEAK_RMS = 0.04,
+        KICK_MAX_DECAY_RATIO = 0.55, KICK_MAX_PITCH_PROB = 0.50;
   let onsetLowE = 0, onsetFullE = 0;
   // Hitung energi (low, full) dari potongan ekor buf sepanjang tailLen sampel.
   // Filter dijalankan dari awal buf supaya state-nya sudah "hangat" di ekor.
@@ -3473,14 +3450,16 @@
     if(reset){ onsetLowE = e.low; onsetFullE = e.full; }
     else { onsetLowE += e.low; onsetFullE += e.full; }
   }
-  function isKick(lowE, fullE, peakRms){
+  function isKick(lowE, fullE, peakRms, decayRatio, pitchProb){
     if(peakRms < KICK_MIN_PEAK_RMS || fullE <= 0) return false;
+    if(decayRatio > KICK_MAX_DECAY_RATIO) return false;   // masih bertahan = senar
+    if(pitchProb >= KICK_MAX_PITCH_PROB) return false;    // periodik jelas = senar
     return Math.sqrt(lowE/fullE) >= KICK_BASS_RATIO;
   }
   // Satu-satunya jalan bunyi NON-NADA boleh mengetik: mode kick aktif DAN lolos
   // isKick(). HARUS konsisten dengan resolveNonTonalHit() di NativeMicPitchDetector.java.
-  function resolveNonTonalHit(){
-    if(prefs.kickSpace && isKick(onsetLowE, onsetFullE, onsetPeakRms)) typeKickAsSpace();
+  function resolveNonTonalHit(decayRatio, pitchProb){
+    if(prefs.kickSpace && isKick(onsetLowE, onsetFullE, onsetPeakRms, decayRatio, pitchProb)) typeKickAsSpace();
     else showNonTonalIgnored();
   }
   // Konsensus multi-bacaan (persis cara tuner "pro" bekerja): sebelum ini,
@@ -3886,7 +3865,7 @@
             // Meluruh sangat cepat & periodisitasnya tidak sampai sangat
             // meyakinkan -- ini tap, bukan nada. Langsung diputuskan sekarang
             // juga, tidak perlu tunggu jatah percobaan habis.
-            resolveNonTonalHit();
+            resolveNonTonalHit(decayRatio, result.clarity);
             state='releasing';
             cooldownUntil = now + COOLDOWN_MS;
             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
@@ -3907,7 +3886,7 @@
           // memicu onset -- ini ciri khas TAP/ketukan ke badan gitar (bukan
           // senar dipetik). Beda dari kasus "ambigu di batas kategori" di atas
           // (yang MASIH dapat nada) -- di sini dianggap sengaja: ketik spasi.
-          resolveNonTonalHit();
+          resolveNonTonalHit(decayRatio, 0);
           state='releasing';
           cooldownUntil = now + COOLDOWN_MS;
           releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
