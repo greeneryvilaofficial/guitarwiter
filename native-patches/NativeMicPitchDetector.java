@@ -193,8 +193,16 @@ public class NativeMicPitchDetector {
     // yang baru penuh beberapa ms sesudah klik beater tetap terhitung.
     // HARUS sama persis dengan KICK_* di index.html.
     private static final double KICK_CUTOFF_HZ = 150.0;   // low-pass 2 tahap (12dB/oct)
-    private static final double KICK_BASS_RATIO = 0.60;   // rasio RMS pita-rendah / RMS total
+    // Diketatkan dari 0.60 setelah uji simulasi: senar bass (E2 terbuka, palm-mute)
+    // ikut lolos sebagai "kick" di 0.60 sehingga petikan malah mengetik spasi.
+    // Senar bass tertinggi ~0.68, kick ~0.78-0.85 -> 0.72 memisahkan keduanya.
+    private static final double KICK_BASS_RATIO = 0.72;   // rasio RMS pita-rendah / RMS total
     private static final double KICK_MIN_PEAK_RMS = 0.04; // kick lemah/derau kecil tidak dihitung
+    // Kick meluruh cepat; senar bass menahan levelnya (rms/puncak masih > ~0.7 saat
+    // diukur). Di atas batas ini dianggap senar -> tidak boleh jadi spasi.
+    private static final double KICK_MAX_DECAY_RATIO = 0.55;
+    // Kalau YIN menemukan periodisitas yang meyakinkan, itu petikan senar, bukan kick.
+    private static final double KICK_MAX_PITCH_PROB = 0.50;
 
     // Rentang frekuensi yang masuk akal buat dicari (nada gitar yang dipetakan ke
     // tuts + sedikit margin). HARUS sama persis dengan MIN/MAX_VALID_FREQ di index.html.
@@ -478,7 +486,7 @@ public class NativeMicPitchDetector {
                             // gestur sesaat, bukan sesuatu yang perlu dikonfirmasi
                             // berulang seperti nada. Kick atau bukan -- ditentukan
                             // KickClassifier (spasi cuma untuk kick sungguhan).
-                            resolveNonTonalHit(onsetLowE, onsetFullE, onsetPeakRms);
+                            resolveNonTonalHit(onsetLowE, onsetFullE, onsetPeakRms, decayRatio, r.probability);
                             state = STATE_RELEASING;
                             cooldownUntil = now + COOLDOWN_MS;
                             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
@@ -501,7 +509,7 @@ public class NativeMicPitchDetector {
                         // atas (yang MASIH dapat nada, cuma raguan pilih tutsnya) --
                         // di sini bukan nada -- ketik spasi HANYA kalau lolos
                         // KickClassifier, selain itu diabaikan.
-                        resolveNonTonalHit(onsetLowE, onsetFullE, onsetPeakRms);
+                        resolveNonTonalHit(onsetLowE, onsetFullE, onsetPeakRms, decayRatio, 0.0);
                         state = STATE_RELEASING;
                         cooldownUntil = now + COOLDOWN_MS;
                         releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
@@ -836,8 +844,11 @@ public class NativeMicPitchDetector {
     }
 
     /** True kalau energi sejak onset didominasi pita rendah (<~150Hz) dan cukup keras. */
-    private static boolean isKick(double lowE, double fullE, double peakRms) {
+    private static boolean isKick(double lowE, double fullE, double peakRms,
+                                  double decayRatio, double pitchProb) {
         if (peakRms < KICK_MIN_PEAK_RMS || fullE <= 0) return false;
+        if (decayRatio > KICK_MAX_DECAY_RATIO) return false;   // masih bertahan = senar
+        if (pitchProb >= KICK_MAX_PITCH_PROB) return false;    // periodik jelas = senar
         return Math.sqrt(lowE / fullE) >= KICK_BASS_RATIO;
     }
 
@@ -846,8 +857,9 @@ public class NativeMicPitchDetector {
      * kick aktif DAN lolos isKick(). Selain itu diabaikan. HARUS konsisten dengan
      * resolveNonTonalHit() di index.html.
      */
-    private void resolveNonTonalHit(double lowE, double fullE, double peakRms) {
-        if (kickEnabled && isKick(lowE, fullE, peakRms)) postKick();
+    private void resolveNonTonalHit(double lowE, double fullE, double peakRms,
+                                    double decayRatio, double pitchProb) {
+        if (kickEnabled && isKick(lowE, fullE, peakRms, decayRatio, pitchProb)) postKick();
         else postNonTonalIgnored();
     }
 }
