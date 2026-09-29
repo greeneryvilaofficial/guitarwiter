@@ -3,7 +3,7 @@
 // dimuat walau tanpa koneksi internet (penting karena WebView keyboard
 // akan sering dibuka tanpa jaringan aktif).
 
-const CACHE_NAME = 'genjreng-ketik-cache-v2'; // dinaikkan supaya index.html versi Material 3 Expressive tidak nyangkut di cache lama
+const CACHE_NAME = 'genjreng-ketik-cache-v3'; // dinaikkan supaya index.html versi Material 3 Expressive tidak nyangkut di cache lama
 const CORE_ASSETS = [
   'index.html',
   'manifest.json',
