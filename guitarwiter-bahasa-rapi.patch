@@ -1,0 +1,882 @@
+--- a/native-patches/insert_icon.py
++++ b/native-patches/insert_icon.py
+@@ -4,10 +4,10 @@
+ 
+ # Dipanggil sebagai: python3 insert_icon.py <path_ke_android/app/src/main/res> <path_ke_native-patches/app-icon>
+ #
+-# Kenapa dibikin script terpisah (bukan cuma "cp -r" langsung di YAML): supaya
+-# logikanya konsisten dengan insert_permission.py / insert_service.py / dkk --
+-# aman dijalankan berkali-kali (idempotent), dan kasih pesan jelas kalau ada
+-# folder sumber yang kelewatan (misalnya lupa nge-commit satu mipmap density).
++# Ditulis sebagai skrip terpisah (bukan langsung "cp -r" di YAML) supaya
++# konsisten dengan insert_permission.py / insert_service.py / dkk: idempotent
++# (aman dijalankan berkali-kali) dan memberi pesan jelas kalau ada folder
++# sumber yang tidak lengkap -- misalnya satu mipmap density lupa di-commit.
+ 
+ if len(sys.argv) < 3:
+     print("Pemakaian: python3 insert_icon.py <res_dir> <app_icon_src_dir>")
+@@ -16,7 +16,7 @@
+ res_dir = sys.argv[1]
+ icon_src_root = sys.argv[2]
+ 
+-# ---- Timpa ikon launcher default Capacitor (mipmap-*) dengan foto pribadi ----
++# ---- Timpa ikon launcher default Capacitor (mipmap-*) dengan ikon aplikasi ----
+ MIPMAP_FOLDERS = [
+     "mipmap-mdpi",
+     "mipmap-hdpi",
+@@ -37,19 +37,19 @@
+     for fname in os.listdir(src):
+         shutil.copy(os.path.join(src, fname), os.path.join(dst, fname))
+     any_copied = True
+-    print(f"OK: isi {folder} ditimpa dengan ikon foto pribadi.")
++    print(f"OK: isi {folder} ditimpa dengan ikon aplikasi.")
+ 
+ if not any_copied:
+-    print("FATAL: tidak ada satupun folder mipmap sumber yang ditemukan -- cek path app-icon di repo.")
++    print("FATAL: tidak ada satu pun folder mipmap sumber yang ditemukan -- periksa path app-icon di repo.")
+     sys.exit(1)
+ 
+-# ---- Set warna latar adaptive icon ----
+-# PENTING: template default Capacitor (hasil `cap add android`) SUDAH otomatis
+-# menyediakan file values/ic_launcher_background.xml berisi <color name="ic_launcher_background">.
+-# Kalau kita tambah warna dengan NAMA SAMA ke colors.xml (file berbeda), Android
+-# menganggapnya resource duplikat walau beda file -- build gagal ("Duplicate resources").
+-# Makanya di sini kita TIMPA LANGSUNG file ic_launcher_background.xml yang sudah
+-# ada itu, bukan menambah entri baru di colors.xml.
++# ---- Atur warna latar belakang adaptive icon ----
++# Template default Capacitor (hasil `cap add android`) sudah otomatis
++# menyediakan values/ic_launcher_background.xml berisi <color name="ic_launcher_background">.
++# Kalau warna dengan nama sama ditambahkan ke colors.xml (file berbeda), Android
++# menganggapnya resource duplikat walau beda file -- build akan gagal dengan
++# error "Duplicate resources". Karena itu, file ic_launcher_background.xml yang
++# sudah ada ini ditimpa langsung, bukan menambah entri baru di colors.xml.
+ bg_color_path = os.path.join(res_dir, "values", "ic_launcher_background.xml")
+ os.makedirs(os.path.dirname(bg_color_path), exist_ok=True)
+ 
+@@ -62,4 +62,4 @@
+     )
+ print("Warna ic_launcher_background ditimpa di values/ic_launcher_background.xml (bukan colors.xml).")
+ 
+-print("Selesai: ikon launcher foto pribadi terpasang.")
++print("Selesai: ikon launcher terpasang.")
+--- a/native-patches/insert_permission.py
++++ b/native-patches/insert_permission.py
+@@ -1,5 +1,9 @@
+ import sys
+ 
++# Dipanggil sebagai: python3 insert_permission.py <path_ke_AndroidManifest.xml>
++# Menambahkan izin RECORD_AUDIO -- wajib ada karena keyboard ini mendengarkan
++# mikrofon untuk mendeteksi nada.
++
+ path = sys.argv[1]
+ 
+ with open(path, "r", encoding="utf-8") as f:
+@@ -8,15 +12,16 @@
+ PERMISSION_TAG = '<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    '
+ 
+ if "android.permission.RECORD_AUDIO" in content:
+-    print("Izin RECORD_AUDIO sudah ada, lewati.")
++    print("Izin RECORD_AUDIO sudah ada, dilewati.")
+     sys.exit(0)
+ 
+ if "<application" not in content:
+     print("Tidak menemukan tag <application>, manifest tidak diubah.")
+     sys.exit(1)
+ 
+-# Sisipkan <uses-permission> tepat sebelum <application ...>, sesuai aturan Android
+-# (uses-permission harus jadi anak langsung <manifest>, sejajar dengan <application>).
++# Sisipkan <uses-permission> tepat sebelum <application ...>, sesuai aturan
++# Android: uses-permission harus jadi anak langsung <manifest>, sejajar dengan
++# <application>, bukan di dalamnya.
+ content = content.replace("<application", PERMISSION_TAG + "<application", 1)
+ 
+ with open(path, "w", encoding="utf-8") as f:
+--- a/native-patches/insert_service.py
++++ b/native-patches/insert_service.py
+@@ -1,12 +1,17 @@
+ import sys
+ 
++# Dipanggil sebagai: python3 insert_service.py <path_ke_AndroidManifest.xml>
++# Mendaftarkan HtmlKeyboardService sebagai Input Method Service (IME) di
++# AndroidManifest.xml, supaya keyboard ini muncul sebagai pilihan keyboard
++# di pengaturan sistem Android.
++
+ path = sys.argv[1]
+ 
+ with open(path, "r", encoding="utf-8") as f:
+     content = f.read()
+ 
+ if "HtmlKeyboardService" in content:
+-    print("Service sudah terdaftar, lewati.")
++    print("Service sudah terdaftar, dilewati.")
+     sys.exit(0)
+ 
+ service_block = """    <service
+--- a/native-patches/insert_signing.py
++++ b/native-patches/insert_signing.py
+@@ -1,20 +1,23 @@
+ import sys
+ 
++# Dipanggil sebagai: python3 insert_signing.py <path_ke_android/app/build.gradle>
++# Menambahkan konfigurasi signing untuk build release. Dibuat "null-safe"
++# dengan pengecekan getenv() terlebih dahulu, karena blok di dalam android{}
++# dievaluasi Gradle SETIAP KALI build.gradle dibaca -- termasuk saat
++# assembleDebug, yang TIDAK diberi env var KEYSTORE_PATH sama sekali (hanya
++# di-set saat assembleRelease). Tanpa pengecekan ini, assembleDebug ikut
++# gagal karena System.getenv("KEYSTORE_PATH") bernilai null tapi dipaksa
++# dipakai sebagai path file.
++
+ path = sys.argv[1]
+ 
+ with open(path, "r", encoding="utf-8") as f:
+     content = f.read()
+ 
+ if "signingConfigs" in content:
+-    print("Signing config sudah ada, lewati.")
++    print("Signing config sudah ada, dilewati.")
+     sys.exit(0)
+ 
+-# PENTING: blok ini dibuat "null-safe" dengan pengecekan getenv() dulu.
+-# Kenapa? Karena kode di dalam android{} dievaluasi Gradle SETIAP KALI
+-# build.gradle dibaca -- termasuk saat menjalankan assembleDebug, yang
+-# TIDAK dikasih env var KEYSTORE_PATH sama sekali (itu cuma di-set saat
+-# assembleRelease). Tanpa pengecekan ini, assembleDebug ikut crash gara-gara
+-# System.getenv("KEYSTORE_PATH") bernilai null dan dipaksa dipakai sebagai path file.
+ signing_configs_block = """android {
+     signingConfigs {
+         release {
+@@ -30,8 +33,9 @@
+ """
+ content = content.replace("android {", signing_configs_block, 1)
+ 
+-# Tambahkan "signingConfig signingConfigs.release" di dalam blok release buildTypes.
+-# Anchor: baris "minifyEnabled" yang selalu ada bawaan template Capacitor.
++# Tambahkan "signingConfig signingConfigs.release" di dalam blok release
++# buildTypes. Anchor-nya baris "minifyEnabled", yang selalu ada di template
++# bawaan Capacitor.
+ content = content.replace(
+     "minifyEnabled false",
+     "signingConfig signingConfigs.release\n            minifyEnabled false",
+--- a/native-patches/insert_webkit_dependency.py
++++ b/native-patches/insert_webkit_dependency.py
+@@ -1,5 +1,9 @@
+ import sys
+ 
++# Dipanggil sebagai: python3 insert_webkit_dependency.py <path_ke_android/app/build.gradle>
++# Menambahkan dependency androidx.webkit -- dibutuhkan untuk WebViewAssetLoader
++# dan WebMessageListener (jalur bridge cepat untuk commitText, dst).
++
+ path = sys.argv[1]
+ 
+ with open(path, "r", encoding="utf-8") as f:
+@@ -8,7 +12,7 @@
+ DEP_LINE = '    implementation "androidx.webkit:webkit:1.10.0"\n'
+ 
+ if "androidx.webkit:webkit" in content:
+-    print("Dependency androidx.webkit sudah ada, lewati.")
++    print("Dependency androidx.webkit sudah ada, dilewati.")
+     sys.exit(0)
+ 
+ if "dependencies {" not in content:
+--- a/.github/workflows/android-build.yml
++++ b/.github/workflows/android-build.yml
+@@ -9,7 +9,7 @@
+   build:
+     runs-on: ubuntu-latest
+     permissions:
+-      contents: write   # WAJIB -- tanpa ini, step "Buat Release" di bawah akan gagal (403)
++      contents: write   # wajib -- tanpa ini, step "Buat Release" di bawah akan gagal (403)
+     env:
+       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+ 
+@@ -45,7 +45,7 @@
+           if [ ! -d "android" ]; then
+             npx cap add android
+           else
+-            echo "Folder android/ sudah ada, lewati."
++            echo "Folder android/ sudah ada, dilewati."
+           fi
+ 
+       - name: Sync isi www/ ke android/ (verbose, berhenti kalau gagal)
+@@ -53,12 +53,12 @@
+           set -e -x
+           npx cap sync android
+ 
+-      - name: WAJIB - pastikan android/app/build.gradle benar-benar ada
++      - name: Pastikan android/app/build.gradle benar-benar ada
+         run: |
+           set -e
+           if [ ! -f "android/app/build.gradle" ]; then
+             echo "FATAL: android/app/build.gradle tidak ditemukan setelah cap add + cap sync."
+-            echo "Menampilkan seluruh struktur folder android/ untuk diagnosa:"
++            echo "Menampilkan seluruh struktur folder android/ untuk diagnosis:"
+             find android -maxdepth 5 2>/dev/null || echo "Folder android/ bahkan tidak ada sama sekali."
+             exit 1
+           fi
+@@ -78,13 +78,13 @@
+           mkdir -p android/app/src/main/java/com/keyboardkustom/app
+           cp native-patches/HtmlKeyboardService.java android/app/src/main/java/com/keyboardkustom/app/HtmlKeyboardService.java
+ 
+-      - name: Tempel NativeMicPitchDetector.java (deteksi nada native, ganti getUserMedia)
++      - name: Tempel NativeMicPitchDetector.java (deteksi nada native, pengganti getUserMedia)
+         run: |
+           set -e
+           mkdir -p android/app/src/main/java/com/keyboardkustom/app
+           cp native-patches/NativeMicPitchDetector.java android/app/src/main/java/com/keyboardkustom/app/NativeMicPitchDetector.java
+ 
+-      - name: Tempel MainActivity.java (versi yang minta izin mikrofon)
++      - name: Tempel MainActivity.java (versi yang meminta izin mikrofon)
+         run: |
+           set -e
+           mkdir -p android/app/src/main/java/com/keyboardkustom/app
+@@ -96,7 +96,7 @@
+           mkdir -p android/app/src/main/res/xml
+           cp native-patches/method.xml android/app/src/main/res/xml/method.xml
+ 
+-      - name: Pasang ikon launcher foto pribadi (mipmap + adaptive icon)
++      - name: Pasang ikon launcher (mipmap + adaptive icon)
+         run: python3 native-patches/insert_icon.py android/app/src/main/res native-patches/app-icon
+ 
+       - name: Daftarkan service keyboard di AndroidManifest.xml
+@@ -158,12 +158,12 @@
+           name: Guitarwiter-apk
+           path: android/app/build/outputs/apk/release/Guitarwiter.apk
+ 
+-      # ---- Bagian ini yang bikin APK-nya nongol di tab "Releases" depan repo,
+-      # bukan cuma terkubur di tab Actions -> buka run -> scroll ke Artifacts.
+-      # Tag dibuat unik per run (build-<nomor_run>) supaya tiap push ke main
+-      # otomatis jadi Release baru, tidak menimpa yang lama.
++      # Step ini yang membuat APK muncul di tab "Releases" repo, bukan cuma
++      # terkubur di tab Actions -> buka run -> scroll ke Artifacts. Tag dibuat
++      # unik per run (build-<nomor_run>) supaya tiap push ke main otomatis
++      # jadi Release baru, tidak menimpa yang lama.
+       - name: Buat GitHub Release & lampirkan APK
+-        if: success()   # jangan bikin Release kosong kalau build gagal
++        if: success()   # jangan buat Release kosong kalau build gagal
+         uses: softprops/action-gh-release@v3
+         with:
+           tag_name: build-${{ github.run_number }}
+@@ -171,9 +171,10 @@
+           body: |
+             Build otomatis dari commit ${{ github.sha }}.
+             - `Guitarwiter-debug.apk` selalu ada (tidak perlu keystore).
+-            - `Guitarwiter.apk` cuma ada kalau secret KEYSTORE_BASE64 dkk sudah diisi.
+-          # fail_on_unmatched_files:false -> kalau release.apk belum ada (keystore
+-          # belum disetel), step ini tetap sukses & cuma lampirin yang ada saja.
++            - `Guitarwiter.apk` hanya ada kalau secret KEYSTORE_BASE64 dkk sudah diisi.
++          # fail_on_unmatched_files: false -> kalau release.apk belum ada
++          # (keystore belum disetel), step ini tetap sukses dan cuma
++          # melampirkan yang ada.
+           fail_on_unmatched_files: false
+           files: |
+             android/app/build/outputs/apk/debug/Guitarwiter-debug.apk
+--- a/.github/workflows/generate-keystore.yml
++++ b/.github/workflows/generate-keystore.yml
+@@ -16,20 +16,21 @@
+         run: |
+           set -e
+           if [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+-            echo "FATAL: Salah satu dari secret KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD masih kosong."
+-            echo "Isi dulu ke-3 secret itu di Settings > Secrets and variables > Actions,"
+-            echo "BARU jalankan workflow ini. Kalau keystore sudah pernah dibuat dengan"
++            echo "FATAL: salah satu dari secret KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD masih kosong."
++            echo "Isi ketiga secret itu di Settings > Secrets and variables > Actions,"
++            echo "baru jalankan workflow ini. Kalau keystore sudah pernah dibuat dengan"
+             echo "secret kosong sebelumnya, keystore itu TIDAK akan cocok dengan password baru."
+             exit 1
+           fi
+-          # Keystore modern berformat PKCS12: keytool MENGABAIKAN -keypass yang beda dari
+-          # -storepass, sehingga build release nanti gagal "Cannot recover key".
+-          # Makanya kedua password wajib sama -- cek di sini biar gagalnya cepat & jelas.
++          # Keystore modern berformat PKCS12: keytool mengabaikan -keypass yang
++          # berbeda dari -storepass, sehingga build release nanti gagal dengan
++          # error "Cannot recover key". Karena itu kedua password wajib sama --
++          # dicek di sini supaya kalau gagal, gagalnya cepat dan pesannya jelas.
+           if [ "$KEYSTORE_PASSWORD" != "$KEY_PASSWORD" ]; then
+-            echo "FATAL: KEY_PASSWORD harus SAMA PERSIS dengan KEYSTORE_PASSWORD (aturan format PKCS12)."
++            echo "FATAL: KEY_PASSWORD harus sama persis dengan KEYSTORE_PASSWORD (aturan format PKCS12)."
+             exit 1
+           fi
+-          echo "OK: ke-3 secret sudah terisi & konsisten, lanjut generate keystore."
++          echo "OK: ketiga secret sudah terisi dan konsisten, lanjut generate keystore."
+ 
+       - name: Buat keystore baru
+         run: |
+@@ -42,7 +43,7 @@
+             -validity 10000 \
+             -storepass "$KEYSTORE_PASSWORD" \
+             -keypass "$KEY_PASSWORD" \
+-            -dname "CN=Guitar Witer, OU=Personal, O=Personal, L=Unknown, S=Unknown, C=ID"
++            -dname "CN=Guitarwiter, OU=Personal, O=Personal, L=Unknown, S=Unknown, C=ID"
+ 
+       - name: Ubah keystore ke teks base64
+         run: base64 -w 0 release.keystore > release.keystore.base64.txt
+@@ -51,8 +52,9 @@
+         uses: actions/upload-artifact@v6
+         with:
+           name: keystore-files
+-          # Di repo PUBLIC, artifact bisa diunduh siapa pun yang login GitHub.
+-          # Simpan 1 hari saja -> unduh, salin ke secret KEYSTORE_BASE64, lalu HAPUS artifact-nya.
++          # Repo ini public, sehingga artifact bisa diunduh siapa pun yang
++          # login GitHub. Simpan cuma 1 hari -- unduh, salin ke secret
++          # KEYSTORE_BASE64, lalu hapus artifact-nya.
+           retention-days: 1
+           path: |
+             release.keystore
+--- a/www/sw.js
++++ b/www/sw.js
+@@ -1,9 +1,9 @@
+-// Service worker sederhana untuk Guitar Witer.
+-// Fungsinya: menyimpan file inti di cache supaya halaman tetap bisa
+-// dimuat walau tanpa koneksi internet (penting karena WebView keyboard
+-// akan sering dibuka tanpa jaringan aktif).
++// Service worker sederhana untuk Guitarwiter.
++// Fungsinya: menyimpan file inti di cache supaya halaman tetap bisa dimuat
++// tanpa koneksi internet -- penting karena WebView keyboard sering dibuka
++// tanpa jaringan aktif.
+ 
+-const CACHE_NAME = 'genjreng-ketik-cache-v2'; // dinaikkan supaya index.html versi Material 3 Expressive tidak nyangkut di cache lama
++const CACHE_NAME = 'genjreng-ketik-cache-v2'; // dinaikkan supaya index.html versi Material 3 Expressive tidak tersangkut di cache lama
+ const CORE_ASSETS = [
+   'index.html',
+   'manifest.json',
+--- a/privacy-policy.md
++++ b/privacy-policy.md
+@@ -2,60 +2,70 @@
+ 
+ Terakhir diperbarui: 22 September 2026
+ 
+-Guitarwiter ("Aplikasi") adalah keyboard Android yang mengubah nada gitar menjadi ketikan. Karena keyboard memang berhubungan dengan apa yang kamu ketik, kebijakan ini menjelaskan secara jujur data apa yang diproses, di mana disimpan, dan bagaimana menghapusnya.
++Guitarwiter adalah keyboard Android yang mengubah petikan nada gitar menjadi ketikan otomatis. Karena keyboard memang bersinggungan langsung dengan apa yang kamu ketik, kebijakan ini kami tulis sejujur dan sejelas mungkin: data apa yang diproses, di mana disimpan, dan bagaimana cara menghapusnya kapan pun kamu mau.
+ 
+-## Ringkasan
+-- Aplikasi **tidak mengirim** data apa pun (audio, teks, clipboard) ke server mana pun, dan tidak membagikannya ke pihak ketiga.
+-- Semua pemrosesan dan penyimpanan terjadi **hanya di perangkatmu**.
+-- Aplikasi tidak memakai layanan analitik, iklan, atau akun pengguna.
++## Ringkasan singkat
++
++- **Tidak ada data yang dikirim ke server mana pun** — bukan audio, bukan teks, bukan clipboard — dan tidak dibagikan ke pihak ketiga.
++- **Semua pemrosesan dan penyimpanan terjadi 100% di perangkatmu.**
++- **Tidak ada analitik, tidak ada iklan, tidak ada akun pengguna.** Guitarwiter tidak butuh itu semua untuk bekerja.
+ 
+ ## Akses Mikrofon
+-Aplikasi meminta izin mikrofon untuk satu tujuan: mendeteksi nada gitar yang kamu mainkan secara langsung, lalu mengetikkan huruf yang sesuai.
+ 
+-- Mikrofon hanya aktif saat keyboard **sedang tampil** dan tombol mikrofon di keyboard menyala. Saat keyboard disembunyikan, ditutup, atau kamu berpindah aplikasi, mikrofon dimatikan. Kamu juga bisa mematikannya kapan saja lewat tombol mikrofon.
+-- Audio dianalisis secara langsung (real-time) di perangkat untuk mengenali nada, lalu dibuang. Audio **tidak direkam, tidak disimpan, dan tidak dikirim** ke mana pun.
++Mikrofon diminta untuk satu tujuan saja: mendeteksi nada gitar (atau ketukan kick drum) yang kamu mainkan secara langsung, lalu mengetikkan huruf atau spasi yang sesuai.
++
++- Mikrofon hanya aktif saat keyboard **sedang tampil** dan tombol mikrofon di keyboard menyala. Begitu keyboard disembunyikan, ditutup, atau kamu berpindah aplikasi, mikrofon otomatis mati. Kamu juga bisa mematikannya kapan saja lewat tombol mikrofon.
++- Audio dianalisis **secara langsung (real-time) di perangkat** untuk mengenali nada atau ketukan, lalu langsung dibuang. Audio **tidak pernah direkam, tidak disimpan, dan tidak dikirim** ke mana pun.
+ 
+ ## Teks yang Kamu Ketik
+-Sebagai keyboard, Aplikasi meneruskan ketikanmu ke aplikasi yang sedang kamu gunakan (misalnya kolom chat), dan memantau teks yang sedang kamu ketik untuk menampilkan saran kata.
+ 
+-Agar saran kata makin sesuai denganmu, Aplikasi menyimpan **secara lokal di perangkat**:
+-- kata-kata yang sering kamu ketik (hanya kosakata berupa huruf, 2–14 karakter; kata asal-ulang, asal pencet, atau kepanjangan tidak disimpan), dan
++Sebagai keyboard, Guitarwiter meneruskan ketikanmu ke aplikasi yang sedang kamu pakai (misalnya kolom chat), dan memantau teks yang sedang diketik untuk menampilkan saran kata yang relevan.
++
++Supaya saran kata makin sesuai dengan gaya menulismu, Guitarwiter menyimpan **secara lokal di perangkat**:
++- kata-kata yang sering kamu ketik (hanya kosakata berupa huruf, 2–14 karakter — kata asal-ulang, asal pencet, atau kepanjangan tidak disimpan), dan
+ - pasangan 2 kata yang sering muncul berurutan.
+ 
+-Agar saran tetap sesuai isi kolom (misalnya saat kolom dikosongkan dengan tombol ✕), aplikasi membaca sampai 60 huruf sebelum kursor di kolom yang sedang aktif. Ini **tidak dilakukan di kolom password**, hanya diproses di dalam perangkat, dan tidak disimpan.
++Agar saran tetap sesuai isi kolom (misalnya saat kolom dikosongkan lewat tombol ✕), aplikasi membaca sampai 60 huruf sebelum kursor di kolom yang sedang aktif. Ini **tidak pernah dilakukan di kolom password**, prosesnya sepenuhnya di dalam perangkat, dan hasilnya tidak disimpan.
+ 
+-Aplikasi **tidak menyimpan kalimat atau paragraf**, dan teks yang kamu tempel dari clipboard tidak pernah dipelajari sebagai saran. Kamu bisa menghapus satu saran dengan menahannya di bar saran, atau semuanya lewat tombol "Reset kamus".
++Guitarwiter **tidak menyimpan kalimat atau paragraf**, dan teks yang kamu tempel dari clipboard tidak pernah dipelajari sebagai saran. Kamu bisa menghapus satu saran dengan menahannya di bar saran, atau menghapus semuanya lewat tombol "Reset kamus".
+ 
+-**Kolom yang dikecualikan:** di kolom password, kolom yang meminta tanpa personalisasi (misalnya mode incognito), Aplikasi **tidak belajar kata, tidak menyimpan pasangan kata, dan tidak menampilkan saran kata**.
++**Kolom yang dikecualikan:** di kolom password, atau kolom yang secara eksplisit meminta tanpa personalisasi (misalnya mode incognito), Guitarwiter **tidak belajar kata, tidak menyimpan pasangan kata, dan tidak menampilkan saran kata sama sekali**.
+ 
+ ## Papan Klip (Riwayat Clipboard)
+-Aplikasi menampilkan papan klip supaya kamu bisa menempel ulang teks yang pernah disalin. Teks disimpan **apa adanya, pendek maupun panjang** (maksimal 20.000 karakter per item), secara lokal di perangkat: hingga 15 klip terbaru dan 15 klip yang kamu sematkan.
+ 
+-- Klip yang **tidak disematkan dihapus otomatis setelah 1 jam**. Klip yang kamu sematkan (tahan sebuah klip) tetap ada sampai kamu menghapusnya.
+-- Teks yang kamu salin (termasuk angka seperti nomor atau kode) ikut tersimpan selama itu. Salinan yang ditandai "sensitif" oleh aplikasi pengirimnya (misalnya pengelola password di Android 13 ke atas) tidak disimpan.
+-- Kamu bisa mematikan penyimpanan lewat sakelar di kanan atas papan klip, menghapus satu klip lewat ikon pensil, atau menghapus semuanya lewat pengaturan/hapus data aplikasi.
+-- Salinan terbaru juga muncul sebagai satu chip di bar saran selama sekitar 1 menit (hanya di memori, tidak ditulis otomatis ke kolom teks).
+-- Riwayat ini terpisah dari saran kata dan tidak pernah dipakai untuk belajar kata.
++Guitarwiter menampilkan papan klip supaya kamu bisa menempel ulang teks yang pernah disalin, tanpa perlu menyalin ulang. Teks disimpan **apa adanya**, pendek maupun panjang (maksimal 20.000 karakter per item), secara lokal di perangkat: hingga 15 klip terbaru dan 15 klip yang kamu sematkan.
++
++- Klip yang **tidak disematkan otomatis terhapus setelah 1 jam**. Klip yang kamu sematkan (dengan menahannya) tetap ada sampai kamu sendiri yang menghapusnya.
++- Teks yang kamu salin — termasuk angka seperti nomor telepon atau kode OTP — ikut tersimpan selama itu. Salinan yang ditandai "sensitif" oleh aplikasi pengirimnya (misalnya pengelola password di Android 13 ke atas) **tidak** disimpan.
++- Kamu bisa mematikan penyimpanan ini lewat sakelar di kanan atas papan klip, menghapus satu klip lewat ikon pensil, atau menghapus semuanya lewat pengaturan/hapus data aplikasi.
++- Salinan terbaru juga muncul sebagai satu chip di bar saran selama sekitar 1 menit (hanya di memori, tidak otomatis ditulis ke kolom teks).
++- Riwayat ini terpisah total dari saran kata dan tidak pernah dipakai untuk belajar kata.
+ 
+ ## Pengaturan
+-Hal-hal berikut disimpan lokal di perangkat supaya pengaturanmu tidak hilang: tema, bahasa yang dipilih, ukuran huruf, **ukuran dan posisi keyboard** (menu Ubah ukuran), pilihan tombol yang kamu tampilkan/sembunyikan di kisi alat, saklar koreksi otomatis / huruf besar otomatis / saran kata, daftar kata yang kamu sembunyikan dari saran, dan **32 emoji yang terakhir dipakai**, serta semua pilihan di menu Setelan (getar, suara klik, baris angka, tombol yang ditampilkan, ketik geser, dan seterusnya).
+ 
+-Fitur **ketik geser** hanya menghitung jalur jarimu di layar untuk menebak satu kata; jalur itu tidak disimpan. Getar dan suara klik dibuat di dalam perangkat dan tidak memakai data apa pun.
++Hal-hal berikut disimpan secara lokal di perangkat supaya pengaturanmu tidak hilang saat aplikasi ditutup: tema, bahasa yang dipilih, ukuran huruf, **ukuran dan posisi keyboard** (menu Ubah ukuran), pilihan tombol yang kamu tampilkan/sembunyikan di kisi alat, saklar koreksi otomatis / huruf besar otomatis / saran kata, daftar kata yang kamu sembunyikan dari saran, **32 emoji yang terakhir dipakai**, serta semua pilihan di menu Setelan (getar, suara klik, baris angka, tombol yang ditampilkan, ketik geser, dan seterusnya).
++
++Fitur **ketik geser** hanya menghitung jalur jarimu di layar untuk menebak satu kata; jalur itu sendiri tidak disimpan. Getar dan suara klik dibuat di dalam perangkat dan tidak memakai data apa pun.
+ 
+ ## Tombol Bagikan
+-Tombol "Bagikan" hanya membuka lembar bagikan Android dengan satu kalimat tetap tentang aplikasi ini. Aplikasi tidak mengirim data apa pun sendiri; kamu yang memilih tujuan pengiriman.
++
++Tombol "Bagikan" hanya membuka lembar bagikan bawaan Android dengan satu kalimat tetap tentang aplikasi ini. Guitarwiter tidak mengirim data apa pun secara mandiri — kamu sendiri yang memilih ke mana pesan itu dikirim.
+ 
+ ## Emoji, GIF, dan Stiker
+-Semua emoji, stiker-emoji, dan emotikon berasal dari data di dalam aplikasi. Aplikasi tidak mengunduh GIF atau stiker dari internet.
+ 
+-## Menghapus Data
+-Semua data di atas tersimpan di penyimpanan lokal aplikasi. Untuk menghapusnya, buka Pengaturan Android → Aplikasi → Guitarwiter → Penyimpanan → **Hapus data**, atau cukup copot pemasangan Aplikasi. Karena tidak ada yang dikirim ke server, tidak ada salinan lain yang perlu dihapus.
++Semua emoji, stiker-emoji, dan emotikon berasal dari data yang sudah ada di dalam aplikasi. Guitarwiter **tidak mengunduh** GIF atau stiker dari internet.
++
++## Cara Menghapus Data
++
++Semua data di atas tersimpan di penyimpanan lokal aplikasi. Untuk menghapusnya: buka **Pengaturan Android → Aplikasi → Guitarwiter → Penyimpanan → Hapus data**, atau cukup copot pemasangan aplikasi. Karena tidak ada satu byte pun yang dikirim ke server, tidak ada salinan lain di tempat lain yang perlu dihapus.
+ 
+ ## Perubahan Kebijakan
+-Kebijakan ini dapat diperbarui sewaktu-waktu. Perubahan akan dicantumkan di halaman ini dengan tanggal pembaruan terbaru.
+ 
+-## Kontak
+-Jika ada pertanyaan mengenai kebijakan privasi ini, hubungi:
++Kebijakan ini dapat diperbarui sewaktu-waktu. Setiap perubahan akan dicantumkan di halaman ini dengan tanggal pembaruan terbaru.
++
++## Hubungi Kami
++
++Ada pertanyaan soal kebijakan privasi ini? Kami siap membantu:
+ 
+ - Email: greeneryvilaofficial@gmail.com
+ - Telepon/WhatsApp: 083869814575
+--- a/www/index.html
++++ b/www/index.html
+@@ -99,8 +99,8 @@
+     overflow-x:hidden;
+     overflow-y:hidden;
+     overscroll-behavior:none;
+-    /* Cegah pull-to-refresh / swipe layar ikut "narik" halaman saat jari geser
+-       cepat antar tuts -- ini yang bikin ketikan cepat kadang kerasa "goyang"
++    /* Cegah pull-to-refresh / swipe layar ikut "menarik" halaman saat jari geser
++       cepat antar tuts -- ini yang menyebabkan ketikan cepat kadang terasa "goyang"
+        atau ke-skip di keyboard berbasis WebView biasa. */
+     touch-action: manipulation;
+   }
+@@ -265,7 +265,7 @@
+     content:''; position:absolute; left:0; top:50%; height:22px; margin-top:-11px; width:1px; background:var(--divider);
+   }
+   .suggest-chip:active{ background:rgba(255,255,255,.08); }
+-  /* BARU -- fix "tampilan bertumpuk, tidak rapat kayak Gboard": dulu pesan
++  /* Perbaikan -- kasus "tampilan bertumpuk, tidak rapat seperti Gboard": dulu pesan
+      status (nada terdeteksi, tap, error izin, dsb) punya baris SENDIRI
+      (.ime-status) di BAWAH suggest-bar -- jadi tiap kali ada bunyi kedeteksi
+      (yang notabene TERUS-MENERUS terjadi selagi main gitar), tinggi total
+@@ -410,7 +410,7 @@
+   .clipboard-item-row .clipboard-item{ flex:1; }
+   .clipboard-item-del{
+     flex:0 0 46px; min-height:40px; background:var(--key-fn-bg); color:var(--bar-icon); border:none;
+-    border-radius:8px; font-size:1rem; cursor:pointer;   /* area sentuh besar: gampang dihapus */
++    border-radius:8px; font-size:1rem; cursor:pointer;   /* area sentuh besar: mudah dihapus */
+   }
+ 
+ 
+@@ -1259,7 +1259,7 @@
+   LANGS.tr.w += ` aşk hayat gece gün hafta ay yıl saat dakika an gerçek sorun soru cevap örnek kişi insanlar adam kadın çocuk kız baba anne oğul kardeş aile şehir para yemek su kahve bira şarap ekmek et balık meyve yeşil kırmızı mavi beyaz siyah büyük küçük yeni eski genç daha az hepsi hiçbir şey biri kimse belki de sonra sırasında önce erken geç yakın uzak üst alt iç dış sağ sol birinci ikinci son önemli mümkün gerekli zor kolay mutlu üzgün yorgun hasta hazır`;
+ 
+   // ---------------- Bahasa non-Latin: ketik HURUF LATIN, otomatis jadi huruf bahasa itu ----------------
+-  // Cara kerjanya seperti keyboard "transliterasi" Gboard: tuts tetap QWERTY (jadi tetap nyambung ke
++  // Cara kerjanya seperti keyboard "transliterasi" Gboard: tuts tetap QWERTY (jadi tetap terhubung ke
+   // nada gitar), tapi teks yang muncul di kolom adalah huruf Rusia/Arab/Jepang/dst. Selama masih
+   // diketik, teks berstatus "sedang disusun" (composing) sehingga bisa diganti lewat saran di bar atas.
+   function ruleTranslit(rules, opts){
+@@ -2351,10 +2351,10 @@
+ 
+ 
+   // ---------------- Fitur 2b: Panel GIF ----------------
+-  // CATATAN JUJUR: ini BELUM nyambung ke pencarian GIF asli (mis. Tenor/GIPHY),
+-  // karena itu butuh koneksi internet + API key di sisi native, dan keyboard
+-  // ini didesain jalan offline. Yang ada di bawah cuma placeholder "stiker"
+-  // pakai emoji besar biar tata letak & rasanya sudah sama kayak panel GIF
++  // CATATAN: fitur ini BELUM terhubung ke pencarian GIF sungguhan (mis. Tenor/GIPHY),
++  // karena itu membutuhkan koneksi internet + API key di sisi native, sementara keyboard
++  // ini didesain berjalan offline. Yang ada di bawah adalah placeholder "stiker"
++  // memakai emoji besar agar tata letak & nuansanya sudah serupa dengan panel GIF
+   // Gboard. Kalau nanti mau pasang GIF sungguhan:
+   //   1) Tambah pemanggilan API Tenor di sisi Java (butuh API key + internet).
+   //   2) Kirim hasil URL gif-nya ke sini, lalu render <img> di grid ini.
+@@ -2387,9 +2387,9 @@
+   }
+ 
+   // ---------------- Fitur 2c: Mode Terjemah ----------------
+-  // CATATAN JUJUR: sama seperti GIF, ini BELUM nyambung ke mesin terjemahan
+-  // sungguhan (mis. Google Cloud Translation) karena itu juga butuh internet +
+-  // API key. Kamus di bawah cuma contoh kecil kata-per-kata (offline) biar
++  // CATATAN: sama seperti GIF, fitur ini BELUM terhubung ke mesin terjemahan
++  // sungguhan (mis. Google Cloud Translation) karena juga membutuhkan internet +
++  // API key. Kamus di bawah hanya contoh kecil kata-per-kata (offline) agar
+   // fiturnya kelihatan & bisa dicoba. Kalau nanti mau pasang API asli:
+   //   - Ganti isi fungsi translateText() supaya manggil
+   //     window.AndroidKeyboard.translateText(text, from, to) (jembatan baru
+@@ -3496,8 +3496,8 @@
+   const TAP_DECAY_RATIO = 0.30;
+   const STRONG_PROBABILITY = 0.80;
+   // Konsensus multi-bacaan (persis cara tuner "pro" bekerja): sebelum ini,
+-  // begitu SATU bacaan lolos ambang confidence langsung dikunci -- itu bikin
+-  // rawan ketuker kalau kebetulan satu bacaan itu meleset. Sekarang minta
++  // begitu SATU bacaan lolos ambang confidence langsung dikunci -- ini rawan
++  // salah pilih kalau kebetulan satu bacaan itu meleset. Sekarang minta
+   // beberapa bacaan BERTURUT-TURUT yang SEPAKAT (idx sama) dulu baru dikunci.
+   let candidateIdx = -1, candidateCount = 0;
+   // requiredConfirm sekarang ADAPTIF per bacaan (lihat isCategorySafe() &
+@@ -3506,13 +3506,13 @@
+   // ONSET_RATIO di NativeMicPitchDetector.java.
+   const ONSET_RMS = 0.012;
+   const ONSET_RATIO = 1.6;
+-  // BARU -- fix "nada cepat/tapping ketimpa dengungan nada sebelumnya jadi
+-  // gak kepick": lihat penjelasan lengkap di RETRIGGER_RATIO
++  // Perbaikan -- kasus "nada cepat/tapping tertimpa dengungan nada
++  // sebelumnya sehingga tidak terdeteksi": lihat penjelasan lengkap di RETRIGGER_RATIO
+   // NativeMicPitchDetector.java. HARUS sama persis dengan RETRIGGER_RATIO &
+   // RETRIGGER_MIN_RMS di sana.
+   const RETRIGGER_RATIO = 1.7;
+   const RETRIGGER_MIN_RMS = 0.012;
+-  // BARU (fix "satu strum/petik kebaca berkali-kali jadi huruf dobel/triple"):
++  // BARU (fix "satu strum/petik terbaca berkali-kali jadi huruf dobel/triple"):
+   // lihat penjelasan lengkap di RETRIGGER_WINDOW_HOPS NativeMicPitchDetector.java.
+   // Intinya: retrigger sekarang dibandingkan ke titik PALING PELAN dalam
+   // beberapa frame terakhir (harus ada "lembah" beneran dulu), bukan cuma satu
+@@ -3549,7 +3549,7 @@
+   // lewat, sistem langsung siap mendeteksi onset baru lagi -- padahal senar
+   // gitar yang baru dipetik itu MASIH BERDENGUNG jauh lebih lama dari 180ms.
+   // Kalau dengungannya sempat naik-turun (beating antar harmonik, getaran
+-  // senar lain yang ikut bergetar simpatik, dst), itu bisa kebaca sebagai
++  // senar lain yang ikut bergetar simpatik, dst), itu bisa terbaca sebagai
+   // "petikan baru" walau sebenarnya masih nada yang sama -> jadi ketikan dobel
+   // dari satu kali petik.
+   //
+@@ -3588,25 +3588,25 @@
+   // Mengembalikan {freq, clarity} atau null. "clarity" (0..1) mengukur seberapa
+   // periodik sinyalnya — dekat 1 berarti nada tunggal yang bersih (senar dipetik
+   // jelas), rendah berarti kemungkinan besar noise/dengung/lebih dari satu senar
+-  // berbunyi bareng. Nilai ini dipakai buat nyaring hasil yang meragukan supaya
+-  // huruf yang terketik gak salah-salah lagi.
+-  // Batas frekuensi yang masuk akal buat dicari (rentang nada gitar yang dipetakan
+-  // ke tuts, dikasih sedikit margin di kedua ujung). Membatasi rentang pencarian
+-  // begini bukan cuma bikin lebih cepat (jauh lebih sedikit "tau" yang dicek
+-  // dibanding menyisir seluruh buffer), tapi juga bikin YIN lebih tegas — dia
+-  // gak akan pernah mempertimbangkan periode yang jelas-jelas di luar jangkauan
++  // berbunyi bersamaan. Nilai ini dipakai untuk menyaring hasil yang meragukan supaya
++  // huruf yang terketik tidak salah-salah lagi.
++  // Batas frekuensi yang masuk akal untuk dicari (rentang nada gitar yang dipetakan
++  // ke tuts, diberi sedikit margin di kedua ujung). Membatasi rentang pencarian
++  // seperti ini bukan hanya membuat proses lebih cepat (jauh lebih sedikit "tau" yang dicek
++  // dibanding menyisir seluruh buffer), tapi juga membuat YIN lebih tegas — YIN
++  // tidak akan pernah mempertimbangkan periode yang jelas-jelas di luar jangkauan
+   // gitar sebagai kandidat nada.
+   const MIN_VALID_FREQ = 440 * Math.pow(2, (BASE_MIDI - 3 - 69) / 12);
+   const MAX_VALID_FREQ = 440 * Math.pow(2, (BASE_MIDI + NOTE_COUNT - 1 + 3 - 69) / 12);
+ 
+   /**
+-   * Deteksi pitch pakai algoritma YIN (De Cheveigné & Kawahara, 2002) —
+-   * dipakai juga di tuner-tuner gitar profesional. Bedanya sama autokorelasi
+-   * biasa: YIN pakai "cumulative mean normalized difference function" yang
+-   * secara struktural jauh lebih tahan salah pilih oktaf (misalnya F2 kebaca
+-   * F3 karena harmonik ke-2 gitar sering lebih kuat dari nada dasarnya sendiri
+-   * — autokorelasi polos gampang kejebak di situ, YIN jauh lebih jarang).
+-   * Return {freq, probability} kalau yakin, atau null kalau sinyalnya
++   * Deteksi pitch memakai algoritma YIN (De Cheveigné & Kawahara, 2002) —
++   * juga dipakai pada tuner-tuner gitar profesional. Bedanya dari autokorelasi
++   * biasa: YIN memakai "cumulative mean normalized difference function" yang
++   * secara struktural jauh lebih tahan terhadap kesalahan pemilihan oktaf (misalnya F2 terbaca
++   * sebagai F3 karena harmonik ke-2 gitar sering lebih kuat dari nada dasarnya sendiri
++   * — autokorelasi polos mudah terjebak di sana, YIN jauh lebih jarang mengalaminya).
++   * Mengembalikan {freq, probability} kalau yakin, atau null kalau sinyalnya
+    * kurang periodik/kurang jelas (noise, senar teredam, dll).
+    */
+   function yinDetect(buf, sampleRate){
+@@ -3625,7 +3625,7 @@
+     if(maxTau <= minTau) return null;
+ 
+     // Langkah 1: fungsi selisih d(tau) = jumlah (x[j]-x[j+tau])^2, cuma dihitung
+-    // untuk rentang tau yang relevan (hemat -- gak perlu hitung tau di luar jangkauan gitar).
++    // untuk rentang tau yang relevan (hemat -- tidak perlu menghitung tau di luar jangkauan gitar).
+     const diff = new Float32Array(maxTau + 1);
+     for(let tau=minTau; tau<=maxTau; tau++){
+       let sum=0;
+@@ -3637,7 +3637,7 @@
+     }
+ 
+     // Langkah 2: cumulative mean normalized difference function (CMNDF) —
+-    // inti dari YIN yang bikin dia jauh lebih tegas milih periode fundamental
++    // inti dari YIN yang membuatnya jauh lebih tegas memilih periode fundamental
+     // dibanding cuma lihat puncak korelasi mentah seperti autokorelasi biasa.
+     const cmnd = new Float32Array(maxTau + 1);
+     let runningSum = 0;
+@@ -3659,7 +3659,7 @@
+         break;
+       }
+     }
+-    if(tauEstimate === -1) return null; // gak ada periode yang cukup jelas -> bukan nada tunggal yang bersih
++    if(tauEstimate === -1) return null; // tidak ada periode yang cukup jelas -> bukan nada tunggal yang bersih
+ 
+     // Langkah 3b: koreksi oktaf -- DIHAPUS SEMENTARA (lihat Langkah 5 di bawah
+     // untuk pendekatan penggantinya).
+@@ -3667,7 +3667,7 @@
+     // 2x tau" ini (mulai dari toleransi tetap, lalu toleransi mengikuti posisi
+     // nada, lalu syarat "wajib lebih bersih") semuanya berakhir menimbulkan
+     // masalah baru yang lebih parah daripada masalah asalnya (F2 kadang
+-    // kebaca F3). Root cause-nya baru ketemu: membandingkan nilai CMNDF antar
++    // terbaca sebagai F3). Root cause-nya baru ditemukan: membandingkan nilai CMNDF antar
+     // kandidat oktaf itu SENDIRI tidak bisa diandalkan untuk nada gitar asli --
+     // gelombang petikan gitar sering tidak simetris sempurna per periode,
+     // jadi CMNDF di frekuensi fundamental yang BENAR bisa saja terlihat lebih
+@@ -3677,8 +3677,8 @@
+     // re-membandingkan CMNDF. HARUS sinkron dengan yinDetect() di
+     // NativeMicPitchDetector.java.
+ 
+-    // Langkah 4: interpolasi parabola di sekitar tauEstimate biar hasil frekuensinya presisi
+-    // (gak dibatasi kelipatan bulat sample, penting buat toleransi ala tuner).
++    // Langkah 4: interpolasi parabola di sekitar tauEstimate agar hasil frekuensinya presisi
++    // (tidak dibatasi kelipatan bulat sample, penting untuk toleransi ala tuner).
+     const x0 = tauEstimate>minTau ? tauEstimate-1 : tauEstimate;
+     const x2 = tauEstimate<maxTau ? tauEstimate+1 : tauEstimate;
+     let betterTau = tauEstimate;
+@@ -3752,23 +3752,23 @@
+   }
+ 
+ 
+-  // ---- Perbaikan "ketuker kategori" (angka<->huruf, angka<->tanda baca, dst) ----
++  // ---- Perbaikan "tertukar kategori" (angka<->huruf, angka<->tanda baca, dst) ----
+   // Nada disusun kromatis berurutan (per setengah nada) dari terendah ke tertinggi:
+   // baris angka (idx 0-9), lalu huruf/simbol (idx 10-19,20-28,30-36), tombol
+   // fungsi (shift/backspace/toggle/enter), lalu tanda baca (idx 40-42). Karena
+-  // urutannya kontinu, batas antar kategori (mis. idx 9 ke idx 10) cuma
+-  // terpisah SATU setengah-nada -- kalau deteksi pitch meleset dikit persis di
+-  // batas itu, niat angka bisa kebaca sebagai huruf/tanda baca atau sebaliknya.
++  // urutannya kontinu, batas antar kategori (mis. idx 9 ke idx 10) hanya
++  // terpisah SATU setengah-nada -- kalau deteksi pitch meleset sedikit persis di
++  // batas itu, niat mengetik angka bisa terbaca sebagai huruf/tanda baca atau sebaliknya.
+   function categoryOfIndex(idx){
+     if(idx>=0 && idx<=9) return 'digit';
+     if(idx===29 || idx===37 || idx===38 || idx===39 || idx===43) return 'functional';
+     if(idx>=40 && idx<=42) return 'punct';
+     return 'letterOrSymbol';
+   }
+-  // Cek apakah sebuah bacaan frekuensi cukup AMAN buat langsung dikomit tanpa
+-  // risiko ketuker ke nada tetangga -- baik ketuker KATEGORI (angka jadi
+-  // huruf/tanda baca) MAUPUN ketuker nada tetangga SESAMA kategori (mis. G2
+-  // kebaca F#2, jadinya angka "3" padahal maunya "4"). Kalau bacaannya jelas
++  // Cek apakah sebuah bacaan frekuensi cukup AMAN untuk langsung dikomit tanpa
++  // risiko salah baca ke nada tetangga -- baik salah baca KATEGORI (angka menjadi
++  // huruf/tanda baca) MAUPUN salah baca nada tetangga SESAMA kategori (mis. G2
++  // terbaca sebagai F#2, sehingga menghasilkan angka "3" padahal maunya "4"). Kalau bacaannya jelas
+   // dekat pusat nada, aman langsung. Kalau posisinya di area pinggir/ambigu
+   // antara dua nada tetangga, baru dikomit kalau bacaannya cukup meyakinkan --
+   // makin dekat batas kategori berbeda, makin tinggi juga syarat keyakinannya.
+@@ -3794,7 +3794,7 @@
+       const differentCategory = !(neighborIdx>=0 && neighborIdx<NOTE_COUNT
+           && categoryOfIndex(idx) === categoryOfIndex(neighborIdx));
+       // Beda kategori (mis. angka/huruf) butuh keyakinan lebih tinggi lagi
+-      // daripada sekadar ketuker sesama angka, karena akibatnya lebih mengganggu.
++      // daripada sekadar tertukar sesama angka, karena akibatnya lebih mengganggu.
+       const requiredClarity = differentCategory ? 0.9 : 0.75;
+       safe = clarity >= requiredClarity;
+     }
+@@ -3831,14 +3831,14 @@
+       // petikan PELAN (fingerstyle, palm mute, senar atas yang tipis) tetap
+       // memicu onset, bukan cuma petikan keras. Rasio ke smoothedRms
+       // (noise-floor sekitar) tetap jadi penjaga utama supaya noise ruangan
+-      // yang konstan tidak ikut kepicu. HARUS sama persis dengan ONSET_RMS &
++      // yang konstan tidak ikut terpicu. HARUS sama persis dengan ONSET_RMS &
+       // ONSET_RATIO di NativeMicPitchDetector.java.
+       if(rms>ONSET_RMS && rms>smoothedRms*ONSET_RATIO && now>cooldownUntil){
+         state='sampling';
+         sampleTries=0;
+         candidateIdx=-1; candidateCount=0;
+-        // Kasih jeda dikit dulu biar transien petikan gitar mereda dan
+-        // gelombangnya udah cukup stabil buat diukur. HARUS sama persis dengan
++        // Beri jeda sedikit dulu agar transien petikan gitar mereda dan
++        // gelombangnya sudah cukup stabil untuk diukur. HARUS sama persis dengan
+         // SETTLE_MS di NativeMicPitchDetector.java.
+         sampleAt = now + SETTLE_MS;
+         lastOnsetAt = now;
+@@ -3867,8 +3867,8 @@
+           const chk = isCategorySafe(result.freq, result.clarity);
+           // BARU: walau isCategorySafe() bilang "aman", kalau sinyalnya sudah
+           // meluruh SANGAT cepat (ciri tap) DAN periodisitasnya tidak sampai
+-          // sangat meyakinkan, jangan percaya sebagai nada -- ini yang nangkep
+-          // kasus "tap kebaca jadi nada lain di atas". HARUS sama persis
++          // sangat meyakinkan, jangan percaya sebagai nada -- ini yang menangani
++          // kasus "tap terbaca sebagai nada lain di atas". HARUS sama persis
+           // dengan logika looksPercussive di NativeMicPitchDetector.java.
+           const looksPercussive = decayRatio < TAP_DECAY_RATIO && result.clarity < STRONG_PROBABILITY;
+           if(chk.safe && !looksPercussive){
+@@ -3921,7 +3921,7 @@
+           }
+         } else if(sampleTries >= MAX_SAMPLE_TRIES){
+           // Beberapa frame berturut SAMA SEKALI tidak dapat sinyal periodik
+-          // (yinDetect() balikin null terus) walau tadinya cukup keras buat
++          // (yinDetect() mengembalikan null terus) walau tadinya cukup keras untuk
+           // memicu onset. Serahkan ke KickClassifier: cuma kick drum sungguhan
+           // yang boleh mengetik (spasi), suara keras lain ditolak total.
+           resolveNonTonalHit();
+@@ -3966,7 +3966,7 @@
+       } else if(rms<RELEASE_RMS){
+         // Baru boleh siap deteksi onset baru lagi (jalur normal) kalau RMS
+         // sudah di bawah RELEASE_RMS SELAMA RELEASE_CONFIRM_HOPS frame
+-        // BERTURUT-TURUT -- bukan cuma sekali nyentuh di bawah ambang, supaya
++        // BERTURUT-TURUT -- bukan hanya sekali menyentuh di bawah ambang, supaya
+         // riak sesaat di tengah dengungan yang masih jelas terdengar tidak
+         // dikira "sudah reda".
+         releaseBelowCount++;
+--- a/native-patches/HtmlKeyboardService.java
++++ b/native-patches/HtmlKeyboardService.java
+@@ -70,7 +70,7 @@
+         // Booster: WebView hanya dibuat & di-load SEKALI. Sebelumnya, setiap
+         // kali keyboard muncul (pindah kolom/aplikasi), sistem memanggil
+         // onCreateInputView() lagi dan kode lama membuat WebView baru +
+-        // reload index.html dari nol setiap saat — ini yang bikin terasa
++        // reload index.html dari nol setiap saat — ini yang menyebabkan terasa
+         // delay/lag di HP dengan spek ringan. Sekarang WebView yang sama
+         // dipakai ulang terus, jadi keyboard muncul instan setelah kemunculan pertama.
+         if (webView != null) {
+@@ -142,7 +142,7 @@
+ 
+         // PENTING: getUserMedia (dipakai fitur deteksi nada gitar) DIBLOKIR browser/WebView
+         // kalau halaman dimuat lewat file:// langsung -- itu dianggap "origin tidak aman",
+-        // apa pun izin Android-nya. WebViewAssetLoader ini bikin WebView memuat file yang
++        // apa pun izin Android-nya. WebViewAssetLoader ini membuat WebView memuat file yang
+         // SAMA PERSIS dari folder assets, tapi lewat alamat https://appassets.androidplatform.net/...
+         // yang dianggap origin aman, sehingga getUserMedia bisa benar-benar diizinkan.
+         assetLoader = new WebViewAssetLoader.Builder()
+@@ -167,7 +167,7 @@
+                 // PENTING: onPermissionRequest ini SUDAH berjalan di UI thread bawaan
+                 // Android. Sebelumnya kode ini membungkus grant() dengan webView.post(),
+                 // yang menunda eksekusinya ke antrian berikutnya -- di sebagian WebView
+-                // (termasuk yang dipakai beberapa HP ColorOS), penundaan ini bisa bikin
++                // (termasuk yang dipakai beberapa HP ColorOS), penundaan ini bisa menyebabkan
+                 // permintaan izin keburu dianggap gagal sebelum grant() sempat jalan,
+                 // persis menghasilkan error NotAllowedError. Sekarang dipanggil langsung.
+                 for (String resource : request.getResources()) {
+--- a/native-patches/NativeMicPitchDetector.java
++++ b/native-patches/NativeMicPitchDetector.java
+@@ -12,25 +12,29 @@
+ import java.util.concurrent.atomic.AtomicBoolean;
+ 
+ /**
+- * Deteksi nada gitar LANGSUNG lewat AudioRecord (API Android native),
+- * BUKAN lewat getUserMedia() di JavaScript/WebView.
++ * Deteksi nada gitar langsung lewat AudioRecord (API Android native),
++ * bukan lewat getUserMedia() di JavaScript/WebView.
+  *
+- * Kenapa dibuat terpisah dari WebView: getUserMedia() di WebView ternyata
+- * selalu gagal (NotAllowedError) di sebagian HP meski izin RECORD_AUDIO
++ * Alasan dipisah dari WebView: getUserMedia() di WebView ternyata selalu
++ * gagal (NotAllowedError) di sebagian perangkat meski izin RECORD_AUDIO
+  * sudah "Diizinkan" di level sistem -- kemungkinan pembatasan WebView/OEM
+- * yang di luar jangkauan kode. AudioRecord ini cuma butuh izin RECORD_AUDIO
+- * biasa (yang sudah terbukti granted), tanpa lewat lapisan WebView sama sekali.
++ * yang di luar jangkauan kode aplikasi. AudioRecord di kelas ini hanya
++ * membutuhkan izin RECORD_AUDIO standar (yang sudah terbukti granted),
++ * tanpa melalui lapisan WebView sama sekali.
+  *
+- * Algoritma di bawah ini port dari fungsi yinDetect() + micLoop() di index.html,
+- * dan HARUS dijaga tetap sinkron dengan versi JS itu supaya jalur native & jalur
+- * WebView terasa sama persis buat user:
+- *   - Deteksi pitch pakai algoritma YIN (bukan autokorelasi biasa lagi) --
+- *     jauh lebih tahan salah pilih oktaf (mis. F2 kebaca F3) karena guitar
+- *     sering punya harmonik ke-2 yang lebih kuat dari nada dasarnya sendiri,
+- *     dan autokorelasi polos gampang kejebak kunci ke situ.
+- *   - Nada di-commit langsung di bacaan PERTAMA yang meyakinkan (bukan nunggu
+- *     beberapa bacaan sepakat dulu) -- YIN cukup andal buat itu, jadi gak
+- *     perlu dipetik berkali-kali dulu baru kedeteksi.
++ * Algoritma di bawah ini adalah porting dari fungsi yinDetect() + micLoop()
++ * di index.html, dan harus dijaga tetap sinkron dengan versi JavaScript
++ * tersebut supaya jalur native dan jalur WebView terasa identik bagi
++ * pengguna:
++ *   - Deteksi pitch memakai algoritma YIN (bukan autokorelasi biasa) --
++ *     jauh lebih tahan terhadap kesalahan pemilihan oktaf (mis. F2 terbaca
++ *     sebagai F3), karena gitar sering memiliki harmonik ke-2 yang lebih
++ *     kuat dari nada dasarnya sendiri, dan autokorelasi polos mudah
++ *     terjebak mengunci ke harmonik tersebut.
++ *   - Nada di-commit langsung pada bacaan PERTAMA yang meyakinkan (tidak
++ *     menunggu beberapa bacaan sepakat terlebih dahulu) -- YIN cukup andal
++ *     untuk itu, sehingga tidak perlu dipetik berkali-kali sebelum
++ *     terdeteksi.
+  */
+ public class NativeMicPitchDetector {
+ 
+@@ -59,7 +63,7 @@
+     private static final int FALLBACK_SAMPLE_RATE = 44100;
+     // 4096 sample @44.1kHz ~= 93ms jendela analisis. HARUS sama persis dengan
+     // analyser.fftSize di index.html. Dulu 1536 (35ms) biar terasa cepat, tapi
+-    // itu cuma ~2.8 siklus gelombang buat nada rendah kayak E2 (~82Hz) --
++    // itu cuma ~2.8 siklus gelombang untuk nada rendah seperti E2 (~82Hz) --
+     // ketipisan data bikin YIN (atau autokorelasi apa pun) gampang salah pilih
+     // oktaf. 4096 kasih ~7.6 siklus di E2, jauh lebih andal/akurat. Lebar
+     // jendela ini TIDAK diturunkan lagi biar akurasi nada rendah tetap terjaga
+@@ -111,8 +115,8 @@
+     // onset di micLoop() index.html.
+     private static final double ONSET_RMS = 0.012;
+     private static final double ONSET_RATIO = 1.6; // HARUS sama persis dengan rasio onset di index.html
+-    // BARU -- fix "nada cepat/tapping ketimpa dengungan nada sebelumnya jadi
+-    // gak kepick": dulu selama STATE_RELEASING, mic BUTA total terhadap
++    // Perbaikan -- kasus "nada cepat/tapping tertimpa dengungan nada
++    // sebelumnya sehingga tidak terdeteksi": dulu selama STATE_RELEASING, mic BUTA total terhadap
+     // petikan baru sampai dengungan lama turun di bawah RELEASE_RMS -- masalahnya
+     // di teknik tapping/petik cepat (mis. gaya Marcin), nada berikutnya sering
+     // menimpa SEBELUM dengungan nada sebelumnya sempat reda, jadi onset barunya
+@@ -130,7 +134,7 @@
+     // dulu retrigger cuma dibandingkan ke SATU hop sebelumnya (prevHopRms).
+     // Masalahnya, chord yang di-strum (banyak senar bareng) atau nada yang
+     // masih berdengung itu levelnya naik-turun terus (BEATING -- interferensi
+-    // antar harmonik beberapa senar), jadi gampang banget ada satu hop yang
++    // antar harmonik beberapa senar), jadi sangat mudah ada satu hop yang
+     // kebetulan lebih pelan dari hop tepat sebelumnya lalu hop sesudahnya naik
+     // lagi sedikit -> RETRIGGER_RATIO kelewat gampang terpicu berkali-kali
+     // padahal itu bukan petikan baru sama sekali, cuma riak dari petikan yang
+@@ -148,9 +152,9 @@
+     private static final long MIN_RETRIGGER_GAP_MS = 110;
+     // BARU (bagian dari fix yang sama): dulu begitu SATU hop RMS-nya di bawah
+     // RELEASE_RMS, langsung dianggap "sudah reda" dan state balik ke IDLE.
+-    // Padahal riak/beating yang sama di atas juga bisa bikin RMS sempat
+-    // nyentuh di bawah RELEASE_RMS SEBENTAR padahal senarnya masih jelas-jelas
+-    // berbunyi -- begitu balik ke IDLE, riak berikutnya yang naik lagi kebaca
++    // Padahal riak/beating yang sama di atas juga bisa membuat RMS sempat
++    // menyentuh nilai di bawah RELEASE_RMS sebentar padahal senarnya masih jelas-jelas
++    // berbunyi -- begitu balik ke IDLE, riak berikutnya yang naik lagi terbaca
+     // sebagai onset baru -> huruf dobel lagi (lewat jalur normal, bukan
+     // retrigger). Sekarang RMS harus di bawah RELEASE_RMS SELAMA
+     // RELEASE_CONFIRM_HOPS hop BERTURUT-TURUT (bukan cuma sekali) baru
+@@ -169,10 +173,10 @@
+     // "menunda" bacaan pertama; sekarang loop jalan tiap ~16.6ms jadi delay
+     // ini harus dibuat eksplisit supaya akurasi tidak turun akibat kecepatan.
+     private static final long SETTLE_MS = 30;   // dulu 45: mulai baca nada 1 hop lebih awal
+-    // BARU (fix "tap badan gitar masih kebaca jadi nada lain di atas"): dulu
+-    // satu-satunya sinyal buat mendeteksi tap adalah yinDetect() BALIKIN NULL
++    // BARU (fix "tap badan gitar masih terbaca sebagai nada lain di atas"): dulu
++    // satu-satunya sinyal untuk mendeteksi tap adalah yinDetect() mengembalikan NULL
+     // TOTAL -- padahal resonansi badan gitar kadang punya periodisitas SEMU
+-    // yang cukup buat yinDetect() balikin frekuensi "valid" (kebetulan cocok
++    // yang cukup untuk membuat yinDetect() mengembalikan frekuensi "valid" (kebetulan cocok
+     // sama salah satu nada, sering di area frekuensi tinggi karena benturan
+     // pendek/impulsif rawan memicu YIN mengunci ke periode pendek/frekuensi
+     // tinggi secara kebetulan). Pembeda fisik yang jauh lebih andal: SENAR
+@@ -694,15 +698,16 @@
+     }
+ 
+     /**
+-     * Port dari fungsi yinDetect(buf, sampleRate) di index.html -- algoritma YIN
+-     * (De Cheveigne & Kawahara, 2002), dipakai juga di tuner-tuner gitar
+-     * profesional. Bedanya sama autokorelasi biasa: YIN pakai "cumulative mean
+-     * normalized difference function" yang jauh lebih tahan salah pilih oktaf
+-     * (mis. F2 kebaca F3 karena harmonik ke-2 gitar sering lebih kuat dari nada
+-     * dasarnya sendiri -- autokorelasi polos gampang kejebak di situ).
++     * Porting dari fungsi yinDetect(buf, sampleRate) di index.html -- algoritma
++     * YIN (De Cheveigne & Kawahara, 2002), yang juga dipakai pada tuner-tuner
++     * gitar profesional. Bedanya dari autokorelasi biasa: YIN memakai
++     * "cumulative mean normalized difference function" yang jauh lebih tahan
++     * terhadap kesalahan pemilihan oktaf (mis. F2 terbaca sebagai F3 karena
++     * harmonik ke-2 gitar sering lebih kuat dari nada dasarnya sendiri --
++     * autokorelasi polos mudah terjebak di sana).
+      * Pencarian dibatasi ke rentang frekuensi nada gitar (MIN/MAX_VALID_FREQ)
+-     * biar lebih cepat DAN lebih tegas (gak pernah mempertimbangkan periode
+-     * yang jelas di luar jangkauan gitar).
++     * agar lebih cepat dan lebih tegas (tidak pernah mempertimbangkan periode
++     * yang jelas berada di luar jangkauan gitar).
+      */
+     private static PitchReading yinDetect(float[] buf, int size, int sampleRate) {
+         double rms = 0;
