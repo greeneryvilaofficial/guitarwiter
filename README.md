@@ -1,208 +1,72 @@
-# 🎸 GuitarWiter - Guitar-to-Keyboard Input System
+# 🎸 GuitarWiter — Guitar-to-Keyboard
 
-**Real-time pitch detection powered by TunerPro algorithm with zero-delay keyboard input**
+Keyboard Android kustom yang mengubah **nada gitar jadi ketikan**. Petik satu nada → satu huruf/tombol keluar di kolom teks mana pun (WhatsApp, Instagram, dll.). Deteksi nada berjalan native (AudioRecord + YIN) di dalam aplikasi, sedangkan tampilan keyboard adalah halaman web (`www/`) di dalam WebView `InputMethodService`.
 
-## 🚀 Features
+## Cara pakai
+1. Pasang APK dari tab **Releases** (pakai `Guitarwiter.apk` kalau ada — itu build release yang paling ringan).
+2. **Buka aplikasinya sekali** dari app drawer dan izinkan **mikrofon** (keyboard tidak bisa memunculkan pop-up izin sendiri).
+3. Aktifkan di **Pengaturan → Bahasa & input → Papan ketik** lalu pilih **Guitarwiter** saat mengetik.
+4. Nyalakan ikon mikrofon di keyboard, lalu petik **satu nada per satu** (bukan kunci penuh).
 
-- **TunerPro Pitch Detection**: Accurate, low-latency pitch recognition
-- **Zero-Delay Typing**: Instant keyboard input response
-- **Gboard-like UI**: Responsive, modern keyboard interface
-- **Hold-to-Delete**: Long-press acceleration for faster deletion
-- **Cross-App Compatible**: Works with any application
-- **Performance Optimized**: Service Worker, debouncing, GPU acceleration
-- **Mobile Responsive**: Touch-optimized interface
-- **Multi-language Support**: Indonesian & English
-- **Offline Support**: Service Worker caching
+## Peta nada → tuts
+Nada disusun kromatis (per setengah nada) dari **E2** (MIDI 40), 44 tuts. Label nada tampil di tiap tuts.
 
-## 📋 Tech Stack
+| Tuts | Nada |
+|---|---|
+| `1 2 3 4 5 6 7 8 9 0` (baris angka) | E2 – C#3 — **hanya aktif di mode simbol `?123`** |
+| `q w e r t y u i o p` | D3 – B3 |
+| `a s d f g h j k l` | C4 – G#4 |
+| Shift | A4 |
+| `z x c v b n m` | A#4 – E5 |
+| Hapus ⌫ | F5 |
+| `?123` | F#5 |
+| `,` | G5 |
+| Emoji | G#5 |
+| Spasi | A5 |
+| `.` | A#5 |
+| Enter | B5 |
 
-- **Frontend**: React 18 + Tailwind CSS
-- **Audio Processing**: Web Audio API + TunerPro Algorithm
-- **State Management**: Redux Toolkit
-- **Mobile**: Capacitor (Android)
-- **Performance**: Service Worker, IndexedDB caching
-- **Build Tool**: Vite
-- **Testing**: Vitest + React Testing Library
+Di **mode huruf** nada rendah (E2–C#3) sengaja diabaikan karena baris angka tersembunyi. Di **mode emoji** 44 emoji bernada ada di bagian paling atas panel, dan nada mengetik emoji yang terlihat di situ.
 
-## 📁 Project Structure
-
+## Struktur repo
 ```
-guitarwiter/
-├── src/
-│   ├── components/
-│   │   ├── Keyboard.tsx           # Virtual keyboard UI
-│   │   ├── PitchDetector.tsx       # Pitch detection controls
-│   │   ├── InputDisplay.tsx        # Text display
-│   │   └── PerformanceMonitor.tsx  # Performance metrics
-│   ├── services/
-│   │   ├── audioService.ts         # Audio capture
-│   │   ├── pitchDetection.ts       # TunerPro algorithm
-│   │   ├── keyboardInput.ts        # Keyboard handling
-│   │   └── performanceOptimizer.ts # Performance optimization
-│   ├── hooks/
-│   │   ├── useAudio.ts             # Audio hook
-│   │   ├── usePitchDetection.ts    # Pitch detection hook
-│   │   └── usePerformance.ts       # Performance hook
-│   ├── store/
-│   │   ├── appSlice.ts             # Redux state
-│   │   └── index.ts                # Store config
-│   ├── styles/
-│   │   └── globals.css             # Global styles
-│   ├── App.tsx                     # Main component
-│   └── main.tsx                    # Entry point
-├── www/                            # Alternative Gboard keyboard (Indonesian)
-├── .github/workflows/
-│   └── build-apk.yml               # Automatic APK building
-├── public/
-│   └── service-worker.js           # Service worker
-├── capacitor.config.json           # Capacitor config
-├── vite.config.ts                  # Vite config
-├── tsconfig.json                   # TypeScript config
-├── tailwind.config.js              # Tailwind config
-└── package.json                    # Dependencies
-
+.github/workflows/
+  android-build.yml        # build APK debug (+ release kalau keystore tersedia) & buat GitHub Release
+  generate-keystore.yml    # jalankan SEKALI untuk membuat keystore rilis
+native-patches/            # ditempel ke proyek android/ yang dibuat otomatis oleh Capacitor
+  HtmlKeyboardService.java     # InputMethodService + WebView + jembatan JS
+  NativeMicPitchDetector.java  # rekam mic & deteksi nada (YIN) — inti kecepatan
+  MainActivity.java            # minta izin mikrofon
+  method.xml                   # deklarasi IME
+  insert_*.py                  # skrip penyisip manifest/gradle/ikon/signing/performa
+  app-icon/                    # ikon launcher (mipmap-*)
+www/
+  index.html  sw.js  manifest.json  (+ icon-192.png, icon-512.png)
+capacitor.config.json
+package.json
 ```
 
-## 🔧 Installation & Setup
+## Build (GitHub Actions)
+Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
+- **Debug**: selalu ada, tidak butuh keystore (`Guitarwiter-debug.apk`; dibuat non-debuggable supaya tetap cepat).
+- **Release (bertanda tangan)**: isi dulu secret `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` (password keystore dan key **harus sama**), jalankan **Generate Release Keystore** sekali, salin hasil base64-nya ke secret `KEYSTORE_BASE64`, lalu hapus artifact keystore-nya.
+- Setelah mengubah `www/index.html`, naikkan nomor versi `CACHE_NAME` di `www/sw.js` supaya cache lama tidak nyangkut.
 
-### 1. Clone Repository
-```bash
-git clone https://github.com/greeneryvilaofficial/guitarwiter.git
-cd guitarwiter
-```
+## Setelan yang bisa disetel (di kode)
+`NativeMicPitchDetector.java`:
+| Konstanta | Fungsi |
+|---|---|
+| `KICK_FEATURE` | `false` = drum/kick tidak pernah jadi spasi (bunyi non-nada diabaikan) |
+| `PITCH_MODE_TOGGLE_KEYS` | `true` = `?123`/emoji bisa dipicu dari nada; `false` = hanya lewat sentuhan |
+| `FUNCTIONAL_KEYS_STRICT` | `true` = shift/hapus/enter dipersulit (3 bacaan sepakat) |
+| `FAST_*` | jalur cepat nada pertama (hanya ≥ 300 Hz, syarat ketat) |
+| `LOW_ZONE_*` | nada < 300 Hz menunggu data lebih banyak (mencegah salah oktaf angka↔huruf) |
+| `ONSET_RMS`, `RETRIGGER_*`, `COOLDOWN_MS` | sensitivitas petikan; terlalu sensitif = huruf berulang/acak |
 
-### 2. Install Dependencies
-```bash
-npm install
-```
+## Masalah umum
+- **Huruf berulang (`eeee`) atau muncul sendiri** → sensitivitas terlalu tinggi / derau ruangan; naikkan `ONSET_RMS`.
+- **Nada tertukar huruf ↔ angka** → salah oktaf pada nada rendah; lihat `LOW_ZONE_*`.
+- **Terasa delay** → lihat angka `· xx ms` di status keyboard (waktu di dalam kode). Sisanya adalah latensi audio masuk Android (`AudioRecord`) yang tidak bisa dipangkas dari Java.
+- **Mode tiba-tiba pindah ke simbol/emoji** → set `PITCH_MODE_TOGGLE_KEYS = false`.
 
-### 3. Development Server
-```bash
-npm run dev
-```
-Open http://localhost:5173 in your browser
-
-### 4. Build Web Assets
-```bash
-npm run build
-```
-
-## 🤖 Building APK
-
-### Automatic Build (GitHub Actions)
-Every push to `main` branch automatically builds APK and creates a release.
-- Download from **Releases** tab
-- Or from **Actions** → Build logs → Artifacts
-
-### Manual Build (Local)
-
-**Prerequisites:**
-- Android Studio or Android SDK
-- Java JDK 17+
-- Gradle
-
-**Steps:**
-
-```bash
-# Initialize Capacitor (first time only)
-npm run capacitor:init
-
-# Add Android platform (first time only)
-npm run capacitor:add-android
-
-# Build APK
-npm run build-apk
-
-# Debug APK: android/app/build/outputs/apk/debug/app-debug.apk
-# Release APK: android/app/build/outputs/apk/release/app-release.apk
-```
-
-### Detailed Build Process
-
-```bash
-# 1. Install Capacitor
-npm install @capacitor/core @capacitor/cli @capacitor/android
-
-# 2. Build web assets
-npm run build
-
-# 3. Initialize Capacitor
-npx cap init guitarwiter com.greeneryvilla.guitarwiter --web-dir dist
-
-# 4. Add Android
-npx cap add android
-
-# 5. Sync files
-npx cap sync
-
-# 6. Build Debug APK
-cd android && ./gradlew assembleDebug
-
-# 7. Build Release APK
-cd android && ./gradlew assembleRelease
-```
-
-## 📱 Installation on Android Device
-
-```bash
-# Connect device via USB (enable USB Debugging)
-adb install android/app/build/outputs/apk/debug/app-debug.apk
-```
-
-Or open `android/` in Android Studio and click Run.
-
-## ⚙️ Required Permissions
-
-The app requires these Android permissions:
-- `RECORD_AUDIO` - For microphone access (pitch detection)
-- `INTERNET` - For web features
-- `ACCESS_NETWORK_STATE` - For connectivity check
-
-These are automatically included in the build.
-
-## 🎤 How It Works
-
-1. **Microphone Capture**: Captures audio from guitar via Web Audio API
-2. **Pitch Detection**: TunerPro algorithm detects note frequency
-3. **MIDI Mapping**: Converts frequency to MIDI note number
-4. **Keyboard Mapping**: Maps MIDI note to keyboard character
-5. **Input Injection**: Types character into active field
-
-## 📚 Documentation
-
-- [Architecture](./docs/ARCHITECTURE.md)
-- [Pitch Detection Algorithm](./docs/PITCH_DETECTION.md)
-- [Performance Optimization](./docs/PERFORMANCE.md)
-- [API Reference](./docs/API.md)
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
-
-## 📝 License
-
-MIT License - See LICENSE file for details
-
-## 🙋 Support
-
-- Report issues: [GitHub Issues](https://github.com/greeneryvilaofficial/guitarwiter/issues)
-- Ask questions: [GitHub Discussions](https://github.com/greeneryvilaofficial/guitarwiter/discussions)
-
-## 🎵 Credits
-
-**Made with ❤️ by Greeneryvilla**
-
-- TunerPro Algorithm - Real-time pitch detection
-- Capacitor - Cross-platform mobile development
-- React 18 - UI framework
-- Web Audio API - Audio processing
-
----
-
-**Version**: 2.0.0  
-**Last Updated**: 2026
-**Status**: Production Ready ✅
+Kebijakan privasi: [privacy-policy.md](privacy-policy.md)

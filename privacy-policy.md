@@ -1,61 +1,46 @@
 # Kebijakan Privasi — Guitarwiter
 
-Terakhir diperbarui: 22 September 2026
+_Terakhir diperbarui: 1 Oktober 2026_
 
-Guitarwiter ("Aplikasi") adalah keyboard Android yang mengubah nada gitar menjadi ketikan. Karena keyboard memang berhubungan dengan apa yang kamu ketik, kebijakan ini menjelaskan secara jujur data apa yang diproses, di mana disimpan, dan bagaimana menghapusnya.
+Guitarwiter adalah keyboard Android yang mengubah nada gitar (lewat mikrofon) menjadi ketikan. Kebijakan ini menjelaskan data apa yang disentuh aplikasi dan ke mana perginya.
 
-## Ringkasan
-- Aplikasi **tidak mengirim** data apa pun (audio, teks, clipboard) ke server mana pun, dan tidak membagikannya ke pihak ketiga.
-- Semua pemrosesan dan penyimpanan terjadi **hanya di perangkatmu**.
-- Aplikasi tidak memakai layanan analitik, iklan, atau akun pengguna.
+**Ringkasnya: semua diproses di perangkatmu. Guitarwiter tidak mengirim apa pun ke server mana pun, tidak memakai iklan, dan tidak memakai analitik/pelacak.**
 
-## Akses Mikrofon
-Aplikasi meminta izin mikrofon untuk satu tujuan: mendeteksi nada gitar yang kamu mainkan secara langsung, lalu mengetikkan huruf yang sesuai.
+## 1. Mikrofon
+- Izin **RECORD_AUDIO** dipakai hanya untuk mendeteksi nada gitar secara *real-time* di dalam aplikasi.
+- Audio **tidak direkam, tidak disimpan, dan tidak dikirim**. Suara langsung dianalisis dan dibuang; yang dipakai hanya hasilnya (nada apa yang terdengar).
+- Mikrofon hanya aktif saat fitur deteksi nada dinyalakan.
 
-- Mikrofon hanya aktif saat keyboard **sedang tampil** dan tombol mikrofon di keyboard menyala. Saat keyboard disembunyikan, ditutup, atau kamu berpindah aplikasi, mikrofon dimatikan. Kamu juga bisa mematikannya kapan saja lewat tombol mikrofon.
-- Audio dianalisis secara langsung (real-time) di perangkat untuk mengenali nada, lalu dibuang. Audio **tidak direkam, tidak disimpan, dan tidak dikirim** ke mana pun.
+## 2. Teks yang kamu ketik
+- Keyboard memproses teks yang kamu ketik **secara lokal** untuk saran kata, autokoreksi, dan huruf kapital otomatis.
+- Di **kolom privat** (kata sandi, mode penyamaran/incognito, atau kolom yang meminta tanpa personalisasi), keyboard **tidak belajar kata, tidak menyimpan pasangan kata, dan tidak menampilkan saran**.
 
-## Teks yang Kamu Ketik
-Sebagai keyboard, Aplikasi meneruskan ketikanmu ke aplikasi yang sedang kamu gunakan (misalnya kolom chat), dan memantau teks yang sedang kamu ketik untuk menampilkan saran kata.
+## 3. Data yang disimpan di perangkat
+Disimpan di penyimpanan lokal aplikasi (tidak keluar dari perangkat):
+- kata yang dipelajari dan pasangan kata untuk saran berikutnya,
+- pengaturan (bahasa, tema, ukuran keyboard, tombol yang ditampilkan, dll.),
+- daftar kata yang kamu blokir dari saran,
+- riwayat papan klip yang ditampilkan sebagai saran.
 
-Agar saran kata makin sesuai denganmu, Aplikasi menyimpan **secara lokal di perangkat**:
-- kata-kata yang sering kamu ketik (hanya kosakata berupa huruf, 2–14 karakter; kata asal-ulang, asal pencet, atau kepanjangan tidak disimpan), dan
-- pasangan 2 kata yang sering muncul berurutan.
+Semuanya bisa dihapus lewat **Pengaturan Android → Aplikasi → Guitarwiter → Penyimpanan → Hapus data**, atau dengan menghapus aplikasi.
 
-Agar saran tetap sesuai isi kolom (misalnya saat kolom dikosongkan dengan tombol ✕), aplikasi membaca sampai 60 huruf sebelum kursor di kolom yang sedang aktif. Ini **tidak dilakukan di kolom password**, hanya diproses di dalam perangkat, dan tidak disimpan.
+## 4. Papan klip
+Guitarwiter membaca salinan terbaru di papan klip hanya untuk menampilkannya sebagai saran tempel. Isinya disimpan lokal dan tidak dikirim ke mana pun.
 
-Aplikasi **tidak menyimpan kalimat atau paragraf**, dan teks yang kamu tempel dari clipboard tidak pernah dipelajari sebagai saran. Kamu bisa menghapus satu saran dengan menahannya di bar saran, atau semuanya lewat tombol "Reset kamus".
+## 5. Jaringan & pihak ketiga
+- Tidak ada pengiriman data ke server, tidak ada iklan, tidak ada SDK analitik.
+- Tab GIF berjalan offline (stiker emoji); tidak ada permintaan ke layanan GIF.
 
-**Kolom yang dikecualikan:** di kolom password, kolom yang meminta tanpa personalisasi (misalnya mode incognito), Aplikasi **tidak belajar kata, tidak menyimpan pasangan kata, dan tidak menampilkan saran kata**.
+## 6. Anak-anak
+Aplikasi tidak menargetkan anak-anak secara khusus dan tidak mengumpulkan data pribadi dari siapa pun.
 
-## Papan Klip (Riwayat Clipboard)
-Aplikasi menampilkan papan klip supaya kamu bisa menempel ulang teks yang pernah disalin. Teks disimpan **apa adanya, pendek maupun panjang** (maksimal 20.000 karakter per item), secara lokal di perangkat: hingga 15 klip terbaru dan 15 klip yang kamu sematkan.
+## 7. Perubahan kebijakan
+Jika kebijakan ini berubah, versi terbarunya akan ditampilkan di halaman ini beserta tanggal pembaruan.
 
-- Klip yang **tidak disematkan dihapus otomatis setelah 1 jam**. Klip yang kamu sematkan (tahan sebuah klip) tetap ada sampai kamu menghapusnya.
-- Teks yang kamu salin (termasuk angka seperti nomor atau kode) ikut tersimpan selama itu. Salinan yang ditandai "sensitif" oleh aplikasi pengirimnya (misalnya pengelola password di Android 13 ke atas) tidak disimpan.
-- Kamu bisa mematikan penyimpanan lewat sakelar di kanan atas papan klip, menghapus satu klip lewat ikon pensil, atau menghapus semuanya lewat pengaturan/hapus data aplikasi.
-- Salinan terbaru juga muncul sebagai satu chip di bar saran selama sekitar 1 menit (hanya di memori, tidak ditulis otomatis ke kolom teks).
-- Riwayat ini terpisah dari saran kata dan tidak pernah dipakai untuk belajar kata.
+## 8. Kontak
+Pertanyaan soal privasi: **[ISI EMAIL KONTAK KAMU DI SINI]**
 
-## Pengaturan
-Hal-hal berikut disimpan lokal di perangkat supaya pengaturanmu tidak hilang: tema, bahasa yang dipilih, ukuran huruf, **ukuran dan posisi keyboard** (menu Ubah ukuran), pilihan tombol yang kamu tampilkan/sembunyikan di kisi alat, saklar koreksi otomatis / huruf besar otomatis / saran kata, daftar kata yang kamu sembunyikan dari saran, dan **32 emoji yang terakhir dipakai**, serta semua pilihan di menu Setelan (getar, suara klik, baris angka, tombol yang ditampilkan, ketik geser, dan seterusnya).
+---
 
-Fitur **ketik geser** hanya menghitung jalur jarimu di layar untuk menebak satu kata; jalur itu tidak disimpan. Getar dan suara klik dibuat di dalam perangkat dan tidak memakai data apa pun.
-
-## Tombol Bagikan
-Tombol "Bagikan" hanya membuka lembar bagikan Android dengan satu kalimat tetap tentang aplikasi ini. Aplikasi tidak mengirim data apa pun sendiri; kamu yang memilih tujuan pengiriman.
-
-## Emoji, GIF, dan Stiker
-Semua emoji, stiker-emoji, dan emotikon berasal dari data di dalam aplikasi. Aplikasi tidak mengunduh GIF atau stiker dari internet.
-
-## Menghapus Data
-Semua data di atas tersimpan di penyimpanan lokal aplikasi. Untuk menghapusnya, buka Pengaturan Android → Aplikasi → Guitarwiter → Penyimpanan → **Hapus data**, atau cukup copot pemasangan Aplikasi. Karena tidak ada yang dikirim ke server, tidak ada salinan lain yang perlu dihapus.
-
-## Perubahan Kebijakan
-Kebijakan ini dapat diperbarui sewaktu-waktu. Perubahan akan dicantumkan di halaman ini dengan tanggal pembaruan terbaru.
-
-## Kontak
-Jika ada pertanyaan mengenai kebijakan privasi ini, hubungi:
-
-- Email: greeneryvilaofficial@gmail.com
-- Telepon/WhatsApp: 083869814575
+### English summary
+Guitarwiter processes everything on your device. The microphone (RECORD_AUDIO) is used only for real-time pitch detection; audio is never recorded, stored, or transmitted. Typed text, learned words, settings, and clipboard suggestions stay in local app storage and can be cleared by clearing app data. No ads, analytics, trackers, or network data transfer. In private/password fields the keyboard does not learn or suggest words. Contact: **[ADD YOUR CONTACT EMAIL HERE]**
