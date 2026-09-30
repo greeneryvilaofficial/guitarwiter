@@ -1010,12 +1010,16 @@
   }
   function sendNoteMap(){
     if(!DIRECT_NOTE_COMMIT) return;
-    let json;
+    let json, stable = false;
     try{
       const m = []; for(let i = 0; i < NOTE_COUNT; i++) m.push(directNoteChar(i));
       json = JSON.stringify(m);
+      // Stabil = mengetik satu huruf TIDAK mengubah status keyboard (shift sekali-pakai akan
+      // habis terpakai -> peta berubah -> tidak stabil). Kalau stabil, Java boleh terus
+      // mengetik nada berikutnya langsung tanpa menunggu peta baru dari sini.
+      stable = !(shiftActive && !capsLock);
     }catch(e){ return; }
-    if(fastBridge('setNoteMap', {map: json})) return;
+    if(fastBridge('setNoteMap', {map: json, stable: stable})) return;
     const a = window.AndroidKeyboard;
     if(a && a.setNoteMap){ try{ a.setNoteMap(json); }catch(e){} }
   }
