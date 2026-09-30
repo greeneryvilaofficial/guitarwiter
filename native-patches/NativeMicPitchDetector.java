@@ -704,8 +704,8 @@ public class NativeMicPitchDetector {
     // HARUS sinkron persis dengan categoryOfIndex()/isCategorySafe() di index.html.
     private static String categoryOfIndex(int idx) {
         if (idx >= 0 && idx <= 9) return "digit";
-        if (idx == 29 || idx == 37 || idx == 38 || idx == 39 || idx == 43) return "functional";
-        if (idx >= 40 && idx <= 42) return "punct";
+        if (idx == 29 || idx == 37 || idx == 38 || idx == 40 || idx == 43) return "functional";   // shift, hapus, ?123, emoji, enter
+        if (idx == 39 || idx == 41 || idx == 42) return "punct";                                   // koma, spasi, titik
         return "letterOrSymbol";
     }
 
@@ -774,7 +774,7 @@ public class NativeMicPitchDetector {
         return safe;
     }
 
-    // Tuts yang MENGGANTI MODE keyboard (idx 38 = emoji F#5, idx 39 = ?123 G5) TIDAK BOLEH
+    // Tuts yang MENGGANTI MODE keyboard (idx 38 = ?123 F#5, idx 40 = emoji G#5) TIDAK BOLEH
     // dipicu dari deteksi nada: salah baca satu oktaf saja (mis. G4 'g' terbaca G5) langsung
     // memindah keyboard ke simbol/angka -> huruf berikutnya jadi angka/simbol. Mode tetap bisa
     // diganti lewat sentuhan. Ubah ke true untuk mengaktifkan lagi lewat nada.
@@ -785,7 +785,7 @@ public class NativeMicPitchDetector {
     private static final boolean FUNCTIONAL_KEYS_STRICT = false;
 
     private void commit(int idx, double freq) {
-        if (!PITCH_MODE_TOGGLE_KEYS && (idx == 38 || idx == 39)) return;
+        if (!PITCH_MODE_TOGGLE_KEYS && (idx == 38 || idx == 40)) return;
         if (idx >= 0 && idx < NOTE_COUNT) {
             postPitchIndex(idx, freq);
         } else {
