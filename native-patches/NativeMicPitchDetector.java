@@ -491,6 +491,7 @@ public class NativeMicPitchDetector {
                     if (fr != null && fr.freq >= FAST_MIN_FREQ && fr.probability >= FAST_MIN_PROB
                             && isCategorySafe(fr.freq, fr.probability, fIdx, fCents)
                             && fCents[0] < FAST_MAX_CENTS
+                            && (!FUNCTIONAL_KEYS_STRICT || "letterOrSymbol".equals(categoryOfIndex(fIdx[0])))
                             && fIdx[0] >= 0 && fIdx[0] < NOTE_COUNT) {
                         lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
                         commit(fIdx[0], fr.freq);
@@ -556,12 +557,27 @@ public class NativeMicPitchDetector {
                                         r.octaveCorrected ? LOW_ZONE_CONFIRM_CORRECTED : LOW_ZONE_CONFIRM);
                             }
                             boolean ageOk = !lowZone || (now - lastOnsetAt) >= LOW_ZONE_MIN_AGE_MS;
-                            if ((candidateCount >= requiredConfirm && ageOk) || sampleTries >= MAX_SAMPLE_TRIES) {
+                            // Tuts fungsi (shift/backspace/enter) mengubah/menghapus teks: minta 3 bacaan
+                            // sepakat + umur minimum, dan JANGAN dipaksa komit saat jatah percobaan habis.
+                            boolean functionalKey = FUNCTIONAL_KEYS_STRICT && "functional".equals(categoryOfIndex(idxOut[0]));
+                            if (functionalKey) {
+                                requiredConfirm = Math.max(requiredConfirm, 3);
+                                ageOk = ageOk && (now - lastOnsetAt) >= LOW_ZONE_MIN_AGE_MS;
+                            }
+                            boolean consensus = candidateCount >= requiredConfirm && ageOk;
+                            boolean forceCommit = sampleTries >= MAX_SAMPLE_TRIES && !functionalKey;
+                            if (consensus || forceCommit) {
                                 // Sudah dapat cukup bacaan berturut yang sepakat (paling
                                 // umum), ATAU jatah percobaan sudah habis -- pakai bacaan
                                 // TERAKHIR yang lolos ini (lebih baik daripada nyerah total).
                                 lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
                                 commit(idxOut[0], r.freq);
+                                state = STATE_RELEASING;
+                                cooldownUntil = now + COOLDOWN_MS;
+                                releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
+                            }
+                            if (!(consensus || forceCommit) && functionalKey && sampleTries >= MAX_SAMPLE_TRIES) {
+                                // tuts fungsi tanpa konsensus penuh: abaikan diam-diam
                                 state = STATE_RELEASING;
                                 cooldownUntil = now + COOLDOWN_MS;
                                 releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
@@ -758,7 +774,18 @@ public class NativeMicPitchDetector {
         return safe;
     }
 
+    // Tuts yang MENGGANTI MODE keyboard (idx 38 = emoji F#5, idx 39 = ?123 G5) TIDAK BOLEH
+    // dipicu dari deteksi nada: salah baca satu oktaf saja (mis. G4 'g' terbaca G5) langsung
+    // memindah keyboard ke simbol/angka -> huruf berikutnya jadi angka/simbol. Mode tetap bisa
+    // diganti lewat sentuhan. Ubah ke true untuk mengaktifkan lagi lewat nada.
+    private static final boolean PITCH_MODE_TOGGLE_KEYS = true;
+    // false = SEMUA tuts (shift, backspace, emoji, ?123, enter, tanda baca) diperlakukan sama
+    // seperti nada biasa: langsung terdeteksi, termasuk lewat jalur cepat. true = tuts fungsi
+    // dipersulit (3 bacaan sepakat, tidak dipaksa komit) untuk mencegah salah-picu.
+    private static final boolean FUNCTIONAL_KEYS_STRICT = false;
+
     private void commit(int idx, double freq) {
+        if (!PITCH_MODE_TOGGLE_KEYS && (idx == 38 || idx == 39)) return;
         if (idx >= 0 && idx < NOTE_COUNT) {
             postPitchIndex(idx, freq);
         } else {
