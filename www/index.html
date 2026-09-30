@@ -1008,9 +1008,18 @@
     if(!ch || ch.length !== 1 || AC_TRIGGERS.has(ch)) return null;   // pemicu autokoreksi -> jalur lama
     return ch;
   }
+  // Spasi dari kick boleh diketik langsung oleh Java hanya kalau appendText(' ') TIDAK akan
+  // melakukan hal lain: titik-ganda, autokoreksi kata sebelumnya, atau menyusun huruf non-Latin.
+  function spaceDirectOk(){
+    if(!DIRECT_NOTE_COMMIT) return false;
+    if(selectionActive || isComposing() || scriptLang() || mode !== 'letters') return false;
+    if(prefs.dblSpace && !privateField && Date.now() - lastSpaceAt < 450 && /[\p{L}\p{N}] $/u.test(text.slice(0, cursorPos))) return false;
+    if(tryAutoCorrect()) return false;
+    return true;
+  }
   function sendNoteMap(){
     if(!DIRECT_NOTE_COMMIT) return;
-    let json, stable = false;
+    let json, stable = false, space = false;
     try{
       const m = []; for(let i = 0; i < NOTE_COUNT; i++) m.push(directNoteChar(i));
       json = JSON.stringify(m);
@@ -1018,8 +1027,9 @@
       // habis terpakai -> peta berubah -> tidak stabil). Kalau stabil, Java boleh terus
       // mengetik nada berikutnya langsung tanpa menunggu peta baru dari sini.
       stable = !(shiftActive && !capsLock);
+      try{ space = spaceDirectOk(); }catch(e){ space = false; }
     }catch(e){ return; }
-    if(fastBridge('setNoteMap', {map: json, stable: stable})) return;
+    if(fastBridge('setNoteMap', {map: json, stable: stable, space: space})) return;
     const a = window.AndroidKeyboard;
     if(a && a.setNoteMap){ try{ a.setNoteMap(json); }catch(e){} }
   }
@@ -3367,11 +3377,11 @@
   // SINKRON dengan Java: bunyi non-nada TIDAK lagi otomatis jadi spasi. Spasi hanya
   // untuk KICK drum sungguhan (lihat isKick()/resolveNonTonalHit() di bawah dan
   // di NativeMicPitchDetector.java). Ketukan badan gitar / ngomong / tepuk tangan diabaikan.
-  function typeKickAsSpace(){
+  function typeKickAsSpace(ms){
+    appendText(' ');   // ketik DULU; efek visual di bawah tidak boleh menunda teksnya
     const spaceEl = allKeys.find(el => el && el.dataset && el.dataset.type === 'literal' && el.dataset.char === ' ');
     if(spaceEl){ flash(spaceEl); showBubble(spaceEl, '␣'); }
-    appendText(' ');
-    showStatus('🥁 Kick terdeteksi → <b>"␣"</b> (spasi)');
+    showStatus('🥁 Kick terdeteksi → <b>"␣"</b> (spasi)'+(ms >= 0 ? ' · '+ms+' ms' : ''));
   }
 
   function autoTypeNote(idx){
@@ -3456,6 +3466,7 @@
     }
   };
   window.onNativePitchIndex = function(idx, freq){
+    scheduleNoteMapSync();   // jalur lambat mengubah teks -> perbarui peta (termasuk kelayakan spasi langsung)
     if(idx>=0 && idx<NOTE_COUNT){
       const typed = autoTypeNote(idx);
       const noteName = NOTES[idx].name;
@@ -3467,7 +3478,7 @@
   // (teks terlacak, saran, shift, belajar kata) TANPA mengirim commit lagi (_suppressCommit).
   // Verifikasi: kalau huruf yang seharusnya menurut status JS SEKARANG beda dari kiriman Java
   // (peta di Java ketinggalan), hapus huruf Java itu lalu ketik ulang lewat jalur normal.
-  window.onNativePitchCommitted = function(idx, freq, ch){
+  window.onNativePitchCommitted = function(idx, freq, ch, ms){
     let typed;
     const expected = directNoteChar(idx);
     if(expected !== null && expected === ch){
@@ -3481,7 +3492,7 @@
     setTimeout(()=>{ if(_nmAfterCommit){ _nmAfterCommit = false; sendNoteMap(); } }, 60);   // cadangan kalau rAF tertunda
     if(idx>=0 && idx<NOTE_COUNT){
       const label = (typed===' ') ? '␣' : (typed==='\n' ? '↵' : typed);
-      showStatus('Nada <b>'+NOTES[idx].name+'</b> ('+Math.round(freq)+' Hz) → <b>"'+label+'"</b>');
+      showStatus('Nada <b>'+NOTES[idx].name+'</b> ('+Math.round(freq)+' Hz) → <b>"'+label+'"</b>'+(ms >= 0 ? ' · '+ms+' ms' : ''));
     }
   };
   window.onNativeOutOfRange = function(freq){
@@ -3495,6 +3506,18 @@
   // kick native tidak mengetik apa-apa. HARUS konsisten dengan
   // NativeMicPitchDetector.Listener & HtmlKeyboardService.java.
   window.onNativeKick = function(){ typeKickAsSpace(); };
+  // Java SUDAH mengetik spasi (jalur langsung). Verifikasi ulang: kalau ternyata perlu autokoreksi /
+  // titik-ganda menurut status JS SEKARANG, hapus spasi Java lalu ulangi lewat jalur normal.
+  window.onNativeKickCommitted = function(ms){
+    if(spaceDirectOk()){
+      _suppressCommit = true;
+      try{ typeKickAsSpace(ms); } finally { _suppressCommit = false; }
+    } else {
+      bridgeDeleteBackward();
+      typeKickAsSpace(ms);
+    }
+    scheduleNoteMapSync();
+  };
   window.onNativeNonTonalIgnored = function(){
     showStatus('Suara tidak dikenali (bukan petikan senar / kick), diabaikan.');
   };
