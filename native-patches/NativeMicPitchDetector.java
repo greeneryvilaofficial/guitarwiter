@@ -256,10 +256,13 @@ public class NativeMicPitchDetector {
 
     // Mode deteksi: true = "Senar + Kick" (kick drum -> spasi), false = "Nada saja"
     // (semua bunyi non-nada diabaikan). Bisa diubah kapan saja, termasuk saat mic jalan.
-    private volatile boolean kickEnabled = true;
+    // Klasifikasi drum/kick DIMATIKAN PERMANEN: bunyi non-nada (kick, tap badan gitar, dll)
+    // sekarang selalu diabaikan, tidak pernah jadi spasi. Ubah ke true untuk menghidupkan lagi.
+    private static final boolean KICK_FEATURE = false;
+    private volatile boolean kickEnabled = KICK_FEATURE;
 
     public void setKickEnabled(boolean enabled) {
-        this.kickEnabled = enabled;
+        this.kickEnabled = KICK_FEATURE && enabled;
     }
 
     // Waktu (ms) dari onset terdeteksi sampai nada dikomit -- bagian yang berasal dari KODE ini.
