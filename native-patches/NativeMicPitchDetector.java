@@ -201,11 +201,21 @@ public class NativeMicPitchDetector {
     //   0 = Ketat  (senar paling aman, kick lebih mudah terlewat)
     //   1 = Normal (bawaan)
     //   2 = Peka   (kick paling mudah tertangkap, palm-mute bass bisa ikut jadi spasi)
+    // Kolom: {rasio bass min (kick), decay maks, prob pitch maks (kick),
+    //         rasio pita-tinggi min (snare/hat), decay min agar nada bass dianggap sustain}.
+    // Kick sering dibaca YIN sebagai nada bass yang yakin (G2/G#2 = angka 4/5), jadi
+    // prob pitch TIDAK lagi jadi penjaga utama di tingkat Normal/Peka; yang menentukan
+    // adalah bentuk energi + meluruh cepat.
     private static final double[][] KICK_LEVELS = {
-            {0.78, 0.45, 0.50},
-            {0.70, 0.55, 0.80},
-            {0.62, 0.65, 1.01},
+            {0.78, 0.45, 0.80, 0.60, 0.50, 0.25, 0.60},
+            {0.70, 0.55, 1.01, 0.50, 0.60, 0.35, 0.60},
+            {0.62, 0.65, 1.01, 0.42, 0.70, 0.50, 0.90},
     };
+    // Kolom 6-7: aturan umum perkusi (tom, snare bodi kuat, dst) -- {decay maks, prob pitch maks}.
+    // Bunyi yang meluruh sangat cepat DAN tidak periodik jelas = drum.
+    private static final double HI_CUTOFF_HZ = 2000.0;    // batas pita-tinggi (snare/hat: derau lebar)
+    private static final double DRUM_BASS_NOTE_MAX_HZ = 200.0; // nada di bawah ini + meluruh cepat + bass dominan = drum
+    private static final double DRUM_BASS_NOTE_MIN_RATIO = 0.65;
     private static final double KICK_MIN_PEAK_RMS = 0.04; // kick lemah/derau kecil tidak dihitung
     // Kick meluruh cepat; senar bass menahan levelnya (rms/puncak masih > ~0.7 saat
     // diukur). Di atas batas ini dianggap senar -> tidak boleh jadi spasi.
@@ -384,7 +394,9 @@ public class NativeMicPitchDetector {
         // onset, untuk KickClassifier.
         final double kickAlpha = 1.0 - Math.exp(-2.0 * Math.PI * KICK_CUTOFF_HZ / this.sampleRate);
         double lp1 = 0, lp2 = 0;
-        double onsetLowE = 0, onsetFullE = 0;
+        double onsetLowE = 0, onsetFullE = 0, onsetHiE = 0;
+        final double hiAlpha = 1.0 - Math.exp(-2.0 * Math.PI * HI_CUTOFF_HZ / this.sampleRate);
+        double lp3 = 0;
 
         // FIX race: stop() mengisi field audioRecord = null dari thread lain. Pegang
         // referensi lokal supaya loop ini tidak kena NullPointerException (yang akan
@@ -404,7 +416,7 @@ public class NativeMicPitchDetector {
             System.arraycopy(window, read, window, 0, BUFFER_SAMPLES - read);
             int writeOffset = BUFFER_SAMPLES - read;
             double sumSq = 0;
-            double hopLowSq = 0;
+            double hopLowSq = 0, hopHiSq = 0;
             for (int i = 0; i < read; i++) {
                 float v = hopRaw[i] / 32768f;
                 window[writeOffset + i] = v;
@@ -412,6 +424,9 @@ public class NativeMicPitchDetector {
                 lp1 += kickAlpha * (v - lp1);
                 lp2 += kickAlpha * (lp1 - lp2);
                 hopLowSq += lp2 * lp2;
+                lp3 += hiAlpha * (v - lp3);
+                double hp = v - lp3;
+                hopHiSq += hp * hp;
             }
             // RMS dihitung cuma dari potongan (hop) yang BARU masuk, bukan dari
             // seluruh window -- supaya onset kedengaran secepat hop-nya sendiri
@@ -431,11 +446,13 @@ public class NativeMicPitchDetector {
                     onsetPeakRms = rms;
                     onsetLowE = hopLowSq;
                     onsetFullE = sumSq;
+                    onsetHiE = hopHiSq;
                     postOnset();
                 }
             } else if (state == STATE_SAMPLING) {
                 onsetLowE += hopLowSq;
                 onsetFullE += sumSq;
+                onsetHiE += hopHiSq;
                 // Terus perbarui puncak RMS sejak onset -- puncak sungguhan sering
                 // baru tercapai beberapa ms SESUDAH hop yang memicu onset (attack
                 // butuh sedikit waktu buat naik penuh), jadi dilacak terus selama
@@ -456,8 +473,8 @@ public class NativeMicPitchDetector {
                     // dan kalau lewat jalur nada dulu, tidak pernah sampai ke sini.
                     // Aman buat senar karena syaratnya sekaligus rasio bass tinggi +
                     // meluruh cepat (senar bass menahan level & rasionya lebih rendah).
-                    boolean kickHit = kickEnabled && isKick(onsetLowE, onsetFullE, onsetPeakRms,
-                            decayRatio, r != null ? r.probability : 0.0);
+                    boolean kickHit = kickEnabled && isDrum(onsetLowE, onsetFullE, onsetHiE, onsetPeakRms,
+                            decayRatio, r != null ? r.probability : 0.0, r != null ? r.freq : 0.0);
                     if (kickHit) {
                         postKick();
                         state = STATE_RELEASING;
@@ -511,7 +528,7 @@ public class NativeMicPitchDetector {
                             // gestur sesaat, bukan sesuatu yang perlu dikonfirmasi
                             // berulang seperti nada. Kick atau bukan -- ditentukan
                             // KickClassifier (spasi cuma untuk kick sungguhan).
-                            resolveNonTonalHit(onsetLowE, onsetFullE, onsetPeakRms, decayRatio, r.probability);
+                            resolveNonTonalHit(onsetLowE, onsetFullE, onsetHiE, onsetPeakRms, decayRatio, r.probability, r.freq);
                             state = STATE_RELEASING;
                             cooldownUntil = now + COOLDOWN_MS;
                             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
@@ -534,7 +551,7 @@ public class NativeMicPitchDetector {
                         // atas (yang MASIH dapat nada, cuma raguan pilih tutsnya) --
                         // di sini bukan nada -- ketik spasi HANYA kalau lolos
                         // KickClassifier, selain itu diabaikan.
-                        resolveNonTonalHit(onsetLowE, onsetFullE, onsetPeakRms, decayRatio, 0.0);
+                        resolveNonTonalHit(onsetLowE, onsetFullE, onsetHiE, onsetPeakRms, decayRatio, 0.0, 0.0);
                         state = STATE_RELEASING;
                         cooldownUntil = now + COOLDOWN_MS;
                         releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
@@ -571,6 +588,7 @@ public class NativeMicPitchDetector {
                     onsetPeakRms = rms;
                     onsetLowE = hopLowSq;
                     onsetFullE = sumSq;
+                    onsetHiE = hopHiSq;
                     releaseBelowCount = 0;
                     postOnset();
                 } else if (now > cooldownUntil && now > releaseWaitUntil) {
@@ -869,23 +887,43 @@ public class NativeMicPitchDetector {
     }
 
     /** True kalau energi sejak onset didominasi pita rendah (<~150Hz) dan cukup keras. */
-    private boolean isKick(double lowE, double fullE, double peakRms,
-                           double decayRatio, double pitchProb) {
+    /**
+     * Pemeriksa DRUM (kick, snare, tom, hat -- semua bunyi perkusi). Senar yang
+     * dipetik menahan levelnya (decayRatio tinggi) sedangkan drum meluruh cepat,
+     * jadi meluruh cepat adalah syarat wajib di setiap aturan di bawah.
+     *   1) kick      : energi didominasi bass, meluruh cepat.
+     *   2) snare/hat : energi pita-tinggi (derau lebar) besar, meluruh cepat, tanpa
+     *                  periodisitas yang jelas.
+     *   3) kick yang dibaca YIN sebagai nada bass (mis. G2/G#2): frekuensi < 200Hz,
+     *                  bass dominan, tapi TIDAK menahan level seperti senar.
+     * HARUS sama persis dengan isDrum() di index.html.
+     */
+    private boolean isDrum(double lowE, double fullE, double hiE, double peakRms,
+                           double decayRatio, double pitchProb, double freq) {
         if (peakRms < KICK_MIN_PEAK_RMS || fullE <= 0) return false;
         double[] lv = KICK_LEVELS[kickLevel];
-        if (decayRatio > lv[1]) return false;   // masih bertahan = senar
-        if (pitchProb >= lv[2]) return false;   // periodik sangat jelas = senar
-        return Math.sqrt(lowE / fullE) >= lv[0];
+        double bassRatio = Math.sqrt(lowE / fullE);
+        double hiRatio = Math.sqrt(hiE / fullE);
+        // 1) kick
+        if (decayRatio <= lv[1] && pitchProb < lv[2] && bassRatio >= lv[0]) return true;
+        // 2) snare / hat
+        if (decayRatio <= Math.min(lv[1], 0.50) && pitchProb < 0.60 && hiRatio >= lv[3]) return true;
+        // 3) kick terbaca sebagai nada bass
+        if (freq > 0 && freq < DRUM_BASS_NOTE_MAX_HZ
+                && bassRatio >= DRUM_BASS_NOTE_MIN_RATIO && decayRatio < lv[4]) return true;
+        // 4) perkusi umum (tom, snare bodi kuat, dst): meluruh sangat cepat & tidak periodik jelas
+        if (decayRatio <= lv[5] && pitchProb < lv[6]) return true;
+        return false;
     }
 
     /**
      * Satu-satunya jalan sebuah bunyi NON-NADA boleh mengetik sesuatu: harus mode
-     * kick aktif DAN lolos isKick(). Selain itu diabaikan. HARUS konsisten dengan
+     * kick aktif DAN lolos isDrum(). Selain itu diabaikan. HARUS konsisten dengan
      * resolveNonTonalHit() di index.html.
      */
-    private void resolveNonTonalHit(double lowE, double fullE, double peakRms,
-                                    double decayRatio, double pitchProb) {
-        if (kickEnabled && isKick(lowE, fullE, peakRms, decayRatio, pitchProb)) postKick();
+    private void resolveNonTonalHit(double lowE, double fullE, double hiE, double peakRms,
+                                    double decayRatio, double pitchProb, double freq) {
+        if (kickEnabled && isDrum(lowE, fullE, hiE, peakRms, decayRatio, pitchProb, freq)) postKick();
         else postNonTonalIgnored();
     }
 }
