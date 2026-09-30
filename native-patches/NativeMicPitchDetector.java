@@ -195,8 +195,20 @@ public class NativeMicPitchDetector {
     // tidak ikut karena di hop pertama datanya belum cukup siklus buat YIN.
     private static final long FAST_READ_MS = 12;
     private static final double FAST_MIN_PROB = 0.90;
-    private static final double FAST_MIN_FREQ = 140.0;
+    // Alias oktaf-naik dari angka (idx 0-9, 82-139Hz) ada di 165-277Hz. Jalur cepat SEBELUMNYA
+    // mulai 140Hz sehingga angka bisa lolos sebagai huruf baris qwerty/asdf. 300Hz = di atas alias.
+    private static final double FAST_MIN_FREQ = 300.0;
     private static final double FAST_MAX_CENTS = 15.0;
+    // ---- ZONA RAWAN OKTAF (angka <-> huruf baris qwerty/asdf) ----
+    // Bacaan < 300Hz bisa saja nada rendah (angka) yang terbaca satu oktaf lebih tinggi, terutama
+    // di bacaan awal ketika data nada di jendela masih sedikit (YIN cenderung memilih periode
+    // setengah karena lebih sedikit bagian transien yang tidak cocok). Untuk zona ini: tunggu
+    // data lebih banyak (umur minimum sejak onset) dan minta bacaan yang sepakat lebih banyak;
+    // bacaan yang barusan dikoreksi oktaf oleh Goertzel dituntut paling banyak.
+    private static final double LOW_ZONE_MAX_FREQ = 300.0;
+    private static final long LOW_ZONE_MIN_AGE_MS = 66;
+    private static final int LOW_ZONE_CONFIRM = 2;
+    private static final int LOW_ZONE_CONFIRM_CORRECTED = 3;
     private static final double TAP_DECAY_RATIO = 0.30;
     private static final double STRONG_PROBABILITY = 0.80;
 
@@ -538,7 +550,13 @@ public class NativeMicPitchDetector {
                             // yang paling ambigu butuh 3 -- lihat catatan requiredConfirm di
                             // deklarasi candidateIdx/candidateCount di atas.
                             int requiredConfirm = centsOffOut[0] < 15 ? 1 : (centsOffOut[0] < 25 ? 2 : 3);
-                            if (candidateCount >= requiredConfirm || sampleTries >= MAX_SAMPLE_TRIES) {
+                            boolean lowZone = r.freq < LOW_ZONE_MAX_FREQ;
+                            if (lowZone) {
+                                requiredConfirm = Math.max(requiredConfirm,
+                                        r.octaveCorrected ? LOW_ZONE_CONFIRM_CORRECTED : LOW_ZONE_CONFIRM);
+                            }
+                            boolean ageOk = !lowZone || (now - lastOnsetAt) >= LOW_ZONE_MIN_AGE_MS;
+                            if ((candidateCount >= requiredConfirm && ageOk) || sampleTries >= MAX_SAMPLE_TRIES) {
                                 // Sudah dapat cukup bacaan berturut yang sepakat (paling
                                 // umum), ATAU jatah percobaan sudah habis -- pakai bacaan
                                 // TERAKHIR yang lolos ini (lebih baik daripada nyerah total).
@@ -752,9 +770,11 @@ public class NativeMicPitchDetector {
     private static final class PitchReading {
         final double freq;
         final double probability;
-        PitchReading(double freq, double probability) {
+        final boolean octaveCorrected;   // true kalau Goertzel menurunkan hasil YIN satu oktaf
+        PitchReading(double freq, double probability, boolean octaveCorrected) {
             this.freq = freq;
             this.probability = probability;
+            this.octaveCorrected = octaveCorrected;
         }
     }
 
@@ -879,7 +899,7 @@ public class NativeMicPitchDetector {
         // masalah yang sama dan sudah teruji aman untuk kasus F2/F3. HARUS
         // sinkron dengan yinDetect() di index.html.
 
-        return new PitchReading(finalFreq, probability);
+        return new PitchReading(finalFreq, probability, finalFreq != rawFreq);
     }
 
     /**
