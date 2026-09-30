@@ -1,0 +1,373 @@
+--- a/www/index.html
++++ b/www/index.html
+@@ -3307,17 +3307,30 @@
+     else if(type==='enter'){ showBubble(el,'↵'); pressEnter(); }
+     else if(type==='literal'){ const c = el.dataset.char; showBubble(el, c===' '?'␣':c); appendText(c); }
+   }
+-  // BARU: dipanggil kalau ada tap/ketukan badan gitar (bunyi keras tapi tidak
+-  // periodik sama sekali). Cari tombol spasi di layout biar dapat feedback
+-  // visual (kedip tombol + bubble) sama seperti tuts lain yang diketuk lewat
+-  // nada, lalu ketik spasi lewat jalur yang sama (appendText -> bridgeCommit)
+-  // yang dipakai autoTypeNote(). HARUS konsisten dengan onPercussiveTap() di
++  // Dipanggil kalau KickClassifier memastikan ini kick drum sungguhan (bunyi
++  // keras, energi didominasi frekuensi rendah). Cari tombol spasi di layout
++  // biar dapat feedback visual (kedip tombol + bubble) sama seperti tuts lain
++  // yang diketuk lewat nada, lalu ketik spasi lewat jalur yang sama
++  // (appendText -> bridgeCommit) yang dipakai autoTypeNote(). HARUS konsisten
++  // dengan onKick() di NativeMicPitchDetector.java.
++  // Dipanggil di titik keputusan mana pun yinDetect() gagal memberi nada valid
++  // (baik "looksPercussive" maupun kehabisan jatah percobaan tanpa periodisitas
++  // sama sekali) -- satu-satunya jalan sebuah bunyi non-tonal boleh mengetik
++  // apa pun. HARUS konsisten dengan resolveNonTonalHit() di
+   // NativeMicPitchDetector.java.
+-  function typePercussiveTapAsSpace(){
++  function resolveNonTonalHit(){
++    if(KickClassifier.isKickByRatio(peakBassRatio, onsetPeakRms)){
++      typeKickAsSpace();
++    } else {
++      showStatus('Suara tidak dikenali (bukan petikan senar / kick), diabaikan.');
++    }
++  }
++
++  function typeKickAsSpace(){
+     const spaceEl = allKeys.find(el => el && el.dataset && el.dataset.type === 'literal' && el.dataset.char === ' ');
+     if(spaceEl){ flash(spaceEl); showBubble(spaceEl, '␣'); }
+     appendText(' ');
+-    showStatus('🥁 Tap terdeteksi → <b>"␣"</b> (spasi)');
++    showStatus('🥁 Kick terdeteksi → <b>"␣"</b> (spasi)');
+   }
+ 
+   function autoTypeNote(idx){
+@@ -3415,14 +3428,56 @@
+   window.onNativeUnclear = function(){
+     showStatus('Nada belum terdeteksi jelas, coba petik lagi.');
+   };
+-  // BARU: tap/ketukan ke badan gitar (bunyi keras tapi SAMA SEKALI tidak
+-  // periodik, beda dari nada yang cuma ambigu di batas kategori) -- dianggap
+-  // gestur sengaja, langsung ketik spasi. HARUS konsisten dengan
+-  // onPercussiveTap() di NativeMicPitchDetector.java / HtmlKeyboardService.java.
+-  window.onNativePercussiveTap = function(){
+-    typePercussiveTapAsSpace();
++  // Kick drum sungguhan (lolos KickClassifier) -- gestur sengaja, ketik spasi.
++  // HARUS konsisten dengan onKick() di NativeMicPitchDetector.java/HtmlKeyboardService.java.
++  window.onNativeKick = function(){
++    typeKickAsSpace();
++  };
++  // Suara keras tapi BUKAN nada gitar valid dan BUKAN kick (ngomong, tepuk
++  // tangan, TV, dst) -- ditolak total, tidak mengetik apa pun. HARUS konsisten
++  // dengan onRejected() di NativeMicPitchDetector.java/HtmlKeyboardService.java.
++  window.onNativeRejected = function(){
++    showStatus('Suara tidak dikenali (bukan petikan senar / kick), diabaikan.');
+   };
+ 
++  // ---------------- Klasifikasi kick drum ----------------
++  // Tanggung jawab tunggal: dari satu potongan sampel mentah, putuskan apakah
++  // ini "dug" kick drum sungguhan (energi didominasi frekuensi rendah, ~<150Hz)
++  // atau sekadar suara keras lain yang spektrumnya lebih lebar (ngomong, tepuk
++  // tangan, TV, dst) -- yang terakhir ini HARUS ditolak, tidak boleh mengetik
++  // apa pun. Dipakai bareng test periodisitas (yinDetect) yang sudah ada: kick
++  // asli juga nyaris tidak periodik, tapi bedanya dari tap/noise lain ada di
++  // DI MANA energinya terkonsentrasi, bukan di ada/tidaknya periodisitas.
++  // HARUS sama persis dengan KickClassifier di NativeMicPitchDetector.java.
++  const KickClassifier = (() => {
++    const BASS_RATIO_THRESHOLD = 0.65;
++    const MIN_RMS = 0.05;
++    // Koefisien low-pass one-pole, cutoff ~150Hz (di bawah spektrum suara/tepuk
++    // tangan yang umumnya menyebar sampai ribuan Hz, tapi mencakup rentang
++    // "boom" kick drum ~50-100Hz).
++    const cutoffAlpha = (sampleRate) => 1 - Math.exp(-2 * Math.PI * 150 / sampleRate);
++
++    /** Filter low-pass satu tahap, dipanggil ulang tiap hop selama satu episode sampling. */
++    function makeState(){ return { lp: 0 }; }
++
++    function accumulateHop(state, samples, sampleRate){
++      const alpha = cutoffAlpha(sampleRate);
++      let lowSumSq = 0;
++      for(let i=0;i<samples.length;i++){
++        state.lp += alpha * (samples[i] - state.lp);
++        lowSumSq += state.lp * state.lp;
++      }
++      return Math.sqrt(lowSumSq / samples.length);
++    }
++
++    /** @returns true kalau rasio energi pita-rendah & level RMS-nya pantas dianggap kick. */
++    function isKickByRatio(bassRatio, fullRms){
++      return fullRms >= MIN_RMS && bassRatio >= BASS_RATIO_THRESHOLD;
++    }
++
++    return { makeState, accumulateHop, isKickByRatio };
++  })();
++
+   // ---------------- Mic: monophonic pitch detection (autocorrelation) ----------------
+   let listening=false, micCtx=null, analyser=null, stream=null, rafId=null, micHopLen=735;
+   // state: 'idle' (siap deteksi onset baru) -> 'sampling' (lagi mengukur nada) ->
+@@ -3430,6 +3485,12 @@
+   let state='idle', sampleAt=0, cooldownUntil=0, smoothedRms=0.001;
+   let sampleTries=0;
+   let onsetPeakRms = 0.001; // puncak RMS sejak onset -- lihat TAP_DECAY_RATIO
++  // Rasio energi pita-rendah TERTINGGI sejak onset -- dilacak sepanjang fase
++  // sampling (sama seperti onsetPeakRms), bukan cuma dari satu hop keputusan,
++  // supaya kick yang "boom"-nya baru penuh beberapa ms sesudah onset tetap
++  // terdeteksi benar.
++  let peakBassRatio = 0;
++  let kickFilterState = KickClassifier.makeState();
+   // BARU: lihat penjelasan lengkap di TAP_DECAY_RATIO NativeMicPitchDetector.java.
+   // HARUS sama persis dengan TAP_DECAY_RATIO & STRONG_PROBABILITY di sana.
+   const TAP_DECAY_RATIO = 0.30;
+@@ -3782,6 +3843,8 @@
+         sampleAt = now + SETTLE_MS;
+         lastOnsetAt = now;
+         onsetPeakRms = rms;
++        peakBassRatio = 0;
++        kickFilterState = KickClassifier.makeState();
+         showStatus('Mendengar petikan…');
+       }
+     } else if(state==='sampling'){
+@@ -3789,6 +3852,11 @@
+       // NativeMicPitchDetector.java (dilacak terus selama fase sampling, bukan
+       // cuma dari satu frame pemicu onset saja).
+       if(rms > onsetPeakRms) onsetPeakRms = rms;
++      // Idem buat rasio energi pita-rendah -- lihat peakBassRatio di deklarasi
++      // variabel state mic.
++      const hopLowRms = KickClassifier.accumulateHop(kickFilterState, buf.subarray(hopStart), micCtx.sampleRate);
++      const hopBassRatio = hopLowRms / (rms + 1e-9);
++      if(hopBassRatio > peakBassRatio) peakBassRatio = hopBassRatio;
+       if(now>=sampleAt){
+         const result = yinDetect(buf, micCtx.sampleRate);
+         sampleTries++;
+@@ -3833,9 +3901,10 @@
+             }
+           } else if(looksPercussive){
+             // Meluruh sangat cepat & periodisitasnya tidak sampai sangat
+-            // meyakinkan -- ini tap, bukan nada. Langsung diputuskan sekarang
+-            // juga, tidak perlu tunggu jatah percobaan habis.
+-            typePercussiveTapAsSpace();
++            // meyakinkan -- bukan nada. Serahkan ke KickClassifier: cuma kick
++            // drum sungguhan yang boleh mengetik (spasi), suara keras lain
++            // (ngomong, tepuk tangan, dll) ditolak total.
++            resolveNonTonalHit();
+             state='releasing';
+             cooldownUntil = now + COOLDOWN_MS;
+             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
+@@ -3853,10 +3922,9 @@
+         } else if(sampleTries >= MAX_SAMPLE_TRIES){
+           // Beberapa frame berturut SAMA SEKALI tidak dapat sinyal periodik
+           // (yinDetect() balikin null terus) walau tadinya cukup keras buat
+-          // memicu onset -- ini ciri khas TAP/ketukan ke badan gitar (bukan
+-          // senar dipetik). Beda dari kasus "ambigu di batas kategori" di atas
+-          // (yang MASIH dapat nada) -- di sini dianggap sengaja: ketik spasi.
+-          typePercussiveTapAsSpace();
++          // memicu onset. Serahkan ke KickClassifier: cuma kick drum sungguhan
++          // yang boleh mengetik (spasi), suara keras lain ditolak total.
++          resolveNonTonalHit();
+           state='releasing';
+           cooldownUntil = now + COOLDOWN_MS;
+           releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
+@@ -3886,6 +3954,8 @@
+         sampleAt = now + SETTLE_MS;
+         lastOnsetAt = now;
+         onsetPeakRms = rms;
++        peakBassRatio = 0;
++        kickFilterState = KickClassifier.makeState();
+         releaseBelowCount = 0;
+         showStatus('Mendengar petikan…');
+       } else if(now>cooldownUntil && now>releaseWaitUntil){
+--- a/native-patches/NativeMicPitchDetector.java
++++ b/native-patches/NativeMicPitchDetector.java
+@@ -40,12 +40,16 @@
+         void onPitchIndex(int idx, double freq); // Nada valid, ketemu indeks tuts-nya
+         void onOutOfRange(double freq);          // Nada kedengaran tapi di luar jangkauan tuts
+         void onUnclear();                        // Sinyal kedengaran tapi nadanya tidak jelas
+-        // BARU: sinyal kedengaran KERAS tapi SAMA SEKALI TIDAK PERIODIK (yinDetect
+-        // gagal total, bukan cuma ambigu di batas kategori) -- ciri khas pukulan/
+-        // ketukan ke badan gitar (bukan senar dipetik). Beda dari onUnclear(): itu
+-        // dipakai kalau ADA nada yang terdeteksi tapi cuma ambigu di batas dua
+-        // kategori tuts, jadi tetap diperlakukan beda (lihat recordLoop()).
+-        void onPercussiveTap();
++        // Sinyal kedengaran KERAS, TIDAK PERIODIK (bukan petikan senar), DAN
++        // energinya didominasi frekuensi rendah (lihat KickClassifier) -- ciri
++        // khas kick drum sungguhan. Satu-satunya kategori bunyi non-tonal yang
++        // boleh mengetik apa pun (selalu spasi).
++        void onKick();
++        // Sinyal kedengaran KERAS & TIDAK PERIODIK tapi TIDAK lolos
++        // KickClassifier (ngomong, tepuk tangan, TV, dst) -- kebijakan aplikasi
++        // ini SENGAJA menolak total kategori ini, tidak boleh mengetik apa pun.
++        // Listener boleh memakainya sekadar buat status UI ("suara diabaikan").
++        void onRejected();
+     }
+ 
+     // Rate cadangan. Rate yang dipakai sebenarnya dipilih di start(): utamakan rate NATIVE
+@@ -183,6 +187,49 @@
+     private static final double TAP_DECAY_RATIO = 0.30;
+     private static final double STRONG_PROBABILITY = 0.80;
+ 
++    /**
++     * Tanggung jawab tunggal: dari energi sinyal mentah, putuskan apakah
++     * sebuah bunyi non-tonal (gagal lolos yinDetect()) adalah kick drum
++     * sungguhan atau bukan. Dipisah dari recordLoop() supaya bisa dites &
++     * ditinjau sendiri tanpa perlu memahami seluruh state machine deteksi
++     * nada. Stateless kecuali low-pass filter internalnya, yang di-reset
++     * eksplisit lewat newFilterState() tiap awal episode sampling.
++     * HARUS sama persis dengan KickClassifier di index.html.
++     */
++    private static final class KickClassifier {
++        private static final double BASS_RATIO_THRESHOLD = 0.65;
++        private static final double MIN_RMS = 0.05;
++        // Cutoff ~150Hz: di bawah spektrum suara/tepuk tangan yang umumnya
++        // menyebar sampai ribuan Hz, tapi mencakup rentang "boom" kick drum
++        // (~50-100Hz).
++        private static final double LOWPASS_CUTOFF_HZ = 150.0;
++
++        /** State low-pass filter satu tahap, hidup selama satu episode sampling. */
++        static final class FilterState {
++            double lp = 0;
++        }
++
++        static FilterState newFilterState() {
++            return new FilterState();
++        }
++
++        /** @return RMS pita-rendah dari satu hop sampel, filter state diperbarui in-place. */
++        static double accumulateHop(FilterState state, float[] samples, int offset, int count, int sampleRate) {
++            double alpha = 1 - Math.exp(-2 * Math.PI * LOWPASS_CUTOFF_HZ / sampleRate);
++            double lowSumSq = 0;
++            for (int i = 0; i < count; i++) {
++                state.lp += alpha * (samples[offset + i] - state.lp);
++                lowSumSq += state.lp * state.lp;
++            }
++            return Math.sqrt(lowSumSq / count);
++        }
++
++        /** @return true kalau rasio energi pita-rendah & level RMS-nya pantas dianggap kick. */
++        static boolean isKick(double peakBassRatio, double peakRms) {
++            return peakRms >= MIN_RMS && peakBassRatio >= BASS_RATIO_THRESHOLD;
++        }
++    }
++
+     // Rentang frekuensi yang masuk akal buat dicari (nada gitar yang dipetakan ke
+     // tuts + sedikit margin). HARUS sama persis dengan MIN/MAX_VALID_FREQ di index.html.
+     private static final double MIN_VALID_FREQ = 440.0 * Math.pow(2, (BASE_MIDI - 3 - 69) / 12.0);
+@@ -338,6 +385,11 @@
+         long lastOnsetAt = 0; // kapan terakhir kali ada onset (normal ATAU retrigger) -- lihat MIN_RETRIGGER_GAP_MS
+         int releaseBelowCount = 0; // berapa hop BERTURUT-TURUT rms sudah di bawah RELEASE_RMS -- lihat RELEASE_CONFIRM_HOPS
+         double onsetPeakRms = 0.001; // puncak RMS sejak onset -- dipakai hitung seberapa cepat sinyal sudah meluruh (lihat TAP_DECAY_RATIO)
++        // Rasio energi pita-rendah TERTINGGI sejak onset -- dilacak sepanjang
++        // fase SAMPLING sama seperti onsetPeakRms, dipakai KickClassifier di
++        // titik keputusan. Direset di awal tiap episode sampling.
++        double peakBassRatio = 0;
++        KickClassifier.FilterState kickFilterState = KickClassifier.newFilterState();
+ 
+         // FIX race: stop() mengisi field audioRecord = null dari thread lain. Pegang
+         // referensi lokal supaya loop ini tidak kena NullPointerException (yang akan
+@@ -378,6 +430,8 @@
+                     sampleAt = now + SETTLE_MS;
+                     lastOnsetAt = now;
+                     onsetPeakRms = rms;
++                    peakBassRatio = 0;
++                    kickFilterState = KickClassifier.newFilterState();
+                     postOnset();
+                 }
+             } else if (state == STATE_SAMPLING) {
+@@ -387,6 +441,10 @@
+                 // fase SAMPLING (baik pas nunggu SETTLE_MS maupun pas benar-benar
+                 // mengukur), bukan cuma diambil dari satu hop pemicu onset saja.
+                 if (rms > onsetPeakRms) onsetPeakRms = rms;
++                // Idem buat rasio energi pita-rendah -- lihat KickClassifier.
++                double hopLowRms = KickClassifier.accumulateHop(kickFilterState, window, writeOffset, read, sampleRate);
++                double hopBassRatio = hopLowRms / (rms + 1e-9);
++                if (hopBassRatio > peakBassRatio) peakBassRatio = hopBassRatio;
+                 if (now >= sampleAt) {
+                     PitchReading r = yinDetect(window, BUFFER_SAMPLES, sampleRate);
+                     sampleTries++;
+@@ -438,12 +496,11 @@
+                             // lanjut ke hop berikutnya (~16.6ms lagi) buat konfirmasi
+                         } else if (looksPercussive) {
+                             // Meluruh sangat cepat & periodisitasnya tidak sampai
+-                            // sangat meyakinkan -- ini tap, bukan nada. Langsung
+-                            // diputuskan sekarang juga (tidak perlu tunggu
+-                            // MAX_SAMPLE_TRIES habis dulu), karena tap adalah
+-                            // gestur sesaat, bukan sesuatu yang perlu dikonfirmasi
+-                            // berulang seperti nada.
+-                            postPercussiveTap();
++                            // sangat meyakinkan -- bukan nada. Serahkan ke
++                            // KickClassifier: cuma kick drum sungguhan yang boleh
++                            // mengetik (spasi), suara keras lain (ngomong, tepuk
++                            // tangan, dll) ditolak total.
++                            resolveNonTonalHit(peakBassRatio, onsetPeakRms);
+                             state = STATE_RELEASING;
+                             cooldownUntil = now + COOLDOWN_MS;
+                             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
+@@ -460,12 +517,9 @@
+                     } else if (sampleTries >= MAX_SAMPLE_TRIES) {
+                         // Beberapa hop berturut SAMA SEKALI tidak dapat sinyal periodik
+                         // (yinDetect() balikin null terus) walau tadinya cukup keras buat
+-                        // memicu onset -- ini ciri khas TAP/ketukan ke badan gitar (bukan
+-                        // senar dipetik, jadi tidak ada nada yang bisa dicocokkan sama
+-                        // sekali). Diperlakukan beda dari "ambigu di batas kategori" di
+-                        // atas (yang MASIH dapat nada, cuma raguan pilih tutsnya) --
+-                        // di sini dianggap sengaja: langsung ketik spasi.
+-                        postPercussiveTap();
++                        // memicu onset. Serahkan ke KickClassifier: cuma kick drum
++                        // sungguhan yang boleh mengetik (spasi), suara keras lain ditolak.
++                        resolveNonTonalHit(peakBassRatio, onsetPeakRms);
+                         state = STATE_RELEASING;
+                         cooldownUntil = now + COOLDOWN_MS;
+                         releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
+@@ -500,6 +554,8 @@
+                     sampleAt = now + SETTLE_MS;
+                     lastOnsetAt = now;
+                     onsetPeakRms = rms;
++                    peakBassRatio = 0;
++                    kickFilterState = KickClassifier.newFilterState();
+                     releaseBelowCount = 0;
+                     postOnset();
+                 } else if (now > cooldownUntil && now > releaseWaitUntil) {
+@@ -788,8 +844,27 @@
+         if (listener == null) return;
+         mainHandler.post(() -> { if (listener != null) listener.onUnclear(); });
+     }
+-    private void postPercussiveTap() {
++    private void postKick() {
+         if (listener == null) return;
+-        mainHandler.post(() -> { if (listener != null) listener.onPercussiveTap(); });
++        mainHandler.post(() -> { if (listener != null) listener.onKick(); });
++    }
++    private void postRejected() {
++        if (listener == null) return;
++        mainHandler.post(() -> { if (listener != null) listener.onRejected(); });
++    }
++
++    /**
++     * Titik keputusan tunggal untuk semua bunyi non-tonal (yinDetect() gagal
++     * memberi nada valid): satu-satunya jalan bunyi seperti ini boleh mengetik
++     * apa pun adalah lolos KickClassifier. Selain itu, ditolak total -- ini
++     * yang membedakan aplikasi ini dari versi sebelumnya yang mengetik spasi
++     * untuk SEMUA bunyi keras non-periodik (termasuk suara, tepuk tangan, dll).
++     */
++    private void resolveNonTonalHit(double peakBassRatio, double peakRms) {
++        if (KickClassifier.isKick(peakBassRatio, peakRms)) {
++            postKick();
++        } else {
++            postRejected();
++        }
+     }
+ }
+--- a/native-patches/HtmlKeyboardService.java
++++ b/native-patches/HtmlKeyboardService.java
+@@ -596,9 +596,14 @@
+                             "window.onNativeUnclear && window.onNativeUnclear()", null);
+                 }
+                 @Override
+-                public void onPercussiveTap() {
++                public void onKick() {
+                     webView.evaluateJavascript(
+-                            "window.onNativePercussiveTap && window.onNativePercussiveTap()", null);
++                            "window.onNativeKick && window.onNativeKick()", null);
++                }
++                @Override
++                public void onRejected() {
++                    webView.evaluateJavascript(
++                            "window.onNativeRejected && window.onNativeRejected()", null);
+                 }
+             });
+             if (started) {

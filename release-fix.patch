@@ -1,0 +1,38 @@
+diff --git a/.github/workflows/android-build.yml b/.github/workflows/android-build.yml
+index 3b8f839..52cf75b 100644
+--- a/.github/workflows/android-build.yml
++++ b/.github/workflows/android-build.yml
+@@ -8,6 +8,8 @@ on:
+ jobs:
+   build:
+     runs-on: ubuntu-latest
++    permissions:
++      contents: write   # WAJIB -- tanpa ini, step "Buat Release" di bawah akan gagal (403)
+     env:
+       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+ 
+@@ -137,3 +139,24 @@ jobs:
+         with:
+           name: app-release-apk
+           path: android/app/build/outputs/apk/release/app-release.apk
++
++      # ---- Bagian ini yang bikin APK-nya nongol di tab "Releases" depan repo,
++      # bukan cuma terkubur di tab Actions -> buka run -> scroll ke Artifacts.
++      # Tag dibuat unik per run (build-<nomor_run>) supaya tiap push ke main
++      # otomatis jadi Release baru, tidak menimpa yang lama.
++      - name: Buat GitHub Release & lampirkan APK
++        if: always()
++        uses: softprops/action-gh-release@v2
++        with:
++          tag_name: build-${{ github.run_number }}
++          name: Build #${{ github.run_number }}
++          body: |
++            Build otomatis dari commit ${{ github.sha }}.
++            - `app-debug.apk` selalu ada (tidak perlu keystore).
++            - `app-release.apk` cuma ada kalau secret KEYSTORE_BASE64 dkk sudah diisi.
++          # fail_on_unmatched_files:false -> kalau release.apk belum ada (keystore
++          # belum disetel), step ini tetap sukses & cuma lampirin yang ada saja.
++          fail_on_unmatched_files: false
++          files: |
++            android/app/build/outputs/apk/debug/app-debug.apk
++            android/app/build/outputs/apk/release/app-release.apk
