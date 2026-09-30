@@ -3,7 +3,7 @@
 // dimuat walau tanpa koneksi internet (penting karena WebView keyboard
 // akan sering dibuka tanpa jaringan aktif).
 
-const CACHE_NAME = 'genjreng-ketik-cache-v11'; // dinaikkan supaya index.html baru (sinkron latensi + kick + jalur cepat + komit langsung) tidak nyangkut di cache lama
+const CACHE_NAME = 'genjreng-ketik-cache-v12'; // dinaikkan supaya index.html baru (sinkron latensi + kick + jalur cepat + komit langsung) tidak nyangkut di cache lama
 const CORE_ASSETS = [
   'index.html',
   'manifest.json',

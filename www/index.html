@@ -3843,8 +3843,8 @@
   // batas itu, niat angka bisa kebaca sebagai huruf/tanda baca atau sebaliknya.
   function categoryOfIndex(idx){
     if(idx>=0 && idx<=9) return 'digit';
-    if(idx===29 || idx===37 || idx===38 || idx===39 || idx===43) return 'functional';
-    if(idx>=40 && idx<=42) return 'punct';
+    if(idx===29 || idx===37 || idx===38 || idx===40 || idx===43) return 'functional';   // shift, hapus, ?123, emoji, enter
+    if(idx===39 || idx===41 || idx===42) return 'punct';                                 // koma, spasi, titik
     return 'letterOrSymbol';
   }
   // Cek apakah sebuah bacaan frekuensi cukup AMAN buat langsung dikomit tanpa
