@@ -196,6 +196,7 @@ public class HtmlKeyboardService extends InputMethodService {
     public void onStartInputView(EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
         // Deteksi kolom privat (password, incognito, dst) tiap kali pindah kolom.
+        noteMapReady = false;   // kolom baru: tunggu peta terbaru dari JS (lihat komit langsung)
         privateField = isPrivateField(info);
         selectionActive = info != null && info.initialSelStart != info.initialSelEnd
                 && info.initialSelStart >= 0 && info.initialSelEnd >= 0;
@@ -562,6 +563,12 @@ public class HtmlKeyboardService extends InputMethodService {
             });
         }
 
+        /** Cadangan bila AndroidKeyboardFast tidak tersedia: peta nada->huruf untuk komit langsung. */
+        @JavascriptInterface
+        public void setNoteMap(final String json) {
+            runOnUiThreadSafe(() -> applyNoteMap(json));
+        }
+
         /**
          * Mulai deteksi nada LEWAT JAVA NATIVE (AudioRecord), bukan getUserMedia().
          * Hasil deteksi dikirim balik ke JS lewat window.onNativePitchIndex/dst.
@@ -582,6 +589,20 @@ public class HtmlKeyboardService extends InputMethodService {
                 }
                 @Override
                 public void onPitchIndex(int idx, double freq) {
+                    // JALUR LANGSUNG: ketik dulu di sini (UI thread, tanpa menunggu JS), lalu
+                    // kabari JS. Kalau peta belum siap / tidak ada InputConnection -> jalur lama.
+                    String direct = directCharFor(idx);
+                    if (direct != null) {
+                        InputConnection dic = getCurrentInputConnection();
+                        if (dic != null) {
+                            dic.commitText(direct, 1);
+                            noteMapReady = false;   // tunggu peta baru dari JS
+                            webView.evaluateJavascript(
+                                    "window.onNativePitchCommitted && window.onNativePitchCommitted("
+                                            + idx + "," + freq + "," + JSONObject.quote(direct) + ")", null);
+                            return;
+                        }
+                    }
                     webView.evaluateJavascript(
                             "window.onNativePitchIndex && window.onNativePitchIndex(" + idx + "," + freq + ")", null);
                 }
@@ -640,6 +661,38 @@ public class HtmlKeyboardService extends InputMethodService {
         }
     }
 
+    // ---- KOMIT LANGSUNG NADA (potong bolak-balik Java->JS->Java) ----
+    // JS mengirim peta idx nada -> huruf (null = jangan diketik langsung, mis. spasi/tanda baca
+    // yang butuh autokoreksi) lewat setNoteMap(). Kalau petanya siap, onPitchIndex() mengetik
+    // hurufnya LANGSUNG ke InputConnection lalu memberi tahu JS (onNativePitchCommitted) supaya
+    // JS memperbarui status tanpa mengetik ulang. Sesudah tiap komit langsung, noteMapReady
+    // dimatikan sampai JS mengirim peta baru (status shift/auto-caps bisa berubah) -- selama itu
+    // nada berikutnya lewat jalur lama yang selalu benar. HARUS konsisten dengan
+    // directNoteChar()/onNativePitchCommitted di index.html. Hanya diakses di UI thread.
+    private String[] noteMap = null;
+    private boolean noteMapReady = false;
+
+    private void applyNoteMap(String json) {
+        try {
+            org.json.JSONArray arr = new org.json.JSONArray(json);
+            String[] m = new String[arr.length()];
+            for (int i = 0; i < m.length; i++) {
+                m[i] = arr.isNull(i) ? null : arr.getString(i);
+            }
+            noteMap = m;
+            noteMapReady = true;
+        } catch (Exception e) {
+            noteMap = null;
+            noteMapReady = false;
+        }
+    }
+
+    /** Huruf yang boleh diketik langsung untuk nada idx, atau null kalau harus lewat JS. */
+    private String directCharFor(int idx) {
+        if (!noteMapReady || noteMap == null || idx < 0 || idx >= noteMap.length) return null;
+        return noteMap[idx];
+    }
+
     /**
      * Penerima pesan dari window.AndroidKeyboardFast.postMessage() di JS
      * (fastBridge() di index.html) -- lihat komentar panjang di onCreateInputView().
@@ -659,6 +712,11 @@ public class HtmlKeyboardService extends InputMethodService {
         if (data == null) return;
         try {
             JSONObject msg = new JSONObject(data);
+            // Peta nada->huruf tidak butuh InputConnection: proses dulu sebelum cek ic.
+            if ("setNoteMap".equals(msg.optString("cmd", ""))) {
+                applyNoteMap(msg.optString("map", ""));
+                return;
+            }
             InputConnection ic = getCurrentInputConnection();
             if (ic == null) return;
             switch (msg.optString("cmd", "")) {
