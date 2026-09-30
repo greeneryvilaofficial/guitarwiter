@@ -2184,8 +2184,8 @@
       { k:'nextWord', t:'Saran kata berikutnya', s:'Gunakan konteks sebelumnya untuk membuat saran' },
       { k:'emojiHint', t:'Menampilkan emoji', s:'Tawarkan emoji yang cocok di kolom saran' } ] },
     { title:'Deteksi mikrofon', items:[
-      { k:'kickSpace', t:'Kick drum → spasi', s:'Aktif: petikan senar mengetik huruf, kick drum mengetik spasi. Mati: hanya petikan senar (mode nada saja)' },
-      { slider:'kickLevel', t:'Sensitivitas kick', s:'0 = ketat (senar paling aman) · 1 = normal · 2 = peka (kick lebih mudah terdeteksi)', min:0, max:2 } ] },
+      { k:'kickSpace', t:'Drum (kick/snare) → spasi', s:'Aktif: petikan senar mengetik huruf, bunyi drum (kick, snare, dst) mengetik spasi. Mati: hanya petikan senar (mode nada saja)' },
+      { slider:'kickLevel', t:'Sensitivitas drum', s:'0 = ketat (senar paling aman) · 1 = normal · 2 = peka (drum lebih mudah terdeteksi)', min:0, max:2 } ] },
     { title:'Ketik geser', items:[
       { k:'glide', t:'Ketik geser', s:'Geser jari dari huruf ke huruf untuk mengetik satu kata' },
       { k:'glideTrail', t:'Jejak geser', s:'Tampilkan pergerakan jari Anda di keyboard' },
@@ -3297,7 +3297,7 @@
     const spaceEl = allKeys.find(el => el && el.dataset && el.dataset.type === 'literal' && el.dataset.char === ' ');
     if(spaceEl){ flash(spaceEl); showBubble(spaceEl, '␣'); }
     appendText(' ');
-    showStatus('🥁 Kick terdeteksi → <b>"␣"</b> (spasi)');
+    showStatus('🥁 Drum terdeteksi → <b>"␣"</b> (spasi)');
   }
   function showNonTonalIgnored(){
     showStatus(prefs.kickSpace
@@ -3435,37 +3435,45 @@
   // dibanding energi total, diakumulasi sejak onset sampai keputusan.
   const KICK_CUTOFF_HZ = 150, KICK_MIN_PEAK_RMS = 0.04;
   // {rasio bass minimum, batas decay, batas prob pitch} -- HARUS sama persis dengan KICK_LEVELS di Java.
-  const KICK_LEVELS = [ [0.78,0.45,0.50], [0.70,0.55,0.80], [0.62,0.65,1.01] ];
-  let onsetLowE = 0, onsetFullE = 0;
+  // Kolom: {rasio bass min (kick), decay maks, prob pitch maks (kick), rasio pita-tinggi min (snare/hat), decay min nada bass sustain, decay maks perkusi umum, prob pitch maks perkusi umum}
+  const KICK_LEVELS = [ [0.78,0.45,0.80,0.60,0.50,0.25,0.60], [0.70,0.55,1.01,0.50,0.60,0.35,0.60], [0.62,0.65,1.01,0.42,0.70,0.50,0.90] ];
+  const HI_CUTOFF_HZ = 2000, DRUM_BASS_NOTE_MAX_HZ = 200, DRUM_BASS_NOTE_MIN_RATIO = 0.65;
+  let onsetLowE = 0, onsetFullE = 0, onsetHiE = 0;
   // Hitung energi (low, full) dari potongan ekor buf sepanjang tailLen sampel.
   // Filter dijalankan dari awal buf supaya state-nya sudah "hangat" di ekor.
   function tailEnergies(buf, sampleRate, tailLen){
     const a = 1 - Math.exp(-2*Math.PI*KICK_CUTOFF_HZ/sampleRate);
-    let lp1=0, lp2=0, low=0, full=0;
+    const ah = 1 - Math.exp(-2*Math.PI*HI_CUTOFF_HZ/sampleRate);
+    let lp1=0, lp2=0, lp3=0, low=0, full=0, hi=0;
     const from = buf.length - tailLen;
     for(let i=0;i<buf.length;i++){
       const v = buf[i];
       lp1 += a*(v-lp1); lp2 += a*(lp1-lp2);
-      if(i>=from){ low += lp2*lp2; full += v*v; }
+      lp3 += ah*(v-lp3);
+      if(i>=from){ low += lp2*lp2; full += v*v; const hp = v-lp3; hi += hp*hp; }
     }
-    return {low, full};
+    return {low, full, hi};
   }
   function accumulateOnsetEnergy(buf, reset){
     const e = tailEnergies(buf, micCtx.sampleRate, Math.round(micCtx.sampleRate/60));
-    if(reset){ onsetLowE = e.low; onsetFullE = e.full; }
-    else { onsetLowE += e.low; onsetFullE += e.full; }
+    if(reset){ onsetLowE = e.low; onsetFullE = e.full; onsetHiE = e.hi; }
+    else { onsetLowE += e.low; onsetFullE += e.full; onsetHiE += e.hi; }
   }
-  function isKick(lowE, fullE, peakRms, decayRatio, pitchProb){
+  // Pemeriksa DRUM (kick/snare/tom/hat). HARUS sama persis dengan isDrum() di Java.
+  function isDrum(lowE, fullE, hiE, peakRms, decayRatio, pitchProb, freq){
     if(peakRms < KICK_MIN_PEAK_RMS || fullE <= 0) return false;
     const lv = KICK_LEVELS[Math.max(0, Math.min(2, prefs.kickLevel|0))];
-    if(decayRatio > lv[1]) return false;   // masih bertahan = senar
-    if(pitchProb >= lv[2]) return false;   // periodik sangat jelas = senar
-    return Math.sqrt(lowE/fullE) >= lv[0];
+    const bassRatio = Math.sqrt(lowE/fullE), hiRatio = Math.sqrt(hiE/fullE);
+    if(decayRatio <= lv[1] && pitchProb < lv[2] && bassRatio >= lv[0]) return true;                 // kick
+    if(decayRatio <= Math.min(lv[1], 0.50) && pitchProb < 0.60 && hiRatio >= lv[3]) return true;    // snare/hat
+    if(freq > 0 && freq < DRUM_BASS_NOTE_MAX_HZ && bassRatio >= DRUM_BASS_NOTE_MIN_RATIO && decayRatio < lv[4]) return true; // kick terbaca nada bass
+    if(decayRatio <= lv[5] && pitchProb < lv[6]) return true;   // perkusi umum: meluruh sangat cepat & tidak periodik jelas
+    return false;
   }
   // Satu-satunya jalan bunyi NON-NADA boleh mengetik: mode kick aktif DAN lolos
-  // isKick(). HARUS konsisten dengan resolveNonTonalHit() di NativeMicPitchDetector.java.
-  function resolveNonTonalHit(decayRatio, pitchProb){
-    if(prefs.kickSpace && isKick(onsetLowE, onsetFullE, onsetPeakRms, decayRatio, pitchProb)) typeKickAsSpace();
+  // isDrum(). HARUS konsisten dengan resolveNonTonalHit() di NativeMicPitchDetector.java.
+  function resolveNonTonalHit(decayRatio, pitchProb, freq){
+    if(prefs.kickSpace && isDrum(onsetLowE, onsetFullE, onsetHiE, onsetPeakRms, decayRatio, pitchProb, freq||0)) typeKickAsSpace();
     else showNonTonalIgnored();
   }
   // Konsensus multi-bacaan (persis cara tuner "pro" bekerja): sebelum ini,
@@ -3832,7 +3840,7 @@
         // TAP_DECAY_RATIO NativeMicPitchDetector.java buat penjelasan lengkap.
         const decayRatio = rms / onsetPeakRms;
         // Kick diperiksa DULUAN sebelum jalur nada -- lihat kickHit di Java.
-        const kickHit = prefs.kickSpace && isKick(onsetLowE, onsetFullE, onsetPeakRms, decayRatio, result ? result.clarity : 0);
+        const kickHit = prefs.kickSpace && isDrum(onsetLowE, onsetFullE, onsetHiE, onsetPeakRms, decayRatio, result ? result.clarity : 0, result ? result.freq : 0);
         if(kickHit){
           typeKickAsSpace();
           state='releasing';
@@ -3878,7 +3886,7 @@
             // Meluruh sangat cepat & periodisitasnya tidak sampai sangat
             // meyakinkan -- ini tap, bukan nada. Langsung diputuskan sekarang
             // juga, tidak perlu tunggu jatah percobaan habis.
-            resolveNonTonalHit(decayRatio, result.clarity);
+            resolveNonTonalHit(decayRatio, result.clarity, result.freq);
             state='releasing';
             cooldownUntil = now + COOLDOWN_MS;
             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
