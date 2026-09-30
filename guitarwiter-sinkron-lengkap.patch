@@ -1,5 +1,5 @@
 diff --git a/native-patches/HtmlKeyboardService.java b/native-patches/HtmlKeyboardService.java
-index ea11f94..d22a344 100644
+index ea11f94..e44864e 100644
 --- a/native-patches/HtmlKeyboardService.java
 +++ b/native-patches/HtmlKeyboardService.java
 @@ -25,10 +25,14 @@ import android.webkit.WebResourceResponse;
@@ -55,10 +55,84 @@ index ea11f94..d22a344 100644
          nativeMic = new NativeMicPitchDetector(this);
  
          // Fitur clipboard: pantau perubahan clipboard sistem Android, lalu
-@@ -604,4 +639,69 @@ public class HtmlKeyboardService extends InputMethodService {
+@@ -161,6 +196,7 @@ public class HtmlKeyboardService extends InputMethodService {
+     public void onStartInputView(EditorInfo info, boolean restarting) {
+         super.onStartInputView(info, restarting);
+         // Deteksi kolom privat (password, incognito, dst) tiap kali pindah kolom.
++        noteMapReady = false;   // kolom baru: tunggu peta terbaru dari JS (lihat komit langsung)
+         privateField = isPrivateField(info);
+         selectionActive = info != null && info.initialSelStart != info.initialSelEnd
+                 && info.initialSelStart >= 0 && info.initialSelEnd >= 0;
+@@ -527,6 +563,12 @@ public class HtmlKeyboardService extends InputMethodService {
+             });
+         }
+ 
++        /** Cadangan bila AndroidKeyboardFast tidak tersedia: peta nada->huruf untuk komit langsung. */
++        @JavascriptInterface
++        public void setNoteMap(final String json) {
++            runOnUiThreadSafe(() -> applyNoteMap(json));
++        }
++
+         /**
+          * Mulai deteksi nada LEWAT JAVA NATIVE (AudioRecord), bukan getUserMedia().
+          * Hasil deteksi dikirim balik ke JS lewat window.onNativePitchIndex/dst.
+@@ -547,6 +589,20 @@ public class HtmlKeyboardService extends InputMethodService {
+                 }
+                 @Override
+                 public void onPitchIndex(int idx, double freq) {
++                    // JALUR LANGSUNG: ketik dulu di sini (UI thread, tanpa menunggu JS), lalu
++                    // kabari JS. Kalau peta belum siap / tidak ada InputConnection -> jalur lama.
++                    String direct = directCharFor(idx);
++                    if (direct != null) {
++                        InputConnection dic = getCurrentInputConnection();
++                        if (dic != null) {
++                            dic.commitText(direct, 1);
++                            noteMapReady = false;   // tunggu peta baru dari JS
++                            webView.evaluateJavascript(
++                                    "window.onNativePitchCommitted && window.onNativePitchCommitted("
++                                            + idx + "," + freq + "," + JSONObject.quote(direct) + ")", null);
++                            return;
++                        }
++                    }
+                     webView.evaluateJavascript(
+                             "window.onNativePitchIndex && window.onNativePitchIndex(" + idx + "," + freq + ")", null);
+                 }
+@@ -604,4 +660,106 @@ public class HtmlKeyboardService extends InputMethodService {
              r.run();
          }
      }
++
++    // ---- KOMIT LANGSUNG NADA (potong bolak-balik Java->JS->Java) ----
++    // JS mengirim peta idx nada -> huruf (null = jangan diketik langsung, mis. spasi/tanda baca
++    // yang butuh autokoreksi) lewat setNoteMap(). Kalau petanya siap, onPitchIndex() mengetik
++    // hurufnya LANGSUNG ke InputConnection lalu memberi tahu JS (onNativePitchCommitted) supaya
++    // JS memperbarui status tanpa mengetik ulang. Sesudah tiap komit langsung, noteMapReady
++    // dimatikan sampai JS mengirim peta baru (status shift/auto-caps bisa berubah) -- selama itu
++    // nada berikutnya lewat jalur lama yang selalu benar. HARUS konsisten dengan
++    // directNoteChar()/onNativePitchCommitted di index.html. Hanya diakses di UI thread.
++    private String[] noteMap = null;
++    private boolean noteMapReady = false;
++
++    private void applyNoteMap(String json) {
++        try {
++            org.json.JSONArray arr = new org.json.JSONArray(json);
++            String[] m = new String[arr.length()];
++            for (int i = 0; i < m.length; i++) {
++                m[i] = arr.isNull(i) ? null : arr.getString(i);
++            }
++            noteMap = m;
++            noteMapReady = true;
++        } catch (Exception e) {
++            noteMap = null;
++            noteMapReady = false;
++        }
++    }
++
++    /** Huruf yang boleh diketik langsung untuk nada idx, atau null kalau harus lewat JS. */
++    private String directCharFor(int idx) {
++        if (!noteMapReady || noteMap == null || idx < 0 || idx >= noteMap.length) return null;
++        return noteMap[idx];
++    }
 +
 +    /**
 +     * Penerima pesan dari window.AndroidKeyboardFast.postMessage() di JS
@@ -79,6 +153,11 @@ index ea11f94..d22a344 100644
 +        if (data == null) return;
 +        try {
 +            JSONObject msg = new JSONObject(data);
++            // Peta nada->huruf tidak butuh InputConnection: proses dulu sebelum cek ic.
++            if ("setNoteMap".equals(msg.optString("cmd", ""))) {
++                applyNoteMap(msg.optString("map", ""));
++                return;
++            }
 +            InputConnection ic = getCurrentInputConnection();
 +            if (ic == null) return;
 +            switch (msg.optString("cmd", "")) {
@@ -126,10 +205,10 @@ index ea11f94..d22a344 100644
 +    }
  }
 diff --git a/www/index.html b/www/index.html
-index 12c79c3..0f26178 100644
+index 12c79c3..576b4a8 100644
 --- a/www/index.html
 +++ b/www/index.html
-@@ -964,22 +964,45 @@
+@@ -964,22 +964,86 @@
    function hasAndroidBridge(){
      return !!(window.AndroidKeyboard && window.AndroidKeyboard.commitText);
    }
@@ -153,10 +232,51 @@ index 12c79c3..0f26178 100644
 +      return true;
 +    }catch(e){ return false; }
 +  }
++  // ---- KOMIT LANGSUNG DARI JAVA (potong 2x bolak-balik antar proses saat ngetik nada) ----
++  // Dulu: Java tahu nada -> evaluateJavascript (IPC ke proses WebView) -> JS memilih huruf ->
++  // postMessage (IPC balik) -> baru commitText. Sekarang JS mengirim "peta nada -> huruf"
++  // untuk keadaan keyboard SAAT INI (sendNoteMap), dan Java langsung mengetik hurufnya begitu
++  // nada terdeteksi, lalu memberi tahu JS (onNativePitchCommitted) supaya pelacak teks, saran
++  // kata, shift, dst tetap sinkron. Spasi/tanda baca/hapus/enter TIDAK ada di peta (butuh
++  // autokoreksi & logika lain di JS dulu) -> tetap lewat jalur lama.
++  // Kill-switch: ubah ke false = tidak pernah mengirim peta -> Java selalu pakai jalur lama.
++  const DIRECT_NOTE_COMMIT = true;
++  var _suppressCommit = false, _nmTimer = null, _nmAfterCommit = false;
++  function directNoteChar(idx){
++    if(!DIRECT_NOTE_COMMIT) return null;
++    if(mode !== 'letters' && mode !== 'symbols') return null;   // emoji dll -> jalur lama
++    if(scriptLang() || isComposing()) return null;               // huruf non-Latin disusun dulu
++    if(prefs.autoSpacePunct) return null;                        // menyisipkan spasi SEBELUM huruf
++    const el = allKeys[idx];
++    if(!el || el.dataset.type !== 'note') return null;           // spasi/tanda baca/hapus/enter -> jalur lama
++    const base = el.dataset.origChar;
++    let ch;
++    if(mode === 'symbols' && el.dataset.symbolChar) ch = el.dataset.symbolChar;
++    else ch = (shiftActive && /^[a-z]$/.test(base)) ? base.toUpperCase() : base;
++    if(!ch || ch.length !== 1 || AC_TRIGGERS.has(ch)) return null;   // pemicu autokoreksi -> jalur lama
++    return ch;
++  }
++  function sendNoteMap(){
++    if(!DIRECT_NOTE_COMMIT) return;
++    let json;
++    try{
++      const m = []; for(let i = 0; i < NOTE_COUNT; i++) m.push(directNoteChar(i));
++      json = JSON.stringify(m);
++    }catch(e){ return; }
++    if(fastBridge('setNoteMap', {map: json})) return;
++    const a = window.AndroidKeyboard;
++    if(a && a.setNoteMap){ try{ a.setNoteMap(json); }catch(e){} }
++  }
++  // Digabung (setTimeout 0) supaya rentetan perubahan status (mode+shift+bahasa) cuma kirim satu kali.
++  function scheduleNoteMapSync(){
++    if(_nmTimer !== null) return;
++    _nmTimer = setTimeout(()=>{ _nmTimer = null; sendNoteMap(); }, 0);
++  }
    var undoInfo = null, lastSpaceAt = 0;
    var lastLocalEdit = 0;   // waktu terakhir KITA mengubah isi kolom (dipakai window.onFieldText)
    function bridgeCommit(str){
      lastLocalEdit = Date.now();
++    if(_suppressCommit) return;   // huruf ini SUDAH diketik langsung oleh Java (lihat onNativePitchCommitted)
 +    if(fastBridge('commitText', {text: str})) return;
      if(hasAndroidBridge()){
        try{ window.AndroidKeyboard.commitText(str); }catch(e){}
@@ -175,7 +295,17 @@ index 12c79c3..0f26178 100644
      if(window.AndroidKeyboard && window.AndroidKeyboard.sendEnter){
        try{ window.AndroidKeyboard.sendEnter(); return true; }catch(e){}
      }
-@@ -1173,6 +1196,7 @@
+@@ -1015,7 +1079,8 @@
+   function scheduleSuggestions(){
+     if(suggestScheduled) return;
+     suggestScheduled = true;
+-    requestAnimationFrame(()=>{ suggestScheduled = false; updateAutoCapsLocal(); renderSuggestions(); });
++    requestAnimationFrame(()=>{ suggestScheduled = false; updateAutoCapsLocal(); renderSuggestions();
++      if(_nmAfterCommit){ _nmAfterCommit = false; sendNoteMap(); } });   // Java menunggu peta baru sesudah komit langsung
+   }
+   function appendText(str){
+     if(selectionActive){ if(isComposing()) abortCompose(); resetTrackedText(); selectionActive = false; }   // ketikan menggantikan blok biru
+@@ -1173,6 +1238,7 @@
    // ---------------- Bridge tambahan: hapus beberapa karakter sekaligus (dipakai saat ganti kata via prediksi) ----------------
    function bridgeDeleteBackwardN(n){
      lastLocalEdit = Date.now();
@@ -183,7 +313,24 @@ index 12c79c3..0f26178 100644
      if(window.AndroidKeyboard && window.AndroidKeyboard.deleteBackwardN){
        try{ window.AndroidKeyboard.deleteBackwardN(n); return; }catch(e){}
      }
-@@ -1653,7 +1677,8 @@
+@@ -1503,7 +1569,7 @@
+   // Seleksi (blok biru) di kolom aplikasi. Diisi dari Java (onUpdateSelection). Dipakai cuma
+   // untuk menyegarkan pelacak teks lokal; PENGHAPUSAN seleksinya sendiri dilakukan Java.
+   var selectionActive = false;
+-  window.onSelectionChanged = function(on){ selectionActive = !!on; };
++  window.onSelectionChanged = function(on){ selectionActive = !!on; scheduleNoteMapSync(); };
+   function resetTrackedText(){ text = ''; cursorPos = 0; lastCompletedWord = ''; noLearnBefore = 0; }
+ 
+   // Pelacak teks lokal (text/cursorPos) bisa "ketinggalan" kalau isi kolom diubah TANPA lewat keyboard ini:
+@@ -1525,6 +1591,7 @@
+ 
+   window.onPrivateField = function(on){
+     privateField = !!on;
++    scheduleNoteMapSync();
+     if(typeof updateNumRow === 'function') updateNumRow();          // baris angka otomatis untuk kolom sandi
+     resetTrackedText();                                       // jangan bawa teks kolom lain (apalagi password) ke kolom berikutnya
+     if(typeof lastCompletedWord !== 'undefined') lastCompletedWord = '';
+@@ -1653,9 +1720,10 @@
      sound:false, soundVol:60, haptic:true, popup:true,
      numRowAlways:false, numRowPass:true, showEmojiKey:true, showComma:true, showPeriod:true,
      glide:true, glideTrail:true, swipeDel:true, spaceCursor:true,
@@ -191,9 +338,45 @@ index 12c79c3..0f26178 100644
 +    nextWord:true, emojiHint:true, noOffensive:true,
 +    kickEnabled:true, kickLevel:1 };   // kick: true = Senar + Kick (kick -> spasi), false = Nada saja; level 0 ketat / 1 normal / 2 peka
    try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); }catch(e){}
-   function savePrefs(){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }catch(e){} }
+-  function savePrefs(){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }catch(e){} }
++  function savePrefs(){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }catch(e){} scheduleNoteMapSync(); }
  
-@@ -3289,11 +3314,14 @@
+   // ---------------- Kamus tambahan opsional: www/dict/<kode>.txt (satu kata per baris / dipisah spasi) ----------------
+   // Kalau file itu ada, isinya ditambahkan ke kamus bahasa tsb tanpa perlu mengubah index.html.
+@@ -1812,7 +1880,7 @@
+     finishCompose(false, true);
+     appendText(' ');                                     // spasi -> kata ikut dipelajari lewat batas kata
+   }
+-  window.onComposingLost = function(){ compose = ''; composeOut = ''; };   // kursor dipindah / teks diganti aplikasi
++  window.onComposingLost = function(){ compose = ''; composeOut = ''; scheduleNoteMapSync(); };   // kursor dipindah / teks diganti aplikasi
+ 
+   // ---------------- Koreksi otomatis saat spasi/tanda baca (dengan "urungkan" lewat hapus) ----------------
+   const AC_TRIGGERS = new Set([' ', '.', ',', '!', '?', ';', ':']);
+@@ -1981,6 +2049,7 @@
+     if(!LANGS[lang]) lang = enabledLangs[0];
+     if(isComposing()) finishCompose(false);
+     currentLang = lang;
++    scheduleNoteMapSync();
+     try{ localStorage.setItem(LANG_KEY, currentLang); }catch(e){}
+     if(!learnedWords[currentLang]) learnedWords[currentLang] = {};
+     if(!bigrams[currentLang]) bigrams[currentLang] = {};
+@@ -2523,6 +2592,7 @@
+   }
+ 
+   function updateShiftVisual(){
++    scheduleNoteMapSync();
+     const shiftBtnEl = allKeys[29];
+     shiftBtnEl.classList.toggle('shift-on', shiftActive && !capsLock);
+     shiftBtnEl.classList.toggle('caps-lock', capsLock);
+@@ -2598,6 +2668,7 @@
+   function setMode(newMode){
+     if(newMode === 'symbols' && mode !== 'symbols') symPage = 1;
+     mode = newMode;
++    scheduleNoteMapSync();
+     keyboardEl2.style.display = '';          // panel emoji lama tidak dipakai lagi: diganti panel media (menutupi tuts)
+     emojiPanelEl.style.display = 'none';
+     // Baris angka cuma ditampilkan di mode simbol (?123), sama seperti Gboard --
+@@ -3289,11 +3360,14 @@
    // nada, lalu ketik spasi lewat jalur yang sama (appendText -> bridgeCommit)
    // yang dipakai autoTypeNote(). HARUS konsisten dengan onPercussiveTap() di
    // NativeMicPitchDetector.java.
@@ -210,7 +393,34 @@ index 12c79c3..0f26178 100644
    }
  
    function autoTypeNote(idx){
-@@ -3391,16 +3419,18 @@
+@@ -3385,22 +3459,45 @@
+       showStatus('Nada <b>'+noteName+'</b> ('+Math.round(freq)+' Hz) → <b>"'+label+'"</b>');
+     }
+   };
++  // Java SUDAH mengetik `ch` langsung (jalur komit langsung). Di sini JS cuma memperbarui statusnya
++  // (teks terlacak, saran, shift, belajar kata) TANPA mengirim commit lagi (_suppressCommit).
++  // Verifikasi: kalau huruf yang seharusnya menurut status JS SEKARANG beda dari kiriman Java
++  // (peta di Java ketinggalan), hapus huruf Java itu lalu ketik ulang lewat jalur normal.
++  window.onNativePitchCommitted = function(idx, freq, ch){
++    let typed;
++    const expected = directNoteChar(idx);
++    if(expected !== null && expected === ch){
++      _suppressCommit = true;
++      try{ typed = autoTypeNote(idx); } finally { _suppressCommit = false; }
++    } else {
++      bridgeDeleteBackward();
++      typed = autoTypeNote(idx);
++    }
++    _nmAfterCommit = true;                                   // kirim peta baru begitu status (shift/auto-caps) settle
++    setTimeout(()=>{ if(_nmAfterCommit){ _nmAfterCommit = false; sendNoteMap(); } }, 60);   // cadangan kalau rAF tertunda
++    if(idx>=0 && idx<NOTE_COUNT){
++      const label = (typed===' ') ? '␣' : (typed==='\n' ? '↵' : typed);
++      showStatus('Nada <b>'+NOTES[idx].name+'</b> ('+Math.round(freq)+' Hz) → <b>"'+label+'"</b>');
++    }
++  };
+   window.onNativeOutOfRange = function(freq){
+     showStatus('Nada di luar jangkauan '+NOTES[0].name+'–'+NOTES[NOTE_COUNT-1].name+' ('+Math.round(freq)+' Hz).');
+   };
    window.onNativeUnclear = function(){
      showStatus('Nada belum terdeteksi jelas, coba petik lagi.');
    };
@@ -236,7 +446,7 @@ index 12c79c3..0f26178 100644
    // state: 'idle' (siap deteksi onset baru) -> 'sampling' (lagi mengukur nada) ->
    // 'releasing' (nunggu senar benar-benar mereda) -> balik ke 'idle'.
    let state='idle', sampleAt=0, cooldownUntil=0, smoothedRms=0.001;
-@@ -3410,6 +3440,34 @@
+@@ -3410,6 +3507,34 @@
    // HARUS sama persis dengan TAP_DECAY_RATIO & STRONG_PROBABILITY di sana.
    const TAP_DECAY_RATIO = 0.30;
    const STRONG_PROBABILITY = 0.80;
@@ -271,7 +481,7 @@ index 12c79c3..0f26178 100644
    // Konsensus multi-bacaan (persis cara tuner "pro" bekerja): sebelum ini,
    // begitu SATU bacaan lolos ambang confidence langsung dikunci -- itu bikin
    // rawan ketuker kalau kebetulan satu bacaan itu meleset. Sekarang minta
-@@ -3449,6 +3507,17 @@
+@@ -3449,6 +3574,17 @@
    // RETRIGGER_RATIO + RELEASE_RMS). HARUS sama persis dengan COOLDOWN_MS di
    // NativeMicPitchDetector.java.
    const COOLDOWN_MS = 70;
@@ -289,7 +499,7 @@ index 12c79c3..0f26178 100644
    // PENTING (fix "kedeteksi ganda / dobel ketikan"): dulu, begitu COOLDOWN_MS
    // lewat, sistem langsung siap mendeteksi onset baru lagi -- padahal senar
    // gitar yang baru dipetik itu MASIH BERDENGUNG jauh lebih lama dari 180ms.
-@@ -3715,10 +3784,29 @@
+@@ -3715,10 +3851,29 @@
  
    function micLoop(){
      if(!listening) return;
@@ -322,7 +532,7 @@ index 12c79c3..0f26178 100644
      const now = performance.now();
  
      if(state==='idle'){
-@@ -3732,12 +3820,13 @@
+@@ -3732,12 +3887,13 @@
          state='sampling';
          sampleTries=0;
          candidateIdx=-1; candidateCount=0;
@@ -338,7 +548,7 @@ index 12c79c3..0f26178 100644
          showStatus('Mendengar petikan…');
        }
      } else if(state==='sampling'){
-@@ -3745,13 +3834,22 @@
+@@ -3745,13 +3901,22 @@
        // NativeMicPitchDetector.java (dilacak terus selama fase sampling, bukan
        // cuma dari satu frame pemicu onset saja).
        if(rms > onsetPeakRms) onsetPeakRms = rms;
@@ -362,7 +572,7 @@ index 12c79c3..0f26178 100644
            const chk = isCategorySafe(result.freq, result.clarity);
            // BARU: walau isCategorySafe() bilang "aman", kalau sinyalnya sudah
            // meluruh SANGAT cepat (ciri tap) DAN periodisitasnya tidak sampai
-@@ -3774,7 +3872,7 @@
+@@ -3774,7 +3939,7 @@
              // requiredConfirm ADAPTIF -- HARUS sama persis dengan requiredConfirm
              // di NativeMicPitchDetector.java.
              const requiredConfirm = chk.centsOff < 12 ? 1 : (chk.centsOff < 22 ? 2 : 3);
@@ -371,7 +581,7 @@ index 12c79c3..0f26178 100644
                // Sudah dapat cukup bacaan berturut yang sepakat (paling umum),
                // ATAU jatah percobaan sudah habis -- pakai bacaan TERAKHIR yang
                // lolos ini (lebih baik daripada nyerah total).
-@@ -3790,12 +3888,13 @@
+@@ -3790,12 +3955,13 @@
            } else if(looksPercussive){
              // Meluruh sangat cepat & periodisitasnya tidak sampai sangat
              // meyakinkan -- ini tap, bukan nada. Langsung diputuskan sekarang
@@ -388,7 +598,7 @@ index 12c79c3..0f26178 100644
              // Bacaannya persis di batas dua kategori tuts berbeda (mis. angka vs
              // huruf/tanda baca) dan belum cukup yakin -- coba baca ulang dulu
              // daripada asal tebak dan salah kategori.
-@@ -3806,13 +3905,13 @@
+@@ -3806,13 +3972,13 @@
              cooldownUntil = now + COOLDOWN_MS;
              releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
            }
@@ -405,7 +615,7 @@ index 12c79c3..0f26178 100644
            state='releasing';
            cooldownUntil = now + COOLDOWN_MS;
            releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
-@@ -3839,9 +3938,10 @@
+@@ -3839,9 +4005,10 @@
          state='sampling';
          sampleTries=0;
          candidateIdx=-1; candidateCount=0;
@@ -417,15 +627,16 @@ index 12c79c3..0f26178 100644
          releaseBelowCount = 0;
          showStatus('Mendengar petikan…');
        } else if(now>cooldownUntil && now>releaseWaitUntil){
-@@ -3874,6 +3974,7 @@
+@@ -3874,6 +4041,8 @@
      if(hasNativeMicBridge()){
        const ok = window.AndroidKeyboard.startNativeMic();
        if(ok){
 +        syncKickToNative();
++        sendNoteMap();
          listening = true;
          micToolBtn.classList.add('on');
        }
-@@ -3898,6 +3999,20 @@
+@@ -3898,6 +4067,20 @@
      analyser = micCtx.createAnalyser();
      analyser.fftSize = 4096;
      src.connect(analyser);
@@ -447,7 +658,7 @@ index 12c79c3..0f26178 100644
      document.getElementById('micToolBtn').classList.add('on');
      showStatus('Mendengarkan… petik satu nada per satu.');
 diff --git a/www/sw.js b/www/sw.js
-index 6ca4acd..a997b2d 100644
+index 6ca4acd..c972694 100644
 --- a/www/sw.js
 +++ b/www/sw.js
 @@ -3,7 +3,7 @@
@@ -455,7 +666,7 @@ index 6ca4acd..a997b2d 100644
  // akan sering dibuka tanpa jaringan aktif).
  
 -const CACHE_NAME = 'genjreng-ketik-cache-v3'; // dinaikkan supaya index.html versi Material 3 Expressive tidak nyangkut di cache lama
-+const CACHE_NAME = 'genjreng-ketik-cache-v4'; // dinaikkan supaya index.html baru (sinkron latensi + kick + jalur cepat) tidak nyangkut di cache lama
++const CACHE_NAME = 'genjreng-ketik-cache-v5'; // dinaikkan supaya index.html baru (sinkron latensi + kick + jalur cepat + komit langsung) tidak nyangkut di cache lama
  const CORE_ASSETS = [
    'index.html',
    'manifest.json',
