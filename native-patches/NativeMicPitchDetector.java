@@ -196,13 +196,20 @@ public class NativeMicPitchDetector {
     // Diketatkan dari 0.60 setelah uji simulasi: senar bass (E2 terbuka, palm-mute)
     // ikut lolos sebagai "kick" di 0.60 sehingga petikan malah mengetik spasi.
     // Senar bass tertinggi ~0.68, kick ~0.78-0.85 -> 0.72 memisahkan keduanya.
-    private static final double KICK_BASS_RATIO = 0.72;   // rasio RMS pita-rendah / RMS total
+    // Tiga tingkat sensitivitas (Setelan -> "Sensitivitas kick"), HARUS sama persis
+    // dengan KICK_LEVELS di index.html: {rasio bass minimum, batas decay, batas prob pitch}.
+    //   0 = Ketat  (senar paling aman, kick lebih mudah terlewat)
+    //   1 = Normal (bawaan)
+    //   2 = Peka   (kick paling mudah tertangkap, palm-mute bass bisa ikut jadi spasi)
+    private static final double[][] KICK_LEVELS = {
+            {0.78, 0.45, 0.50},
+            {0.70, 0.55, 0.80},
+            {0.62, 0.65, 1.01},
+    };
     private static final double KICK_MIN_PEAK_RMS = 0.04; // kick lemah/derau kecil tidak dihitung
     // Kick meluruh cepat; senar bass menahan levelnya (rms/puncak masih > ~0.7 saat
     // diukur). Di atas batas ini dianggap senar -> tidak boleh jadi spasi.
-    private static final double KICK_MAX_DECAY_RATIO = 0.55;
     // Kalau YIN menemukan periodisitas yang meyakinkan, itu petikan senar, bukan kick.
-    private static final double KICK_MAX_PITCH_PROB = 0.50;
 
     // Rentang frekuensi yang masuk akal buat dicari (nada gitar yang dipetakan ke
     // tuts + sedikit margin). HARUS sama persis dengan MIN/MAX_VALID_FREQ di index.html.
@@ -238,6 +245,12 @@ public class NativeMicPitchDetector {
 
     public void setKickEnabled(boolean enabled) {
         this.kickEnabled = enabled;
+    }
+
+    private volatile int kickLevel = 1;
+
+    public void setKickLevel(int level) {
+        this.kickLevel = Math.max(0, Math.min(KICK_LEVELS.length - 1, level));
     }
 
     public NativeMicPitchDetector(Context context) {
@@ -438,7 +451,19 @@ public class NativeMicPitchDetector {
                     // "ada/tidaknya periodisitas".
                     double decayRatio = rms / onsetPeakRms;
 
-                    if (r != null) {
+                    // Kick diperiksa DULUAN, sebelum jalur nada: kick dengan "boom"
+                    // ~60-100Hz sering dibaca YIN sebagai nada rendah yang cukup yakin
+                    // dan kalau lewat jalur nada dulu, tidak pernah sampai ke sini.
+                    // Aman buat senar karena syaratnya sekaligus rasio bass tinggi +
+                    // meluruh cepat (senar bass menahan level & rasionya lebih rendah).
+                    boolean kickHit = kickEnabled && isKick(onsetLowE, onsetFullE, onsetPeakRms,
+                            decayRatio, r != null ? r.probability : 0.0);
+                    if (kickHit) {
+                        postKick();
+                        state = STATE_RELEASING;
+                        cooldownUntil = now + COOLDOWN_MS;
+                        releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
+                    } else if (r != null) {
                         int[] idxOut = new int[1];
                         double[] centsOffOut = new double[1];
                         boolean safe = isCategorySafe(r.freq, r.probability, idxOut, centsOffOut);
@@ -844,12 +869,13 @@ public class NativeMicPitchDetector {
     }
 
     /** True kalau energi sejak onset didominasi pita rendah (<~150Hz) dan cukup keras. */
-    private static boolean isKick(double lowE, double fullE, double peakRms,
-                                  double decayRatio, double pitchProb) {
+    private boolean isKick(double lowE, double fullE, double peakRms,
+                           double decayRatio, double pitchProb) {
         if (peakRms < KICK_MIN_PEAK_RMS || fullE <= 0) return false;
-        if (decayRatio > KICK_MAX_DECAY_RATIO) return false;   // masih bertahan = senar
-        if (pitchProb >= KICK_MAX_PITCH_PROB) return false;    // periodik jelas = senar
-        return Math.sqrt(lowE / fullE) >= KICK_BASS_RATIO;
+        double[] lv = KICK_LEVELS[kickLevel];
+        if (decayRatio > lv[1]) return false;   // masih bertahan = senar
+        if (pitchProb >= lv[2]) return false;   // periodik sangat jelas = senar
+        return Math.sqrt(lowE / fullE) >= lv[0];
     }
 
     /**
