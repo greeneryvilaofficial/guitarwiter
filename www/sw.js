@@ -3,7 +3,7 @@
 // dimuat walau tanpa koneksi internet (penting karena WebView keyboard
 // akan sering dibuka tanpa jaringan aktif).
 
-const CACHE_NAME = 'genjreng-ketik-cache-v3'; // dinaikkan supaya index.html versi Material 3 Expressive tidak nyangkut di cache lama
+const CACHE_NAME = 'genjreng-ketik-cache-v4'; // dinaikkan supaya index.html baru (sinkron latensi + kick + jalur cepat) tidak nyangkut di cache lama
 const CORE_ASSETS = [
   'index.html',
   'manifest.json',
@@ -14,7 +14,11 @@ const CORE_ASSETS = [
 // Saat pertama kali dipasang: simpan file inti ke cache.
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS))
+    // Satu per satu + tangkap error: cache.addAll() gagal TOTAL kalau satu aset saja
+    // hilang/404 (mis. icon belum ada), sehingga service worker tidak pernah terpasang.
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.all(CORE_ASSETS.map((url) => cache.add(url).catch(() => {})))
+    )
   );
   self.skipWaiting();
 });
