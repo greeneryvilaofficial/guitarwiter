@@ -1654,7 +1654,7 @@
     numRowAlways:false, numRowPass:true, showEmojiKey:true, showComma:true, showPeriod:true,
     glide:true, glideTrail:true, swipeDel:true, spaceCursor:true,
     nextWord:true, emojiHint:true, noOffensive:true,
-    kickSpace:true };
+    kickSpace:true, kickLevel:1 };
   try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); }catch(e){}
   function savePrefs(){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }catch(e){} }
 
@@ -2184,7 +2184,8 @@
       { k:'nextWord', t:'Saran kata berikutnya', s:'Gunakan konteks sebelumnya untuk membuat saran' },
       { k:'emojiHint', t:'Menampilkan emoji', s:'Tawarkan emoji yang cocok di kolom saran' } ] },
     { title:'Deteksi mikrofon', items:[
-      { k:'kickSpace', t:'Kick drum → spasi', s:'Aktif: petikan senar mengetik huruf, kick drum mengetik spasi. Mati: hanya petikan senar (mode nada saja)' } ] },
+      { k:'kickSpace', t:'Kick drum → spasi', s:'Aktif: petikan senar mengetik huruf, kick drum mengetik spasi. Mati: hanya petikan senar (mode nada saja)' },
+      { slider:'kickLevel', t:'Sensitivitas kick', s:'0 = ketat (senar paling aman) · 1 = normal · 2 = peka (kick lebih mudah terdeteksi)', min:0, max:2 } ] },
     { title:'Ketik geser', items:[
       { k:'glide', t:'Ketik geser', s:'Geser jari dari huruf ke huruf untuk mengetik satu kata' },
       { k:'glideTrail', t:'Jejak geser', s:'Tampilkan pergerakan jari Anda di keyboard' },
@@ -2234,7 +2235,7 @@
         row.appendChild(txt);
         if(it.slider){
           const r = gsMk('input', 'gs-range'); r.type = 'range'; r.min = it.min; r.max = it.max; r.value = prefs[it.slider];
-          r.addEventListener('input', ()=>{ prefs[it.slider] = +r.value; savePrefs(); });
+          r.addEventListener('input', ()=>{ prefs[it.slider] = +r.value; savePrefs(); if(it.slider === 'kickLevel') syncKickMode(); });
           r.addEventListener('change', ()=>{ clickSound(true); });
           row.appendChild(r);
         } else {
@@ -3308,6 +3309,9 @@
     if(window.AndroidKeyboard && window.AndroidKeyboard.setKickEnabled){
       window.AndroidKeyboard.setKickEnabled(!!prefs.kickSpace);
     }
+    if(window.AndroidKeyboard && window.AndroidKeyboard.setKickLevel){
+      window.AndroidKeyboard.setKickLevel(prefs.kickLevel|0);
+    }
   }
 
   function autoTypeNote(idx){
@@ -3429,8 +3433,9 @@
   // ---- Klasifikasi kick drum (jalur WebView) -- HARUS sama persis dengan KICK_* di
   // NativeMicPitchDetector.java. Energi pita-rendah (<~150Hz, low-pass 2 tahap)
   // dibanding energi total, diakumulasi sejak onset sampai keputusan.
-  const KICK_CUTOFF_HZ = 150, KICK_BASS_RATIO = 0.72, KICK_MIN_PEAK_RMS = 0.04,
-        KICK_MAX_DECAY_RATIO = 0.55, KICK_MAX_PITCH_PROB = 0.50;
+  const KICK_CUTOFF_HZ = 150, KICK_MIN_PEAK_RMS = 0.04;
+  // {rasio bass minimum, batas decay, batas prob pitch} -- HARUS sama persis dengan KICK_LEVELS di Java.
+  const KICK_LEVELS = [ [0.78,0.45,0.50], [0.70,0.55,0.80], [0.62,0.65,1.01] ];
   let onsetLowE = 0, onsetFullE = 0;
   // Hitung energi (low, full) dari potongan ekor buf sepanjang tailLen sampel.
   // Filter dijalankan dari awal buf supaya state-nya sudah "hangat" di ekor.
@@ -3452,9 +3457,10 @@
   }
   function isKick(lowE, fullE, peakRms, decayRatio, pitchProb){
     if(peakRms < KICK_MIN_PEAK_RMS || fullE <= 0) return false;
-    if(decayRatio > KICK_MAX_DECAY_RATIO) return false;   // masih bertahan = senar
-    if(pitchProb >= KICK_MAX_PITCH_PROB) return false;    // periodik jelas = senar
-    return Math.sqrt(lowE/fullE) >= KICK_BASS_RATIO;
+    const lv = KICK_LEVELS[Math.max(0, Math.min(2, prefs.kickLevel|0))];
+    if(decayRatio > lv[1]) return false;   // masih bertahan = senar
+    if(pitchProb >= lv[2]) return false;   // periodik sangat jelas = senar
+    return Math.sqrt(lowE/fullE) >= lv[0];
   }
   // Satu-satunya jalan bunyi NON-NADA boleh mengetik: mode kick aktif DAN lolos
   // isKick(). HARUS konsisten dengan resolveNonTonalHit() di NativeMicPitchDetector.java.
@@ -3825,7 +3831,14 @@
         // Seberapa besar sinyal sudah meluruh dari puncaknya -- lihat
         // TAP_DECAY_RATIO NativeMicPitchDetector.java buat penjelasan lengkap.
         const decayRatio = rms / onsetPeakRms;
-        if(result){
+        // Kick diperiksa DULUAN sebelum jalur nada -- lihat kickHit di Java.
+        const kickHit = prefs.kickSpace && isKick(onsetLowE, onsetFullE, onsetPeakRms, decayRatio, result ? result.clarity : 0);
+        if(kickHit){
+          typeKickAsSpace();
+          state='releasing';
+          cooldownUntil = now + COOLDOWN_MS;
+          releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
+        } else if(result){
           const chk = isCategorySafe(result.freq, result.clarity);
           // BARU: walau isCategorySafe() bilang "aman", kalau sinyalnya sudah
           // meluruh SANGAT cepat (ciri tap) DAN periodisitasnya tidak sampai
