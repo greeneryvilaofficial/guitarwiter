@@ -993,6 +993,7 @@
   // autokoreksi & logika lain di JS dulu) -> tetap lewat jalur lama.
   // Kill-switch: ubah ke false = tidak pernah mengirim peta -> Java selalu pakai jalur lama.
   const DIRECT_NOTE_COMMIT = true;
+  const KICK_FEATURE = false;   // klasifikasi drum/kick dimatikan permanen (bunyi non-nada diabaikan)
   var _suppressCommit = false, _nmTimer = null, _nmAfterCommit = false;
   function directNoteChar(idx){
     if(!DIRECT_NOTE_COMMIT) return null;
@@ -1011,7 +1012,7 @@
   // Spasi dari kick boleh diketik langsung oleh Java hanya kalau appendText(' ') TIDAK akan
   // melakukan hal lain: titik-ganda, autokoreksi kata sebelumnya, atau menyusun huruf non-Latin.
   function spaceDirectOk(){
-    if(!DIRECT_NOTE_COMMIT) return false;
+    if(!DIRECT_NOTE_COMMIT || !KICK_FEATURE) return false;
     if(selectionActive || isComposing() || scriptLang() || mode !== 'letters') return false;
     if(prefs.dblSpace && !privateField && Date.now() - lastSpaceAt < 450 && /[\p{L}\p{N}] $/u.test(text.slice(0, cursorPos))) return false;
     if(tryAutoCorrect()) return false;
@@ -1735,7 +1736,7 @@
     numRowAlways:false, numRowPass:true, showEmojiKey:true, showComma:true, showPeriod:true,
     glide:true, glideTrail:true, swipeDel:true, spaceCursor:true,
     nextWord:true, emojiHint:true, noOffensive:true,
-    kickEnabled:true, kickLevel:1 };   // kick: true = Senar + Kick (kick -> spasi), false = Nada saja; level 0 ketat / 1 normal / 2 peka
+    kickEnabled:false, kickLevel:1 };   // kick: true = Senar + Kick (kick -> spasi), false = Nada saja; level 0 ketat / 1 normal / 2 peka
   try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); }catch(e){}
   function savePrefs(){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }catch(e){} scheduleNoteMapSync(); }
 
@@ -3519,7 +3520,7 @@
     scheduleNoteMapSync();
   };
   window.onNativeNonTonalIgnored = function(){
-    showStatus('Suara tidak dikenali (bukan petikan senar / kick), diabaikan.');
+    // diabaikan diam-diam (klasifikasi kick dimatikan)
   };
   window.onNativePercussiveTap = window.onNativeKick;   // alias jaga-jaga untuk APK lama
 
@@ -3542,6 +3543,7 @@
   const KICK_MIN_PEAK_RMS = 0.04;
   let kickAlpha = 0, kickLp1 = 0, kickLp2 = 0, onsetLowE = 0, onsetFullE = 0;
   function isKick(lowE, fullE, peakRms, decayRatio, pitchProb){
+    if(!KICK_FEATURE) return false;
     if(peakRms < KICK_MIN_PEAK_RMS || fullE <= 0) return false;
     const lv = KICK_LEVELS[Math.max(0, Math.min(2, prefs.kickLevel|0))];
     if(decayRatio > lv[1]) return false;   // masih bertahan = senar
