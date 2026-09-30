@@ -86,7 +86,7 @@ public class NativeMicPitchDetector {
     // RETRIGGER_RATIO + RELEASE_RMS). 70ms jauh di bawah jarak antar-petikan
     // tercepat yang wajar (~150-160ms bahkan di teknik tapping cepat), jadi
     // aman. HARUS sama persis dengan COOLDOWN_MS di index.html.
-    private static final long COOLDOWN_MS = 55;   // dulu 70: debounce lebih pendek untuk tapping/strum cepat
+    private static final long COOLDOWN_MS = 70;   // nilai ASLI dikembalikan: versi lebih sensitif bikin derau/dengung jadi huruf berulang
     // PENTING (fix "kedeteksi ganda / dobel ketikan"): dulu, begitu COOLDOWN_MS
     // lewat, mic langsung siap mendeteksi onset baru lagi -- padahal senar
     // gitar yang baru dipetik itu MASIH BERDENGUNG jauh lebih lama, dan
@@ -107,8 +107,8 @@ public class NativeMicPitchDetector {
     // yang konstan tidak ikut kepicu -- jadi menurunkan ambang absolut ini
     // aman selama rasionya tetap dijaga. HARUS sama persis dengan ambang RMS
     // onset di micLoop() index.html.
-    private static final double ONSET_RMS = 0.009;   // dulu 0.012: tapping/hammer-on yang pelan ikut terdeteksi
-    private static final double ONSET_RATIO = 1.5;   // dulu 1.6; // HARUS sama persis dengan rasio onset di index.html
+    private static final double ONSET_RMS = 0.012;   // nilai ASLI dikembalikan: versi lebih sensitif bikin derau/dengung jadi huruf berulang
+    private static final double ONSET_RATIO = 1.6;   // nilai ASLI dikembalikan: versi lebih sensitif bikin derau/dengung jadi huruf berulang
     // BARU -- fix "nada cepat/tapping ketimpa dengungan nada sebelumnya jadi
     // gak kepick": dulu selama STATE_RELEASING, mic BUTA total terhadap
     // petikan baru sampai dengungan lama turun di bawah RELEASE_RMS -- masalahnya
@@ -122,8 +122,8 @@ public class NativeMicPitchDetector {
     // (bukan cuma riak kecil di ekor dengungan), langsung dianggap onset baru,
     // tanpa nunggu reda dulu. HARUS sama persis dengan RETRIGGER_RATIO &
     // RETRIGGER_MIN_RMS di index.html.
-    private static final double RETRIGGER_RATIO = 1.55;   // dulu 1.7: nada beruntun tanpa lembah dalam (tapping legato)
-    private static final double RETRIGGER_MIN_RMS = 0.009;   // dulu 0.012 (sinkron dengan ONSET_RMS)
+    private static final double RETRIGGER_RATIO = 1.7;   // nilai ASLI dikembalikan: versi lebih sensitif bikin derau/dengung jadi huruf berulang
+    private static final double RETRIGGER_MIN_RMS = 0.012;   // nilai ASLI dikembalikan: versi lebih sensitif bikin derau/dengung jadi huruf berulang
     // BARU (fix "satu strum/petik kebaca berkali-kali jadi huruf dobel/triple"):
     // dulu retrigger cuma dibandingkan ke SATU hop sebelumnya (prevHopRms).
     // Masalahnya, chord yang di-strum (banyak senar bareng) atau nada yang
@@ -136,18 +136,18 @@ public class NativeMicPitchDetector {
     // RETRIGGER_WINDOW_HOPS hop terakhir (~80ms), bukan cuma satu hop -- jadi
     // harus ada "lembah" beneran dulu sebelum dianggap ada "puncak" (onset)
     // baru, bukan sekadar riak naik-turun kecil dalam tren yang sama.
-    private static final int RETRIGGER_WINDOW_HOPS = 4;   // dulu 5 (~83ms -> ~67ms): lembah lebih cepat 'terlupa'
+    private static final int RETRIGGER_WINDOW_HOPS = 5;   // nilai ASLI dikembalikan: versi lebih sensitif bikin derau/dengung jadi huruf berulang
     // BARU: jarak minimum MUTLAK antar onset (baik onset normal maupun
     // retrigger) -- jaring pengaman terakhir di luar syarat "lembah dulu" di
     // atas, supaya beating yang sangat cepat sekalipun tidak bisa memicu lebih
     // sering dari ini. 110ms masih jauh di bawah jarak petikan tercepat yang
     // realistis (~150-160ms bahkan di teknik tapping cepat), jadi tidak akan
     // kerasa nge-lag buat permainan sungguhan.
-    private static final long MIN_RETRIGGER_GAP_MS = 90;   // dulu 110
+    private static final long MIN_RETRIGGER_GAP_MS = 110;   // nilai ASLI dikembalikan: versi lebih sensitif bikin derau/dengung jadi huruf berulang
     // BARU: lonjakan yang SANGAT jelas (>= 2.8x lembah) jelas petikan/strum baru, bukan riak
     // beating dari strum yang sama (riak jarang lewat ~1.8x), jadi boleh lebih cepat dari
     // MIN_RETRIGGER_GAP_MS. Ini yang bikin genjrengan cepat & fingerstyle beruntun tidak ketinggalan.
-    private static final double STRONG_RETRIGGER_RATIO = 2.8;
+    private static final double STRONG_RETRIGGER_RATIO = 99.0;   // nilai ASLI dikembalikan: versi lebih sensitif bikin derau/dengung jadi huruf berulang
     private static final long STRONG_RETRIGGER_GAP_MS = 60;
     // BARU (bagian dari fix yang sama): dulu begitu SATU hop RMS-nya di bawah
     // RELEASE_RMS, langsung dianggap "sudah reda" dan state balik ke IDLE.
@@ -158,7 +158,7 @@ public class NativeMicPitchDetector {
     // retrigger). Sekarang RMS harus di bawah RELEASE_RMS SELAMA
     // RELEASE_CONFIRM_HOPS hop BERTURUT-TURUT (bukan cuma sekali) baru
     // dianggap benar-benar reda.
-    private static final int RELEASE_CONFIRM_HOPS = 2;   // dulu 3
+    private static final int RELEASE_CONFIRM_HOPS = 3;   // nilai ASLI dikembalikan: versi lebih sensitif bikin derau/dengung jadi huruf berulang
     // Diturunkan dari 0.012 -> 0.007, sinkron dengan ONSET_RMS di atas --
     // supaya sinyal pelan yang lolos jadi onset juga tidak langsung ditolak
     // yinDetect() sendiri. HARUS sama persis dengan ambang rms di yinDetect()
@@ -550,7 +550,7 @@ public class NativeMicPitchDetector {
                             // (fretting bersih) cukup 1 bacaan, yang agak ke pinggir butuh 2,
                             // yang paling ambigu butuh 3 -- lihat catatan requiredConfirm di
                             // deklarasi candidateIdx/candidateCount di atas.
-                            int requiredConfirm = centsOffOut[0] < 15 ? 1 : (centsOffOut[0] < 25 ? 2 : 3);
+                            int requiredConfirm = centsOffOut[0] < 12 ? 1 : (centsOffOut[0] < 22 ? 2 : 3);
                             boolean lowZone = r.freq < LOW_ZONE_MAX_FREQ;
                             if (lowZone) {
                                 requiredConfirm = Math.max(requiredConfirm,
