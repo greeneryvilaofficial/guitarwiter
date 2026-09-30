@@ -1653,8 +1653,7 @@
     sound:false, soundVol:60, haptic:true, popup:true,
     numRowAlways:false, numRowPass:true, showEmojiKey:true, showComma:true, showPeriod:true,
     glide:true, glideTrail:true, swipeDel:true, spaceCursor:true,
-    nextWord:true, emojiHint:true, noOffensive:true,
-    kickSpace:true, kickLevel:1 };
+    nextWord:true, emojiHint:true, noOffensive:true };
   try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); }catch(e){}
   function savePrefs(){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }catch(e){} }
 
@@ -2183,9 +2182,6 @@
       { k:'suggest', t:'Saran kata', s:'Tampilkan di kolom saran' },
       { k:'nextWord', t:'Saran kata berikutnya', s:'Gunakan konteks sebelumnya untuk membuat saran' },
       { k:'emojiHint', t:'Menampilkan emoji', s:'Tawarkan emoji yang cocok di kolom saran' } ] },
-    { title:'Deteksi mikrofon', items:[
-      { k:'kickSpace', t:'Drum (kick/snare) → spasi', s:'Aktif: petikan senar mengetik huruf, bunyi drum (kick, snare, dst) mengetik spasi. Mati: hanya petikan senar (mode nada saja)' },
-      { slider:'kickLevel', t:'Sensitivitas drum', s:'0 = ketat (senar paling aman) · 1 = normal · 2 = peka (drum lebih mudah terdeteksi)', min:0, max:2 } ] },
     { title:'Ketik geser', items:[
       { k:'glide', t:'Ketik geser', s:'Geser jari dari huruf ke huruf untuk mengetik satu kata' },
       { k:'glideTrail', t:'Jejak geser', s:'Tampilkan pergerakan jari Anda di keyboard' },
@@ -2210,7 +2206,6 @@
     b.toggle('no-comma-key', !prefs.showComma);
     b.toggle('no-period-key', !prefs.showPeriod);
     updateNumRow();
-    try{ syncKickMode(); }catch(e){}
     try{ syncPrefPills(); }catch(e){}   // (di awal, pil-pil kisi alat belum dibuat)
   }
   function gsMk(tag, cls, html){ const e = document.createElement(tag); if(cls) e.className = cls; if(html != null) e.innerHTML = html; if(tag === 'button') e.type = 'button'; return e; }
@@ -2235,7 +2230,7 @@
         row.appendChild(txt);
         if(it.slider){
           const r = gsMk('input', 'gs-range'); r.type = 'range'; r.min = it.min; r.max = it.max; r.value = prefs[it.slider];
-          r.addEventListener('input', ()=>{ prefs[it.slider] = +r.value; savePrefs(); if(it.slider === 'kickLevel') syncKickMode(); });
+          r.addEventListener('input', ()=>{ prefs[it.slider] = +r.value; savePrefs(); });
           r.addEventListener('change', ()=>{ clickSound(true); });
           row.appendChild(r);
         } else {
@@ -3288,30 +3283,17 @@
     else if(type==='enter'){ showBubble(el,'↵'); pressEnter(); }
     else if(type==='literal'){ const c = el.dataset.char; showBubble(el, c===' '?'␣':c); appendText(c); }
   }
-  // Dipanggil kalau sebuah bunyi NON-NADA lolos KickClassifier (kick drum
-  // sungguhan). Cari tombol spasi di layout biar dapat feedback visual (kedip +
-  // bubble) sama seperti tuts lain, lalu ketik spasi lewat jalur yang sama
-  // (appendText -> bridgeCommit) dengan autoTypeNote(). HARUS konsisten dengan
-  // onKick() di NativeMicPitchDetector.java.
-  function typeKickAsSpace(){
+  // BARU: dipanggil kalau ada tap/ketukan badan gitar (bunyi keras tapi tidak
+  // periodik sama sekali). Cari tombol spasi di layout biar dapat feedback
+  // visual (kedip tombol + bubble) sama seperti tuts lain yang diketuk lewat
+  // nada, lalu ketik spasi lewat jalur yang sama (appendText -> bridgeCommit)
+  // yang dipakai autoTypeNote(). HARUS konsisten dengan onPercussiveTap() di
+  // NativeMicPitchDetector.java.
+  function typePercussiveTapAsSpace(){
     const spaceEl = allKeys.find(el => el && el.dataset && el.dataset.type === 'literal' && el.dataset.char === ' ');
     if(spaceEl){ flash(spaceEl); showBubble(spaceEl, '␣'); }
     appendText(' ');
-    showStatus('🥁 Drum terdeteksi → <b>"␣"</b> (spasi)');
-  }
-  function showNonTonalIgnored(){
-    showStatus(prefs.kickSpace
-      ? 'Suara tidak dikenali (bukan petikan senar / kick), diabaikan.'
-      : 'Bunyi non-nada diabaikan (mode nada saja).');
-  }
-  // Kirim mode deteksi ke native (kalau APK-nya sudah punya method-nya).
-  function syncKickMode(){
-    if(window.AndroidKeyboard && window.AndroidKeyboard.setKickEnabled){
-      window.AndroidKeyboard.setKickEnabled(!!prefs.kickSpace);
-    }
-    if(window.AndroidKeyboard && window.AndroidKeyboard.setKickLevel){
-      window.AndroidKeyboard.setKickLevel(prefs.kickLevel|0);
-    }
+    showStatus('🥁 Tap terdeteksi → <b>"␣"</b> (spasi)');
   }
 
   function autoTypeNote(idx){
@@ -3409,18 +3391,16 @@
   window.onNativeUnclear = function(){
     showStatus('Nada belum terdeteksi jelas, coba petik lagi.');
   };
-  // Kick drum sungguhan (lolos KickClassifier) -- ketik spasi. HARUS konsisten
-  // dengan onKick() di NativeMicPitchDetector.java / HtmlKeyboardService.java.
-  window.onNativeKick = function(){
-    typeKickAsSpace();
-  };
-  // Bunyi keras non-nada yang bukan kick (atau mode "nada saja") -- tidak mengetik apa pun.
-  window.onNativeNonTonalIgnored = function(){
-    showNonTonalIgnored();
+  // BARU: tap/ketukan ke badan gitar (bunyi keras tapi SAMA SEKALI tidak
+  // periodik, beda dari nada yang cuma ambigu di batas kategori) -- dianggap
+  // gestur sengaja, langsung ketik spasi. HARUS konsisten dengan
+  // onPercussiveTap() di NativeMicPitchDetector.java / HtmlKeyboardService.java.
+  window.onNativePercussiveTap = function(){
+    typePercussiveTapAsSpace();
   };
 
   // ---------------- Mic: monophonic pitch detection (autocorrelation) ----------------
-  let listening=false, micCtx=null, analyser=null, stream=null, rafId=null, micHopLen=735;
+  let listening=false, micCtx=null, analyser=null, stream=null, rafId=null;
   // state: 'idle' (siap deteksi onset baru) -> 'sampling' (lagi mengukur nada) ->
   // 'releasing' (nunggu senar benar-benar mereda) -> balik ke 'idle'.
   let state='idle', sampleAt=0, cooldownUntil=0, smoothedRms=0.001;
@@ -3429,53 +3409,20 @@
   // BARU: lihat penjelasan lengkap di TAP_DECAY_RATIO NativeMicPitchDetector.java.
   // HARUS sama persis dengan TAP_DECAY_RATIO & STRONG_PROBABILITY di sana.
   const TAP_DECAY_RATIO = 0.30;
-  const STRONG_PROBABILITY = 0.80;
-  // ---- Klasifikasi kick drum (jalur WebView) -- HARUS sama persis dengan KICK_* di
-  // NativeMicPitchDetector.java. Energi pita-rendah (<~150Hz, low-pass 2 tahap)
-  // dibanding energi total, diakumulasi sejak onset sampai keputusan.
-  const KICK_CUTOFF_HZ = 150, KICK_MIN_PEAK_RMS = 0.04;
-  // {rasio bass minimum, batas decay, batas prob pitch} -- HARUS sama persis dengan KICK_LEVELS di Java.
-  // Kolom: {rasio bass min (kick), decay maks, prob pitch maks (kick), rasio pita-tinggi min (snare/hat), decay min nada bass sustain, decay maks perkusi umum, prob pitch maks perkusi umum}
-  const KICK_LEVELS = [ [0.78,0.45,0.80,0.60,0.50,0.25,0.60], [0.70,0.55,1.01,0.50,0.60,0.35,0.60], [0.62,0.65,1.01,0.42,0.70,0.50,0.90] ];
-  const HI_CUTOFF_HZ = 2000, DRUM_BASS_NOTE_MAX_HZ = 200, DRUM_BASS_NOTE_MIN_RATIO = 0.65;
-  let onsetLowE = 0, onsetFullE = 0, onsetHiE = 0;
-  // Hitung energi (low, full) dari potongan ekor buf sepanjang tailLen sampel.
-  // Filter dijalankan dari awal buf supaya state-nya sudah "hangat" di ekor.
-  function tailEnergies(buf, sampleRate, tailLen){
-    const a = 1 - Math.exp(-2*Math.PI*KICK_CUTOFF_HZ/sampleRate);
-    const ah = 1 - Math.exp(-2*Math.PI*HI_CUTOFF_HZ/sampleRate);
-    let lp1=0, lp2=0, lp3=0, low=0, full=0, hi=0;
-    const from = buf.length - tailLen;
+  // BARU: kick yang dibaca sebagai nada bass (G2/G#2 -> angka 4/5) -- lihat BASS_THUMP_*
+  // di NativeMicPitchDetector.java. HARUS sama persis dengan konstanta di sana.
+  const BASS_THUMP_MAX_HZ = 200, BASS_THUMP_RATIO = 0.65, BASS_THUMP_DECAY = 0.55, BASS_THUMP_CUTOFF_HZ = 150;
+  function bassRatio(buf, sampleRate){
+    const a = 1 - Math.exp(-2*Math.PI*BASS_THUMP_CUTOFF_HZ/sampleRate);
+    let l1=0, l2=0, low=0, full=0;
     for(let i=0;i<buf.length;i++){
       const v = buf[i];
-      lp1 += a*(v-lp1); lp2 += a*(lp1-lp2);
-      lp3 += ah*(v-lp3);
-      if(i>=from){ low += lp2*lp2; full += v*v; const hp = v-lp3; hi += hp*hp; }
+      l1 += a*(v-l1); l2 += a*(l1-l2);
+      low += l2*l2; full += v*v;
     }
-    return {low, full, hi};
+    return full > 0 ? Math.sqrt(low/full) : 0;
   }
-  function accumulateOnsetEnergy(buf, reset){
-    const e = tailEnergies(buf, micCtx.sampleRate, Math.round(micCtx.sampleRate/60));
-    if(reset){ onsetLowE = e.low; onsetFullE = e.full; onsetHiE = e.hi; }
-    else { onsetLowE += e.low; onsetFullE += e.full; onsetHiE += e.hi; }
-  }
-  // Pemeriksa DRUM (kick/snare/tom/hat). HARUS sama persis dengan isDrum() di Java.
-  function isDrum(lowE, fullE, hiE, peakRms, decayRatio, pitchProb, freq){
-    if(peakRms < KICK_MIN_PEAK_RMS || fullE <= 0) return false;
-    const lv = KICK_LEVELS[Math.max(0, Math.min(2, prefs.kickLevel|0))];
-    const bassRatio = Math.sqrt(lowE/fullE), hiRatio = Math.sqrt(hiE/fullE);
-    if(decayRatio <= lv[1] && pitchProb < lv[2] && bassRatio >= lv[0]) return true;                 // kick
-    if(decayRatio <= Math.min(lv[1], 0.50) && pitchProb < 0.60 && hiRatio >= lv[3]) return true;    // snare/hat
-    if(freq > 0 && freq < DRUM_BASS_NOTE_MAX_HZ && bassRatio >= DRUM_BASS_NOTE_MIN_RATIO && decayRatio < lv[4]) return true; // kick terbaca nada bass
-    if(decayRatio <= lv[5] && pitchProb < lv[6]) return true;   // perkusi umum: meluruh sangat cepat & tidak periodik jelas
-    return false;
-  }
-  // Satu-satunya jalan bunyi NON-NADA boleh mengetik: mode kick aktif DAN lolos
-  // isDrum(). HARUS konsisten dengan resolveNonTonalHit() di NativeMicPitchDetector.java.
-  function resolveNonTonalHit(decayRatio, pitchProb, freq){
-    if(prefs.kickSpace && isDrum(onsetLowE, onsetFullE, onsetHiE, onsetPeakRms, decayRatio, pitchProb, freq||0)) typeKickAsSpace();
-    else showNonTonalIgnored();
-  }
+  const STRONG_PROBABILITY = 0.80;
   // Konsensus multi-bacaan (persis cara tuner "pro" bekerja): sebelum ini,
   // begitu SATU bacaan lolos ambang confidence langsung dikunci -- itu bikin
   // rawan ketuker kalau kebetulan satu bacaan itu meleset. Sekarang minta
@@ -3515,17 +3462,6 @@
   // RETRIGGER_RATIO + RELEASE_RMS). HARUS sama persis dengan COOLDOWN_MS di
   // NativeMicPitchDetector.java.
   const COOLDOWN_MS = 70;
-  // FIX SINKRONISASI LATENSI (ketemu 23 Sep 2026): NativeMicPitchDetector.java
-  // sudah lebih dulu diturunkan dari 45 -> 30 (mulai baca nada 1 hop lebih
-  // awal), tapi micLoop() di sini kelupaan ikut diubah -- padahal komentar di
-  // kedua file sama-sama bilang "HARUS sama persis". Selisih 15ms ini kerasa
-  // sebagai delay tambahan tiap kali jalur mic WebView/browser dipakai.
-  // HARUS sama persis dengan SETTLE_MS di NativeMicPitchDetector.java.
-  const SETTLE_MS = 30;
-  // Idem: Java sudah naik dari 4 -> 5 (kompensasi supaya batas akhir percobaan
-  // tetap ~sama walau SETTLE_MS lebih pendek), micLoop() di sini juga kelupaan.
-  // HARUS sama persis dengan MAX_SAMPLE_TRIES di NativeMicPitchDetector.java.
-  const MAX_SAMPLE_TRIES = 5;
   // PENTING (fix "kedeteksi ganda / dobel ketikan"): dulu, begitu COOLDOWN_MS
   // lewat, sistem langsung siap mendeteksi onset baru lagi -- padahal senar
   // gitar yang baru dipetik itu MASIH BERDENGUNG jauh lebih lama dari 180ms.
@@ -3794,17 +3730,8 @@
     if(!listening) return;
     const buf = new Float32Array(analyser.fftSize);
     analyser.getFloatTimeDomainData(buf);
-    // rms dipakai buat onset/retrigger/release HARUS dihitung dari hop
-    // TERBARU saja (bukan seluruh buf 4096 sampel) -- lihat penjelasan
-    // lengkap di komentar micHopLen pada startMic(). getFloatTimeDomainData()
-    // selalu menaruh sampel paling baru di ujung array, jadi cukup ambil
-    // micHopLen sampel terakhir. yinDetect() di bawah tetap dikasih buf penuh
-    // supaya akurasi nada rendah tidak berubah -- cuma RMS onset yang
-    // dipercepat. HARUS sama persis dengan rms di recordLoop()
-    // NativeMicPitchDetector.java.
-    const hopStart = Math.max(0, buf.length - micHopLen);
-    let sum=0; for(let i=hopStart;i<buf.length;i++) sum+=buf[i]*buf[i];
-    const rms = Math.sqrt(sum/(buf.length-hopStart));
+    let sum=0; for(let i=0;i<buf.length;i++) sum+=buf[i]*buf[i];
+    const rms = Math.sqrt(sum/buf.length);
     const now = performance.now();
 
     if(state==='idle'){
@@ -3818,17 +3745,15 @@
         state='sampling';
         sampleTries=0;
         candidateIdx=-1; candidateCount=0;
-        // Kasih jeda dikit dulu biar transien petikan gitar mereda dan
+        // Kasih jeda dikit dulu (~45ms) biar transien petikan gitar mereda dan
         // gelombangnya udah cukup stabil buat diukur. HARUS sama persis dengan
         // SETTLE_MS di NativeMicPitchDetector.java.
-        sampleAt = now + SETTLE_MS;
+        sampleAt = now + 45;
         lastOnsetAt = now;
         onsetPeakRms = rms;
-        accumulateOnsetEnergy(buf, true);
         showStatus('Mendengar petikan…');
       }
     } else if(state==='sampling'){
-      accumulateOnsetEnergy(buf, false);
       // Terus perbarui puncak RMS sejak onset -- lihat catatan onsetPeakRms di
       // NativeMicPitchDetector.java (dilacak terus selama fase sampling, bukan
       // cuma dari satu frame pemicu onset saja).
@@ -3839,22 +3764,23 @@
         // Seberapa besar sinyal sudah meluruh dari puncaknya -- lihat
         // TAP_DECAY_RATIO NativeMicPitchDetector.java buat penjelasan lengkap.
         const decayRatio = rms / onsetPeakRms;
-        // Kick diperiksa DULUAN sebelum jalur nada -- lihat kickHit di Java.
-        const kickHit = prefs.kickSpace && isDrum(onsetLowE, onsetFullE, onsetHiE, onsetPeakRms, decayRatio, result ? result.clarity : 0, result ? result.freq : 0);
-        if(kickHit){
-          typeKickAsSpace();
-          state='releasing';
-          cooldownUntil = now + COOLDOWN_MS;
-          releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
-        } else if(result){
+        if(result){
           const chk = isCategorySafe(result.freq, result.clarity);
           // BARU: walau isCategorySafe() bilang "aman", kalau sinyalnya sudah
           // meluruh SANGAT cepat (ciri tap) DAN periodisitasnya tidak sampai
           // sangat meyakinkan, jangan percaya sebagai nada -- ini yang nangkep
           // kasus "tap kebaca jadi nada lain di atas". HARUS sama persis
           // dengan logika looksPercussive di NativeMicPitchDetector.java.
-          const looksPercussive = decayRatio < TAP_DECAY_RATIO && result.clarity < STRONG_PROBABILITY;
-          if(chk.safe && !looksPercussive){
+          let looksPercussive = decayRatio < TAP_DECAY_RATIO && result.clarity < STRONG_PROBABILITY;
+          // Nada bass mencurigakan: meluruh cepat -> ketukan drum (spasi); kalau baru
+          // bacaan pertama, tahan satu frame dulu. HARUS sama dengan waitBass di Java.
+          let waitBass = false;
+          if(!looksPercussive && result.freq < BASS_THUMP_MAX_HZ
+              && bassRatio(buf, micCtx.sampleRate) >= BASS_THUMP_RATIO){
+            if(decayRatio < BASS_THUMP_DECAY) looksPercussive = true;
+            else if(sampleTries < 2) waitBass = true;
+          }
+          if(chk.safe && !looksPercussive && !waitBass){
             // Konsensus: cek apakah bacaan kali ini SEPAKAT sama kandidat
             // sebelumnya (idx sama). Kalau beda, kandidat direset ke bacaan
             // baru ini (mulai hitung dari 1 lagi) -- daripada asal kunci ke
@@ -3869,7 +3795,7 @@
             // requiredConfirm ADAPTIF -- HARUS sama persis dengan requiredConfirm
             // di NativeMicPitchDetector.java.
             const requiredConfirm = chk.centsOff < 12 ? 1 : (chk.centsOff < 22 ? 2 : 3);
-            if(candidateCount >= requiredConfirm || sampleTries >= MAX_SAMPLE_TRIES){
+            if(candidateCount >= requiredConfirm || sampleTries >= 4){
               // Sudah dapat cukup bacaan berturut yang sepakat (paling umum),
               // ATAU jatah percobaan sudah habis -- pakai bacaan TERAKHIR yang
               // lolos ini (lebih baik daripada nyerah total).
@@ -3886,11 +3812,11 @@
             // Meluruh sangat cepat & periodisitasnya tidak sampai sangat
             // meyakinkan -- ini tap, bukan nada. Langsung diputuskan sekarang
             // juga, tidak perlu tunggu jatah percobaan habis.
-            resolveNonTonalHit(decayRatio, result.clarity, result.freq);
+            typePercussiveTapAsSpace();
             state='releasing';
             cooldownUntil = now + COOLDOWN_MS;
             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
-          } else if(sampleTries < MAX_SAMPLE_TRIES){
+          } else if(sampleTries < 4){
             // Bacaannya persis di batas dua kategori tuts berbeda (mis. angka vs
             // huruf/tanda baca) dan belum cukup yakin -- coba baca ulang dulu
             // daripada asal tebak dan salah kategori.
@@ -3901,13 +3827,13 @@
             cooldownUntil = now + COOLDOWN_MS;
             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
           }
-        } else if(sampleTries >= MAX_SAMPLE_TRIES){
+        } else if(sampleTries >= 4){
           // Beberapa frame berturut SAMA SEKALI tidak dapat sinyal periodik
           // (yinDetect() balikin null terus) walau tadinya cukup keras buat
           // memicu onset -- ini ciri khas TAP/ketukan ke badan gitar (bukan
           // senar dipetik). Beda dari kasus "ambigu di batas kategori" di atas
           // (yang MASIH dapat nada) -- di sini dianggap sengaja: ketik spasi.
-          resolveNonTonalHit(decayRatio, 0);
+          typePercussiveTapAsSpace();
           state='releasing';
           cooldownUntil = now + COOLDOWN_MS;
           releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
@@ -3934,10 +3860,9 @@
         state='sampling';
         sampleTries=0;
         candidateIdx=-1; candidateCount=0;
-        sampleAt = now + SETTLE_MS;
+        sampleAt = now + 45;
         lastOnsetAt = now;
         onsetPeakRms = rms;
-        accumulateOnsetEnergy(buf, true);
         releaseBelowCount = 0;
         showStatus('Mendengar petikan…');
       } else if(now>cooldownUntil && now>releaseWaitUntil){
@@ -3967,7 +3892,6 @@
   }
 
   async function startMic(){
-    syncKickMode();
     if(hasNativeMicBridge()){
       const ok = window.AndroidKeyboard.startNativeMic();
       if(ok){
@@ -3995,18 +3919,6 @@
     analyser = micCtx.createAnalyser();
     analyser.fftSize = 4096;
     src.connect(analyser);
-    // FIX SINKRONISASI LATENSI: dulu RMS onset dihitung dari SELURUH buffer
-    // 4096 sampel (~93ms) tiap frame, sama seperti dulu di NativeMicPitchDetector.java
-    // sebelum diperbaiki -- akibatnya onset ikut "diencerkan" ~3300 sampel
-    // histori lama yang masih diam, jadi telat kedeteksi. Java sudah dibenahi
-    // (RMS onset cuma dari hop terbaru, ~16.6ms), micLoop() di sini kelupaan
-    // ikut dibenahi. micHopLen di bawah dipakai buat meniru itu: getFloatTimeDomainData()
-    // selalu mengembalikan sampel PALING BARU di ujung array, jadi cukup ambil
-    // ~micHopLen sampel terakhir buat RMS onset -- yinDetect() tetap dikasih
-    // buffer 4096 penuh seperti biasa (jendela tetap lebar, akurasi nada rendah
-    // tidak terpengaruh). HARUS sama persis konsepnya dengan hopSamples di
-    // NativeMicPitchDetector.java.
-    micHopLen = Math.max(1, Math.round(micCtx.sampleRate / 60));
     listening = true;
     document.getElementById('micToolBtn').classList.add('on');
     showStatus('Mendengarkan… petik satu nada per satu.');
