@@ -516,7 +516,7 @@
   .mp-grid{ display:grid; grid-template-columns:repeat(8, 1fr); }
   .mp-emo{ height:40px; border:none; background:none; font-size:1.45rem; line-height:1; padding:0; -webkit-tap-highlight-color:transparent; }
   .mp-emo:active{ background:rgba(255,255,255,.14); border-radius:8px; }
-  .mp-guitar{ display:grid; grid-template-columns:repeat(6, 1fr); gap:5px; padding:2px 0 4px; }
+  .mp-guitar{ display:grid; grid-template-columns:repeat(8, 1fr); gap:5px; padding:2px 0 4px; }
   body.hide-tags .mp-guitar, body.hide-tags .mp-guitar-h, body.hide-tags .mp-guitar-t{ display:none; }
   .mp-empty, .mp-note{ font-size:.75rem; color:var(--bar-icon-dim); padding:8px 6px; }
   .mp-gifgrid{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }
@@ -995,9 +995,18 @@
   const DIRECT_NOTE_COMMIT = true;
   const KICK_FEATURE = false;   // klasifikasi drum/kick dimatikan permanen (bunyi non-nada diabaikan)
   var _suppressCommit = false, _nmTimer = null, _nmAfterCommit = false;
+  // APA YANG TERLIHAT = APA YANG DIMAINKAN. Di mode huruf baris angka disembunyikan, jadi nada rendah
+  // (tuts angka idx 0-9, E2..C#3) tidak boleh mengetik angka diam-diam. Bacaan di zona itu hampir
+  // pasti huruf yang salah-oktaf, jadi dilipat naik satu oktaf (idx+12) ke tuts huruf yang terlihat.
+  // Kalau baris angka memang sedang tampil (mode simbol / pengaturan), angka tetap angka.
+  function foldIdx(idx){
+    if(mode === 'letters' && idx >= 0 && idx < 10 && !keyboardEl.classList.contains('show-num-row')) return idx + 12;
+    return idx;
+  }
   function directNoteChar(idx){
     if(!DIRECT_NOTE_COMMIT) return null;
     if(mode !== 'letters' && mode !== 'symbols') return null;   // emoji dll -> jalur lama
+    idx = foldIdx(idx);
     if(scriptLang() || isComposing()) return null;               // huruf non-Latin disusun dulu
     if(prefs.autoSpacePunct) return null;                        // menyisipkan spasi SEBELUM huruf
     const el = allKeys[idx];
@@ -2283,6 +2292,7 @@
   // Menerapkan pilihan yang punya efek langsung ke tampilan.
   function updateNumRow(){
     keyboardEl.classList.toggle('show-num-row', mode === 'symbols' || prefs.numRowAlways || (privateField && prefs.numRowPass));
+    try{ scheduleNoteMapSync(); }catch(e){}   // lipatan angka->huruf bergantung pada baris angka terlihat/tidak
   }
   function applyPrefs(){
     const b = document.body.classList;
@@ -2842,15 +2852,15 @@
       t.dataset.sec = id; tabs.appendChild(t);
       secs.push({ id, h, t });
     };
-    if(recentEmoji.length) addSec('recent', ICONS.history, 'Emoji Terbaru', recentEmoji);
-    EMOJI_CATS.forEach(c => addSec(c.id, c.icon, c.name, c.emojis));
-    // Emoji nada gitar: 36 tombol yang bisa dimainkan lewat petikan nada (label nada tampil di bawah tiap emoji)
+    // Emoji nada gitar (44 tombol, DI ATAS supaya yang terlihat = yang dimainkan): tombol yang bisa dimainkan lewat petikan nada (label nada tampil di bawah tiap emoji)
     const gh = mpMk('div', 'mp-sec mp-guitar-h'); gh.textContent = 'Emoji nada gitar — petik nada untuk mengetik'; gh.dataset.sec = 'gtr';
     const gg = mpMk('div', 'mp-guitar');
     emojiKeys.forEach(k => gg.appendChild(k));
     body.appendChild(gh); body.appendChild(gg);
     const gt = mpTabBtn(ICONS.keyboard, 'Nada gitar', false, ()=>{ body.scrollTop = gh.offsetTop - body.offsetTop - 2; }); gt.dataset.sec = 'gtr'; gt.classList.add('mp-guitar-t'); tabs.appendChild(gt);
     secs.push({ id:'gtr', h:gh, t:gt });
+    if(recentEmoji.length) addSec('recent', ICONS.history, 'Emoji Terbaru', recentEmoji);
+    EMOJI_CATS.forEach(c => addSec(c.id, c.icon, c.name, c.emojis));
     const spy = ()=>{
       let cur = secs[0];
       secs.forEach(s => { if(s.h.offsetTop - body.offsetTop - 6 <= body.scrollTop) cur = s; });
@@ -3396,6 +3406,7 @@
       return emo;
     }
 
+    idx = foldIdx(idx);   // mode huruf tanpa baris angka: nada rendah -> huruf yang terlihat
     const el = allKeys[idx];
     if(!el) return null;
     const type = el.dataset.type;
