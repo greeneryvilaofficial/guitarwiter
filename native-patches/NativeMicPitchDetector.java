@@ -719,7 +719,13 @@ public class NativeMicPitchDetector {
      * biar lebih cepat DAN lebih tegas (gak pernah mempertimbangkan periode
      * yang jelas di luar jangkauan gitar).
      */
-    private static PitchReading yinDetect(float[] buf, int size, int sampleRate) {
+    // BARU: dua array kerja YIN dipakai ulang antar panggilan. Dulu tiap yinDetect() membuat
+    // 2 array double baru (~11KB) sampai belasan kali per detik -> sampah memori -> jeda GC
+    // sesekali di thread audio = ketikan tersendat acak. Hanya diakses dari recordLoop().
+    private double[] yinDiff = new double[0];
+    private double[] yinCmnd = new double[0];
+
+    private PitchReading yinDetect(float[] buf, int size, int sampleRate) {
         double rms = 0;
         for (int i = 0; i < size; i++) rms += (double) buf[i] * buf[i];
         rms = Math.sqrt(rms / size);
@@ -730,7 +736,11 @@ public class NativeMicPitchDetector {
         if (maxTau <= minTau) return null;
 
         // Langkah 1: fungsi selisih d(tau), cuma dihitung untuk rentang tau yang relevan.
-        double[] diff = new double[maxTau + 1];
+        if (yinDiff.length < maxTau + 1) {
+            yinDiff = new double[maxTau + 1];
+            yinCmnd = new double[maxTau + 1];
+        }
+        final double[] diff = yinDiff;
         for (int tau = minTau; tau <= maxTau; tau++) {
             double sum = 0;
             for (int j = 0; j < size - maxTau; j++) {
@@ -741,7 +751,7 @@ public class NativeMicPitchDetector {
         }
 
         // Langkah 2: cumulative mean normalized difference function (CMNDF).
-        double[] cmnd = new double[maxTau + 1];
+        final double[] cmnd = yinCmnd;
         double runningSum = 0;
         cmnd[minTau] = 1;
         for (int tau = minTau + 1; tau <= maxTau; tau++) {
@@ -843,29 +853,39 @@ public class NativeMicPitchDetector {
         return Math.sqrt(real * real + imag * imag) / size;
     }
 
+    // BARU (boost latensi): pesan ASINKRON menembus \"sync barrier\" yang dipasang Android di
+    // main thread selama menggambar frame (WebView + animasi tuts sedang aktif saat mengetik).
+    // Pesan biasa harus menunggu frame selesai dulu -> jitter belasan ms; pesan asinkron tidak.
+    // Urutan antar-pesan tetap terjaga (antrean yang sama, berurutan waktu).
+    private void postFast(Runnable r) {
+        android.os.Message m = android.os.Message.obtain(mainHandler, r);
+        m.setAsynchronous(true);
+        mainHandler.sendMessage(m);
+    }
+
     private void postOnset() {
         if (listener == null) return;
-        mainHandler.post(() -> { if (listener != null) listener.onOnsetDetected(); });
+        postFast(() -> { if (listener != null) listener.onOnsetDetected(); });
     }
     private void postPitchIndex(int idx, double freq) {
         if (listener == null) return;
-        mainHandler.post(() -> { if (listener != null) listener.onPitchIndex(idx, freq); });
+        postFast(() -> { if (listener != null) listener.onPitchIndex(idx, freq); });
     }
     private void postOutOfRange(double freq) {
         if (listener == null) return;
-        mainHandler.post(() -> { if (listener != null) listener.onOutOfRange(freq); });
+        postFast(() -> { if (listener != null) listener.onOutOfRange(freq); });
     }
     private void postUnclear() {
         if (listener == null) return;
-        mainHandler.post(() -> { if (listener != null) listener.onUnclear(); });
+        postFast(() -> { if (listener != null) listener.onUnclear(); });
     }
     private void postKick() {
         if (listener == null) return;
-        mainHandler.post(() -> { if (listener != null) listener.onKick(); });
+        postFast(() -> { if (listener != null) listener.onKick(); });
     }
     private void postNonTonalIgnored() {
         if (listener == null) return;
-        mainHandler.post(() -> { if (listener != null) listener.onNonTonalIgnored(); });
+        postFast(() -> { if (listener != null) listener.onNonTonalIgnored(); });
     }
 
     /** True kalau energi sejak onset didominasi pita rendah (<~150Hz) dan cukup keras. */

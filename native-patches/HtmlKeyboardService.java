@@ -566,7 +566,7 @@ public class HtmlKeyboardService extends InputMethodService {
         /** Cadangan bila AndroidKeyboardFast tidak tersedia: peta nada->huruf untuk komit langsung. */
         @JavascriptInterface
         public void setNoteMap(final String json) {
-            runOnUiThreadSafe(() -> applyNoteMap(json));
+            runOnUiThreadSafe(() -> applyNoteMap(json, false));
         }
 
         /**
@@ -584,8 +584,9 @@ public class HtmlKeyboardService extends InputMethodService {
             boolean started = nativeMic.start(new NativeMicPitchDetector.Listener() {
                 @Override
                 public void onOnsetDetected() {
-                    webView.evaluateJavascript(
-                            "window.onNativeMicStatus && window.onNativeMicStatus('onset', true)", null);
+                    // Sengaja kosong (boost latensi): status \"Mendengar petikan…\" cuma kosmetik dan
+                    // hasil ketikan muncul ~40ms kemudian. Satu evaluateJavascript per petikan
+                    // ikut mengantre di main thread SEBELUM komit nada dan menyibukkan thread JS.
                 }
                 @Override
                 public void onPitchIndex(int idx, double freq) {
@@ -596,7 +597,7 @@ public class HtmlKeyboardService extends InputMethodService {
                         InputConnection dic = getCurrentInputConnection();
                         if (dic != null) {
                             dic.commitText(direct, 1);
-                            noteMapReady = false;   // tunggu peta baru dari JS
+                            noteMapReady = noteMapStable;   // stabil -> tetap siap; kalau tidak, tunggu peta baru dari JS
                             webView.evaluateJavascript(
                                     "window.onNativePitchCommitted && window.onNativePitchCommitted("
                                             + idx + "," + freq + "," + JSONObject.quote(direct) + ")", null);
@@ -671,8 +672,15 @@ public class HtmlKeyboardService extends InputMethodService {
     // directNoteChar()/onNativePitchCommitted di index.html. Hanya diakses di UI thread.
     private String[] noteMap = null;
     private boolean noteMapReady = false;
+    // BARU (boost ketikan cepat): true kalau mengetik SATU huruf lewat peta ini TIDAK mengubah
+    // status keyboard (tidak ada shift sekali-pakai yang habis terpakai). Kalau stabil, peta
+    // tetap siap sesudah komit langsung, jadi nada berikutnya juga langsung diketik dari Java
+    // tanpa menunggu JS mengirim peta baru (dulu ~1 frame + hingga 60ms, dan selama itu tiap
+    // nada dipaksa lewat jalur lambat 2x IPC). Kalau JS ternyata beda, onNativePitchCommitted
+    // di index.html tetap memperbaiki (hapus + ketik ulang), jadi tidak ada risiko huruf salah.
+    private boolean noteMapStable = false;
 
-    private void applyNoteMap(String json) {
+    private void applyNoteMap(String json, boolean stable) {
         try {
             org.json.JSONArray arr = new org.json.JSONArray(json);
             String[] m = new String[arr.length()];
@@ -681,9 +689,11 @@ public class HtmlKeyboardService extends InputMethodService {
             }
             noteMap = m;
             noteMapReady = true;
+            noteMapStable = stable;
         } catch (Exception e) {
             noteMap = null;
             noteMapReady = false;
+            noteMapStable = false;
         }
     }
 
@@ -714,7 +724,7 @@ public class HtmlKeyboardService extends InputMethodService {
             JSONObject msg = new JSONObject(data);
             // Peta nada->huruf tidak butuh InputConnection: proses dulu sebelum cek ic.
             if ("setNoteMap".equals(msg.optString("cmd", ""))) {
-                applyNoteMap(msg.optString("map", ""));
+                applyNoteMap(msg.optString("map", ""), msg.optBoolean("stable", false));
                 return;
             }
             InputConnection ic = getCurrentInputConnection();
