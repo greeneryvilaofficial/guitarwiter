@@ -197,6 +197,7 @@ public class HtmlKeyboardService extends InputMethodService {
         super.onStartInputView(info, restarting);
         // Deteksi kolom privat (password, incognito, dst) tiap kali pindah kolom.
         noteMapReady = false;   // kolom baru: tunggu peta terbaru dari JS (lihat komit langsung)
+        spaceDirectOk = false;
         privateField = isPrivateField(info);
         selectionActive = info != null && info.initialSelStart != info.initialSelEnd
                 && info.initialSelStart >= 0 && info.initialSelEnd >= 0;
@@ -566,7 +567,7 @@ public class HtmlKeyboardService extends InputMethodService {
         /** Cadangan bila AndroidKeyboardFast tidak tersedia: peta nada->huruf untuk komit langsung. */
         @JavascriptInterface
         public void setNoteMap(final String json) {
-            runOnUiThreadSafe(() -> applyNoteMap(json, false));
+            runOnUiThreadSafe(() -> applyNoteMap(json, false, false));
         }
 
         /**
@@ -592,6 +593,7 @@ public class HtmlKeyboardService extends InputMethodService {
                 public void onPitchIndex(int idx, double freq) {
                     // JALUR LANGSUNG: ketik dulu di sini (UI thread, tanpa menunggu JS), lalu
                     // kabari JS. Kalau peta belum siap / tidak ada InputConnection -> jalur lama.
+                    spaceDirectOk = false;   // teks berubah -> kelayakan spasi langsung basi sampai peta baru
                     String direct = directCharFor(idx);
                     if (direct != null) {
                         InputConnection dic = getCurrentInputConnection();
@@ -600,7 +602,7 @@ public class HtmlKeyboardService extends InputMethodService {
                             noteMapReady = noteMapStable;   // stabil -> tetap siap; kalau tidak, tunggu peta baru dari JS
                             webView.evaluateJavascript(
                                     "window.onNativePitchCommitted && window.onNativePitchCommitted("
-                                            + idx + "," + freq + "," + JSONObject.quote(direct) + ")", null);
+                                            + idx + "," + freq + "," + JSONObject.quote(direct) + "," + nativeMic.getLastLatencyMs() + ")", null);
                             return;
                         }
                     }
@@ -619,6 +621,18 @@ public class HtmlKeyboardService extends InputMethodService {
                 }
                 @Override
                 public void onKick() {
+                    // JALUR LANGSUNG spasi: ketik dulu di sini, baru kabari JS.
+                    if (spaceDirectOk) {
+                        InputConnection kic = getCurrentInputConnection();
+                        if (kic != null) {
+                            kic.commitText(" ", 1);
+                            spaceDirectOk = false;   // dua spasi beruntun butuh logika titik-ganda di JS
+                            webView.evaluateJavascript(
+                                    "window.onNativeKickCommitted && window.onNativeKickCommitted("
+                                            + nativeMic.getLastLatencyMs() + ")", null);
+                            return;
+                        }
+                    }
                     webView.evaluateJavascript(
                             "window.onNativeKick && window.onNativeKick()", null);
                 }
@@ -679,8 +693,13 @@ public class HtmlKeyboardService extends InputMethodService {
     // nada dipaksa lewat jalur lambat 2x IPC). Kalau JS ternyata beda, onNativePitchCommitted
     // di index.html tetap memperbaiki (hapus + ketik ulang), jadi tidak ada risiko huruf salah.
     private boolean noteMapStable = false;
+    // BARU: true kalau JS bilang mengetik spasi SEKARANG tidak butuh autokoreksi / titik-ganda /
+    // penyusunan huruf non-Latin. Kick (drum) lalu langsung mengetik spasi dari sini tanpa
+    // bolak-balik ke JS. Dimatikan tiap ada huruf diketik (teks berubah -> status autokoreksi
+    // basi) sampai JS mengirim peta baru; JS juga memverifikasi ulang di onNativeKickCommitted.
+    private boolean spaceDirectOk = false;
 
-    private void applyNoteMap(String json, boolean stable) {
+    private void applyNoteMap(String json, boolean stable, boolean space) {
         try {
             org.json.JSONArray arr = new org.json.JSONArray(json);
             String[] m = new String[arr.length()];
@@ -690,10 +709,12 @@ public class HtmlKeyboardService extends InputMethodService {
             noteMap = m;
             noteMapReady = true;
             noteMapStable = stable;
+            spaceDirectOk = space;
         } catch (Exception e) {
             noteMap = null;
             noteMapReady = false;
             noteMapStable = false;
+            spaceDirectOk = false;
         }
     }
 
@@ -724,7 +745,7 @@ public class HtmlKeyboardService extends InputMethodService {
             JSONObject msg = new JSONObject(data);
             // Peta nada->huruf tidak butuh InputConnection: proses dulu sebelum cek ic.
             if ("setNoteMap".equals(msg.optString("cmd", ""))) {
-                applyNoteMap(msg.optString("map", ""), msg.optBoolean("stable", false));
+                applyNoteMap(msg.optString("map", ""), msg.optBoolean("stable", false), msg.optBoolean("space", false));
                 return;
             }
             InputConnection ic = getCurrentInputConnection();

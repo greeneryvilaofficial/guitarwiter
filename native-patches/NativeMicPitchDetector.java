@@ -86,7 +86,7 @@ public class NativeMicPitchDetector {
     // RETRIGGER_RATIO + RELEASE_RMS). 70ms jauh di bawah jarak antar-petikan
     // tercepat yang wajar (~150-160ms bahkan di teknik tapping cepat), jadi
     // aman. HARUS sama persis dengan COOLDOWN_MS di index.html.
-    private static final long COOLDOWN_MS = 70;
+    private static final long COOLDOWN_MS = 55;   // dulu 70: debounce lebih pendek untuk tapping/strum cepat
     // PENTING (fix "kedeteksi ganda / dobel ketikan"): dulu, begitu COOLDOWN_MS
     // lewat, mic langsung siap mendeteksi onset baru lagi -- padahal senar
     // gitar yang baru dipetik itu MASIH BERDENGUNG jauh lebih lama, dan
@@ -107,8 +107,8 @@ public class NativeMicPitchDetector {
     // yang konstan tidak ikut kepicu -- jadi menurunkan ambang absolut ini
     // aman selama rasionya tetap dijaga. HARUS sama persis dengan ambang RMS
     // onset di micLoop() index.html.
-    private static final double ONSET_RMS = 0.012;
-    private static final double ONSET_RATIO = 1.6; // HARUS sama persis dengan rasio onset di index.html
+    private static final double ONSET_RMS = 0.009;   // dulu 0.012: tapping/hammer-on yang pelan ikut terdeteksi
+    private static final double ONSET_RATIO = 1.5;   // dulu 1.6; // HARUS sama persis dengan rasio onset di index.html
     // BARU -- fix "nada cepat/tapping ketimpa dengungan nada sebelumnya jadi
     // gak kepick": dulu selama STATE_RELEASING, mic BUTA total terhadap
     // petikan baru sampai dengungan lama turun di bawah RELEASE_RMS -- masalahnya
@@ -122,8 +122,8 @@ public class NativeMicPitchDetector {
     // (bukan cuma riak kecil di ekor dengungan), langsung dianggap onset baru,
     // tanpa nunggu reda dulu. HARUS sama persis dengan RETRIGGER_RATIO &
     // RETRIGGER_MIN_RMS di index.html.
-    private static final double RETRIGGER_RATIO = 1.7;
-    private static final double RETRIGGER_MIN_RMS = 0.012;
+    private static final double RETRIGGER_RATIO = 1.55;   // dulu 1.7: nada beruntun tanpa lembah dalam (tapping legato)
+    private static final double RETRIGGER_MIN_RMS = 0.009;   // dulu 0.012 (sinkron dengan ONSET_RMS)
     // BARU (fix "satu strum/petik kebaca berkali-kali jadi huruf dobel/triple"):
     // dulu retrigger cuma dibandingkan ke SATU hop sebelumnya (prevHopRms).
     // Masalahnya, chord yang di-strum (banyak senar bareng) atau nada yang
@@ -136,14 +136,19 @@ public class NativeMicPitchDetector {
     // RETRIGGER_WINDOW_HOPS hop terakhir (~80ms), bukan cuma satu hop -- jadi
     // harus ada "lembah" beneran dulu sebelum dianggap ada "puncak" (onset)
     // baru, bukan sekadar riak naik-turun kecil dalam tren yang sama.
-    private static final int RETRIGGER_WINDOW_HOPS = 5;
+    private static final int RETRIGGER_WINDOW_HOPS = 4;   // dulu 5 (~83ms -> ~67ms): lembah lebih cepat 'terlupa'
     // BARU: jarak minimum MUTLAK antar onset (baik onset normal maupun
     // retrigger) -- jaring pengaman terakhir di luar syarat "lembah dulu" di
     // atas, supaya beating yang sangat cepat sekalipun tidak bisa memicu lebih
     // sering dari ini. 110ms masih jauh di bawah jarak petikan tercepat yang
     // realistis (~150-160ms bahkan di teknik tapping cepat), jadi tidak akan
     // kerasa nge-lag buat permainan sungguhan.
-    private static final long MIN_RETRIGGER_GAP_MS = 110;
+    private static final long MIN_RETRIGGER_GAP_MS = 90;   // dulu 110
+    // BARU: lonjakan yang SANGAT jelas (>= 2.8x lembah) jelas petikan/strum baru, bukan riak
+    // beating dari strum yang sama (riak jarang lewat ~1.8x), jadi boleh lebih cepat dari
+    // MIN_RETRIGGER_GAP_MS. Ini yang bikin genjrengan cepat & fingerstyle beruntun tidak ketinggalan.
+    private static final double STRONG_RETRIGGER_RATIO = 2.8;
+    private static final long STRONG_RETRIGGER_GAP_MS = 60;
     // BARU (bagian dari fix yang sama): dulu begitu SATU hop RMS-nya di bawah
     // RELEASE_RMS, langsung dianggap "sudah reda" dan state balik ke IDLE.
     // Padahal riak/beating yang sama di atas juga bisa bikin RMS sempat
@@ -153,7 +158,7 @@ public class NativeMicPitchDetector {
     // retrigger). Sekarang RMS harus di bawah RELEASE_RMS SELAMA
     // RELEASE_CONFIRM_HOPS hop BERTURUT-TURUT (bukan cuma sekali) baru
     // dianggap benar-benar reda.
-    private static final int RELEASE_CONFIRM_HOPS = 3;
+    private static final int RELEASE_CONFIRM_HOPS = 2;   // dulu 3
     // Diturunkan dari 0.012 -> 0.007, sinkron dengan ONSET_RMS di atas --
     // supaya sinyal pelan yang lolos jadi onset juga tidak langsung ditolak
     // yinDetect() sendiri. HARUS sama persis dengan ambang rms di yinDetect()
@@ -182,6 +187,16 @@ public class NativeMicPitchDetector {
     // sangat tinggi (nada pendek/staccato/palm-mute yang sungguhan tetap bisa
     // meluruh cepat tapi periodisitasnya jelas sekali). HARUS sama persis
     // dengan TAP_DECAY_RATIO & STRONG_PROBABILITY di index.html.
+    // ---- JALUR CEPAT nada pertama (BARU) ----
+    // Bacaan normal baru terjadi ~33ms sesudah onset (SETTLE_MS jatuh di 2 hop). Untuk nada
+    // yang BERSIH kita coba 1x lebih awal, di hop pertama sesudah onset (~17ms), dan langsung
+    // komit HANYA kalau semua syarat ketat ini terpenuhi. Kalau salah satu gagal, tidak ada
+    // yang berubah: bacaan normal jalan seperti biasa di ~33ms. Nada rendah (< FAST_MIN_FREQ)
+    // tidak ikut karena di hop pertama datanya belum cukup siklus buat YIN.
+    private static final long FAST_READ_MS = 12;
+    private static final double FAST_MIN_PROB = 0.90;
+    private static final double FAST_MIN_FREQ = 140.0;
+    private static final double FAST_MAX_CENTS = 15.0;
     private static final double TAP_DECAY_RATIO = 0.30;
     private static final double STRONG_PROBABILITY = 0.80;
 
@@ -246,6 +261,11 @@ public class NativeMicPitchDetector {
     public void setKickEnabled(boolean enabled) {
         this.kickEnabled = enabled;
     }
+
+    // Waktu (ms) dari onset terdeteksi sampai nada dikomit -- bagian yang berasal dari KODE ini.
+    // Ditampilkan di status keyboard supaya kelihatan; sisanya (audio masuk mic) di luar kode.
+    private volatile long lastLatencyMs = 0;
+    public long getLastLatencyMs() { return lastLatencyMs; }
 
     private volatile int kickLevel = 1;
 
@@ -390,6 +410,11 @@ public class NativeMicPitchDetector {
         // referensi lokal supaya loop ini tidak kena NullPointerException (yang akan
         // menjatuhkan seluruh aplikasi). Kalau rec sudah di-release, read() mengembalikan
         // kode error negatif -> loop berhenti rapi.
+        long fastAt = 0;
+        boolean fastTried = true;
+        final int[] fIdx = new int[1];
+        final double[] fCents = new double[1];
+
         final AudioRecord rec = this.audioRecord;
         if (rec == null) return;
 
@@ -427,6 +452,8 @@ public class NativeMicPitchDetector {
                     candidateIdx = -1;
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;
+                    fastAt = now + FAST_READ_MS;
+                    fastTried = false;
                     lastOnsetAt = now;
                     onsetPeakRms = rms;
                     onsetLowE = hopLowSq;
@@ -442,6 +469,21 @@ public class NativeMicPitchDetector {
                 // fase SAMPLING (baik pas nunggu SETTLE_MS maupun pas benar-benar
                 // mengukur), bukan cuma diambil dari satu hop pemicu onset saja.
                 if (rms > onsetPeakRms) onsetPeakRms = rms;
+                // JALUR CEPAT: satu bacaan awal di hop pertama sesudah onset (lihat FAST_*).
+                if (!fastTried && now >= fastAt && now < sampleAt) {
+                    fastTried = true;
+                    PitchReading fr = yinDetect(window, BUFFER_SAMPLES, sampleRate);
+                    if (fr != null && fr.freq >= FAST_MIN_FREQ && fr.probability >= FAST_MIN_PROB
+                            && isCategorySafe(fr.freq, fr.probability, fIdx, fCents)
+                            && fCents[0] < FAST_MAX_CENTS
+                            && fIdx[0] >= 0 && fIdx[0] < NOTE_COUNT) {
+                        lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
+                        commit(fIdx[0], fr.freq);
+                        state = STATE_RELEASING;
+                        cooldownUntil = now + COOLDOWN_MS;
+                        releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
+                    }
+                }
                 if (now >= sampleAt) {
                     PitchReading r = yinDetect(window, BUFFER_SAMPLES, sampleRate);
                     sampleTries++;
@@ -459,6 +501,7 @@ public class NativeMicPitchDetector {
                     boolean kickHit = kickEnabled && isKick(onsetLowE, onsetFullE, onsetPeakRms,
                             decayRatio, r != null ? r.probability : 0.0);
                     if (kickHit) {
+                        lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
                         postKick();
                         state = STATE_RELEASING;
                         cooldownUntil = now + COOLDOWN_MS;
@@ -491,11 +534,12 @@ public class NativeMicPitchDetector {
                             // (fretting bersih) cukup 1 bacaan, yang agak ke pinggir butuh 2,
                             // yang paling ambigu butuh 3 -- lihat catatan requiredConfirm di
                             // deklarasi candidateIdx/candidateCount di atas.
-                            int requiredConfirm = centsOffOut[0] < 12 ? 1 : (centsOffOut[0] < 22 ? 2 : 3);
+                            int requiredConfirm = centsOffOut[0] < 15 ? 1 : (centsOffOut[0] < 25 ? 2 : 3);
                             if (candidateCount >= requiredConfirm || sampleTries >= MAX_SAMPLE_TRIES) {
                                 // Sudah dapat cukup bacaan berturut yang sepakat (paling
                                 // umum), ATAU jatah percobaan sudah habis -- pakai bacaan
                                 // TERAKHIR yang lolos ini (lebih baik daripada nyerah total).
+                                lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
                                 commit(idxOut[0], r.freq);
                                 state = STATE_RELEASING;
                                 cooldownUntil = now + COOLDOWN_MS;
@@ -559,7 +603,8 @@ public class NativeMicPitchDetector {
                 // ambang) supaya beating/riak dari SATU strum yang sama tidak
                 // kehitung berkali-kali sebagai huruf berbeda-beda.
                 if (now > cooldownUntil
-                        && now - lastOnsetAt > MIN_RETRIGGER_GAP_MS
+                        && now - lastOnsetAt > (rms > recentMin * STRONG_RETRIGGER_RATIO
+                                ? STRONG_RETRIGGER_GAP_MS : MIN_RETRIGGER_GAP_MS)
                         && rms > RETRIGGER_MIN_RMS
                         && rms > recentMin * RETRIGGER_RATIO) {
                     state = STATE_SAMPLING;
@@ -567,6 +612,8 @@ public class NativeMicPitchDetector {
                     candidateIdx = -1;
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;
+                    fastAt = now + FAST_READ_MS;
+                    fastTried = false;
                     lastOnsetAt = now;
                     onsetPeakRms = rms;
                     onsetLowE = hopLowSq;
