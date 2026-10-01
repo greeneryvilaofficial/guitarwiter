@@ -195,6 +195,13 @@ public class NativeMicPitchDetector {
     // tidak ikut karena di hop pertama datanya belum cukup siklus buat YIN.
     private static final long FAST_READ_MS = 12;
     private static final double FAST_MIN_PROB = 0.90;
+    // Zona tengah (D#4-G#4 = tuts f..l, di bawah FAST_MID_MAX_FREQ): fundamental lebih rendah berarti
+    // di hop pertama cuma ada sedikit siklus di jendela, jadi probabilitas YIN-nya jarang sampai 0.90
+    // walau nadanya bersih -> jalur cepat hampir selalu gagal dan jatuh ke bacaan normal (lebih lambat)
+    // dibanding z..m. Syarat lain (kategori aman, <FAST_MAX_CENTS dari pusat) tetap berlaku.
+    // Kembalikan ke 0.90 kalau muncul huruf salah di zona ini.
+    private static final double FAST_MIN_PROB_MID = 0.85;
+    private static final double FAST_MID_MAX_FREQ = 450.0;
     // Alias oktaf-naik dari angka (idx 0-9, 82-139Hz) ada di 165-277Hz. Jalur cepat SEBELUMNYA
     // mulai 140Hz sehingga angka bisa lolos sebagai huruf baris qwerty/asdf. 300Hz = di atas alias.
     private static final double FAST_MIN_FREQ = 300.0;
@@ -206,7 +213,7 @@ public class NativeMicPitchDetector {
     // data lebih banyak (umur minimum sejak onset) dan minta bacaan yang sepakat lebih banyak;
     // bacaan yang barusan dikoreksi oktaf oleh Goertzel dituntut paling banyak.
     private static final double LOW_ZONE_MAX_FREQ = 300.0;
-    private static final long LOW_ZONE_MIN_AGE_MS = 66;
+    private static final long LOW_ZONE_MIN_AGE_MS = 50;   // dulu 66: 1 hop lebih cepat untuk tuts a,s,d; konsensus 2/3 bacaan tetap dipertahankan sebagai pengaman oktaf
     private static final int LOW_ZONE_CONFIRM = 2;
     private static final int LOW_ZONE_CONFIRM_CORRECTED = 3;
     private static final double TAP_DECAY_RATIO = 0.30;
@@ -488,7 +495,8 @@ public class NativeMicPitchDetector {
                 if (!fastTried && now >= fastAt && now < sampleAt) {
                     fastTried = true;
                     PitchReading fr = yinDetect(window, BUFFER_SAMPLES, sampleRate);
-                    if (fr != null && fr.freq >= FAST_MIN_FREQ && fr.probability >= FAST_MIN_PROB
+                    if (fr != null && fr.freq >= FAST_MIN_FREQ
+                            && fr.probability >= (fr.freq < FAST_MID_MAX_FREQ ? FAST_MIN_PROB_MID : FAST_MIN_PROB)
                             && isCategorySafe(fr.freq, fr.probability, fIdx, fCents)
                             && fCents[0] < FAST_MAX_CENTS
                             && (!FUNCTIONAL_KEYS_STRICT || "letterOrSymbol".equals(categoryOfIndex(fIdx[0])))
