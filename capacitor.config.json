@@ -2,6 +2,7 @@
   "appId": "com.keyboardkustom.app",
   "appName": "Guitarwiter",
   "webDir": "www",
+  "bundledWebRuntime": false,
   "server": {
     "androidScheme": "https"
   }
