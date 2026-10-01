@@ -926,7 +926,52 @@ public class NativeMicPitchDetector {
         // masalah yang sama dan sudah teruji aman untuk kasus F2/F3. HARUS
         // sinkron dengan yinDetect() di index.html.
 
-        return new PitchReading(finalFreq, probability, finalFreq != rawFreq);
+        // Langkah 6 (BARU, "HD"): penajaman frekuensi lewat Goertzel berjendela
+        // Hann pada frekuensi non-bulat (pindai tiap 5 sen, +-30 sen), presisi
+        // ~1-2 sen. HARUS sinkron dengan goertzelRefine() di index.html.
+        boolean octaveChanged = finalFreq != rawFreq;
+        finalFreq = goertzelRefine(buf, size, finalFreq, sampleRate);
+
+        return new PitchReading(finalFreq, probability, octaveChanged);
+    }
+
+    private static float[] hannCache = new float[0];
+
+    private static double goertzelWin(float[] buf, int size, double targetFreq, int sampleRate) {
+        if (hannCache.length != size) {
+            float[] h = new float[size];
+            for (int n = 0; n < size; n++) h[n] = (float) (0.5 - 0.5 * Math.cos(2 * Math.PI * n / (size - 1)));
+            hannCache = h;
+        }
+        final float[] hann = hannCache;
+        double w = 2 * Math.PI * targetFreq / sampleRate;
+        double cosine = Math.cos(w), sine = Math.sin(w), coeff = 2 * cosine;
+        double q1 = 0, q2 = 0;
+        for (int n = 0; n < size; n++) {
+            double q0 = coeff * q1 - q2 + buf[n] * hann[n];
+            q2 = q1;
+            q1 = q0;
+        }
+        double real = q1 - q2 * cosine, imag = q2 * sine;
+        return real * real + imag * imag;
+    }
+
+    private static double goertzelRefine(float[] buf, int size, double freq, int sampleRate) {
+        final int STEPS = 6;
+        final double STEP_CENTS = 5;
+        double[] mags = new double[2 * STEPS + 1];
+        int best = 0;
+        for (int i = -STEPS; i <= STEPS; i++) {
+            double f = freq * Math.pow(2, i * STEP_CENTS / 1200);
+            mags[i + STEPS] = goertzelWin(buf, size, f, sampleRate);
+            if (mags[i + STEPS] > mags[best + STEPS]) best = i;
+        }
+        if (best <= -STEPS || best >= STEPS) return freq;
+        double a = mags[best + STEPS - 1], b = mags[best + STEPS], c = mags[best + STEPS + 1];
+        double denom = a - 2 * b + c;
+        double frac = denom != 0 ? 0.5 * (a - c) / denom : 0;
+        if (Double.isNaN(frac) || Double.isInfinite(frac) || Math.abs(frac) > 1) return freq;
+        return freq * Math.pow(2, (best + frac) * STEP_CENTS / 1200);
     }
 
     /**
