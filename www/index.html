@@ -3789,12 +3789,26 @@
     //     cuma subharmonik semu (dampak trivial "periodik juga di 2x periode"),
     //     dan fundamental aslinya ada satu oktaf di ATAS (kasus G#3/A2).
     let finalFreq = rawFreq;
-    const magAtFreq = goertzelMag(buf, rawFreq, sampleRate);
     const halfFreq = rawFreq/2;
     if(halfFreq >= MIN_VALID_FREQ){
-      const magAtHalf = goertzelMag(buf, halfFreq, sampleRate);
-      if(magAtHalf >= magAtFreq*0.6){
-        finalFreq = halfFreq;
+      if(halfFreq <= DIGIT_HALF_MAX_FREQ){
+        // Zona ANGKA (82-139Hz): fundamental sering sangat lemah lewat mic HP,
+        // sehingga angka kebaca satu oktaf lebih tinggi = HURUF. Selain uji lama
+        // (energi di setengah frekuensi), cek juga harmonik ganjil dari
+        // fundamental hipotetis: 1.5x dan 2.5x rawFreq. Nada huruf asli
+        // TIDAK punya energi di situ; nada angka dengan fundamental lemah punya.
+        // HARUS sinkron dengan yinDetect() di NativeMicPitchDetector.java.
+        const aR = ampWin(buf, rawFreq, sampleRate);
+        const aH = ampWin(buf, halfFreq, sampleRate);
+        let down = aH >= aR*0.6;
+        if(!down && ampWin(buf, rawFreq*1.5, sampleRate) >= aR*0.25){
+          down = aH >= aR*0.15 || ampWin(buf, rawFreq*2.5, sampleRate) >= aR*0.1;
+        }
+        if(down) finalFreq = halfFreq;
+      } else {
+        const magAtFreq = goertzelMag(buf, rawFreq, sampleRate);
+        const magAtHalf = goertzelMag(buf, halfFreq, sampleRate);
+        if(magAtHalf >= magAtFreq*0.6) finalFreq = halfFreq;
       }
     }
     // Arah "naik" (kalau energi di rawFreq lemah dibanding di 2x-nya, berarti
@@ -3820,6 +3834,17 @@
     return { freq: finalFreq, clarity: probability };
   }
 
+  // Batas atas setengah-frekuensi yang masih zona angka (C#3 138.6Hz + 50 sen).
+  const DIGIT_HALF_MAX_FREQ = 143;
+  // Amplitudo Goertzel berjendela, diambil yang tertinggi di +-20 sen (toleransi tuning).
+  function ampWin(buf, f, sampleRate){
+    let best = 0;
+    for(let i=-2;i<=2;i++){
+      const m = goertzelWin(buf, f*Math.pow(2, i*10/1200), sampleRate);
+      if(m > best) best = m;
+    }
+    return Math.sqrt(best);
+  }
   let _hannCache = null;
   function goertzelWin(buf, targetFreq, sampleRate){
     const N = buf.length;
