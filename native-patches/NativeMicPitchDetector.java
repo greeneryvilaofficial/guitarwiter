@@ -907,12 +907,24 @@ public class NativeMicPitchDetector {
         //     di 2x periode"), dan fundamental aslinya ada satu oktaf di ATAS
         //     (kasus G#3/A2). HARUS sinkron dengan yinDetect() di index.html.
         double finalFreq = rawFreq;
-        double magAtFreq = goertzelMag(buf, size, rawFreq, sampleRate);
         double halfFreq = rawFreq / 2;
         if (halfFreq >= MIN_VALID_FREQ) {
-            double magAtHalf = goertzelMag(buf, size, halfFreq, sampleRate);
-            if (magAtHalf >= magAtFreq * 0.6) {
-                finalFreq = halfFreq;
+            if (halfFreq <= DIGIT_HALF_MAX_FREQ) {
+                // Zona ANGKA (82-139Hz): fundamental sering sangat lemah lewat mic HP,
+                // sehingga angka kebaca satu oktaf lebih tinggi = HURUF. Selain uji
+                // lama, cek harmonik ganjil 1.5x & 2.5x rawFreq (nada huruf asli
+                // tidak punya energi di situ). HARUS sinkron dengan index.html.
+                double aR = ampWin(buf, size, rawFreq, sampleRate);
+                double aH = ampWin(buf, size, halfFreq, sampleRate);
+                boolean down = aH >= aR * 0.6;
+                if (!down && ampWin(buf, size, rawFreq * 1.5, sampleRate) >= aR * 0.25) {
+                    down = aH >= aR * 0.15 || ampWin(buf, size, rawFreq * 2.5, sampleRate) >= aR * 0.1;
+                }
+                if (down) finalFreq = halfFreq;
+            } else {
+                double magAtFreq = goertzelMag(buf, size, rawFreq, sampleRate);
+                double magAtHalf = goertzelMag(buf, size, halfFreq, sampleRate);
+                if (magAtHalf >= magAtFreq * 0.6) finalFreq = halfFreq;
             }
         }
         // Arah "naik" (kalau energi di rawFreq lemah dibanding di 2x-nya, berarti
@@ -933,6 +945,19 @@ public class NativeMicPitchDetector {
         finalFreq = goertzelRefine(buf, size, finalFreq, sampleRate);
 
         return new PitchReading(finalFreq, probability, octaveChanged);
+    }
+
+    // Batas atas setengah-frekuensi yang masih zona angka (C#3 138.6Hz + 50 sen).
+    private static final double DIGIT_HALF_MAX_FREQ = 143.0;
+
+    // Amplitudo Goertzel berjendela, diambil yang tertinggi di +-20 sen (toleransi tuning).
+    private static double ampWin(float[] buf, int size, double f, int sampleRate) {
+        double best = 0;
+        for (int i = -2; i <= 2; i++) {
+            double m = goertzelWin(buf, size, f * Math.pow(2, i * 10.0 / 1200), sampleRate);
+            if (m > best) best = m;
+        }
+        return Math.sqrt(best);
     }
 
     private static float[] hannCache = new float[0];
