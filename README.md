@@ -35,7 +35,8 @@ Di **mode huruf** nada rendah (E2–C#3) sengaja diabaikan karena baris angka te
   generate-keystore.yml    # jalankan SEKALI untuk membuat keystore rilis
 native-patches/            # ditempel ke proyek android/ yang dibuat otomatis oleh Capacitor
   HtmlKeyboardService.java     # InputMethodService + WebView + jembatan JS
-  NativeMicPitchDetector.java  # rekam mic & deteksi nada (YIN) — inti kecepatan
+  NativeMicPitchDetector.java  # rekam mic, mesin status onset -> bacaan -> lepas
+  PitchDsp.java                # DSP murni (YIN + Goertzel), tanpa dependensi Android
   MainActivity.java            # minta izin mikrofon
   method.xml                   # deklarasi IME
   insert_*.py                  # skrip penyisip manifest/gradle/ikon/signing/performa
@@ -45,6 +46,8 @@ www/
 capacitor.config.json
 package.json
 ```
+
+> Semua `native-patches/*.java` harus disalin ke `android/app/src/main/java/com/keyboardkustom/app/`. Kalau workflow menyalin file satu per satu, tambahkan `PitchDsp.java`.
 
 ## Build (GitHub Actions)
 Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
