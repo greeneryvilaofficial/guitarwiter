@@ -1,14 +1,13 @@
 package com.keyboardkustom.app;
 
+import android.inputmethodservice.InputMethodService;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
-import android.inputmethodservice.InputMethodService;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PersistableBundle;
-import android.os.SystemClock;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.HapticFeedbackConstants;
@@ -24,148 +23,153 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
-import android.webkit.WebView;
-
 import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewClientCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
+import android.webkit.WebView;
 
-import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.Collections;
 
 /**
- * Keyboard (InputMethodService) yang menampilkan halaman HTML di WebView dan menjembatani
- * ketikan dari JavaScript ke InputConnection sistem (WhatsApp, Instagram, dsb).
- *
- * <p>Jalur ketikan, dari paling cepat:
- * <ol>
- *   <li><b>Komit langsung dari Java</b>: nada terdeteksi -> huruf diketik di UI thread tanpa bolak-balik ke JS
- *       (lihat {@link #noteMap}).</li>
- *   <li><b>WebMessageListener</b> ({@code AndroidKeyboardFast}): callback dijamin di UI thread, jadi tanpa
- *       loncatan thread tambahan.</li>
- *   <li><b>{@code window.AndroidKeyboard.*}</b>: cadangan penuh; dipanggil dari thread lain lalu dipindah ke UI thread.</li>
- * </ol>
+ * InputMethodService yang menampilkan file HTML keyboard sebagai WebView,
+ * dan menjembatani ketikan dari JavaScript ke InputConnection sistem Android
+ * (kolom chat WhatsApp, Instagram, dsb).
  */
 public class HtmlKeyboardService extends InputMethodService {
 
-    private static final String ASSET_ORIGIN = "https://appassets.androidplatform.net";
-    private static final String START_URL = ASSET_ORIGIN + "/assets/public/index.html";
-    private static final String FAST_BRIDGE_NAME = "AndroidKeyboardFast";
-    private static final String BRIDGE_NAME = "AndroidKeyboard";
-
-    private static final int FIELD_TEXT_CONTEXT_CHARS = 60;
-    private static final long FIELD_SYNC_DEBOUNCE_MS = 120;
-    private static final long CAPS_UPDATE_DELAY_MS = 50;
-    private static final long COMPOSING_GRACE_MS = 400;
-    private static final int MAX_CURSOR_STEPS = 40;
-
     private WebView webView;
+    private WebViewAssetLoader assetLoader;
     private ClipboardManager clipboardManager;
     private NativeMicPitchDetector nativeMic;
-
-    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    // true kalau kolom yang sedang aktif adalah password / incognito -> JS tidak boleh belajar kata.
+    private volatile boolean privateField = false;
+    // true kalau di kolom aktif ada teks yang sedang terseleksi (blok biru). Diperbarui dari
+    // onUpdateSelection() -- dikirim sistem TANPA biaya IPC ekstra, jadi ketukan hapus biasa
+    // tetap secepat sebelumnya (tidak perlu bertanya ke aplikasi tiap ketukan).
+    private volatile boolean selectionActive = false;
+    // Huruf besar otomatis (awal kolom / awal kalimat), persis Gboard. Android yang menentukan lewat
+    // InputConnection.getCursorCapsMode() -- jadi menghormati jenis kolom (chat, email, URL, password).
+    private volatile int capsMode = 0;
+    private volatile boolean capsPolicy = false;
+    private final Handler capsHandler = new Handler(Looper.getMainLooper());
     private final Runnable capsRunnable = this::updateCapsNow;
+    // Sinkronisasi pelacak teks di JS dengan isi kolom SEBENARNYA (tombol X pada kolom cari, pilih-semua+hapus, ganti kolom, dst).
     private final Runnable syncRunnable = () -> syncFieldText(false);
+    // Bahasa non-Latin (Rusia, Arab, Jepang, dst): teks yang sedang diketik berstatus "composing" di
+    // aplikasi tujuan. Kalau kursor dipindah / aplikasi menutup composing-nya, JS diberi tahu supaya
+    // tidak lagi mengganti teks yang sudah "terkunci".
+    private volatile boolean composingActive = false;
+    private volatile long lastComposeAt = 0;
     private final ClipboardManager.OnPrimaryClipChangedListener clipListener = this::pushClipboardToJs;
-
-    // ---- Status kolom aktif ----
-
-    /** Kolom password / incognito: JS tidak boleh belajar kata. */
-    private volatile boolean privateField;
-    /** Ada teks terseleksi (blok biru). Diperbarui dari onUpdateSelection() tanpa biaya IPC ekstra. */
-    private volatile boolean selectionActive;
-    /** Huruf besar otomatis awal kalimat; Android yang menentukan lewat getCursorCapsMode(). */
-    private volatile boolean capsPolicy;
-    private volatile int capsMode;
-    /** Bahasa non-Latin: teks sedang berstatus "composing" di aplikasi tujuan. */
-    private volatile boolean composingActive;
-    private volatile long lastComposeAt;
-
-    // ---- Komit langsung nada (hanya diakses di UI thread) ----
-
-    /** Peta idx nada -> huruf dari JS; null = tidak boleh diketik langsung (butuh logika JS). */
-    private String[] noteMap;
-    private boolean noteMapReady;
-    /** true = mengetik satu huruf tidak mengubah status keyboard, jadi peta tetap siap sesudah komit. */
-    private boolean noteMapStable;
-    /** true = JS menjamin spasi sekarang tidak butuh autokoreksi / titik-ganda / penyusunan non-Latin. */
-    private boolean spaceDirectOk;
-
-    // =====================================================================================
-    // Siklus hidup
-    // =====================================================================================
 
     @Override
     public View onCreateInputView() {
-        // WebView dibuat dan dimuat SEKALI lalu dipakai ulang, supaya keyboard muncul instan.
+        // Booster: WebView hanya dibuat & di-load SEKALI. Sebelumnya, setiap
+        // kali keyboard muncul (pindah kolom/aplikasi), sistem memanggil
+        // onCreateInputView() lagi dan kode lama membuat WebView baru +
+        // reload index.html dari nol setiap saat — ini yang bikin terasa
+        // delay/lag di HP dengan spek ringan. Sekarang WebView yang sama
+        // dipakai ulang terus, jadi keyboard muncul instan setelah kemunculan pertama.
         if (webView != null) {
-            detachFromParent(webView);
+            // WebView cuma boleh punya satu parent. Lepas dulu dari parent
+            // lama sebelum dipakai ulang, kalau tidak sistem akan crash.
+            ViewGroup parent = (ViewGroup) webView.getParent();
+            if (parent != null) {
+                parent.removeView(webView);
+            }
             return webView;
         }
 
         webView = new WebView(this);
-        configureWebView(webView);
-        registerBridges(webView);
-        installClients(webView);
+        WebSettings webSettings = webView.getSettings();
 
-        nativeMic = new NativeMicPitchDetector(this);
+        // Mengaktifkan JavaScript agar logika tombol berfungsi
+        webSettings.setJavaScriptEnabled(true);
+        webSettings.setDomStorageEnabled(true);
+        // Halaman dimuat lewat WebViewAssetLoader (https), bukan file:// -> akses file tidak diperlukan.
+        webSettings.setAllowFileAccess(false);
 
-        clipboardManager = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-        if (clipboardManager != null) clipboardManager.addPrimaryClipChangedListener(clipListener);
+        // Booster rendering: pakai layer hardware & matikan overscroll bounce
+        // yang tidak perlu untuk tampilan keyboard.
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
 
-        webView.loadUrl(START_URL);
-        return webView;
-    }
+        // Daftarkan jembatan: di JavaScript akan muncul sebagai window.AndroidKeyboard
+        webView.addJavascriptInterface(new KeyboardBridge(), "AndroidKeyboard");
 
-    private void configureWebView(WebView view) {
-        final WebSettings settings = view.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setAllowFileAccess(false);   // halaman dimuat lewat https (AssetLoader), bukan file://
-        view.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-        view.setOverScrollMode(View.OVER_SCROLL_NEVER);
-    }
-
-    private void registerBridges(WebView view) {
-        view.addJavascriptInterface(new KeyboardBridge(), BRIDGE_NAME);
-
-        // Jalur cepat: callback WebMessageListener dijamin di UI thread. Kalau tidak didukung / gagal,
-        // JS otomatis memakai window.AndroidKeyboard.* biasa.
+        // BOOSTER LATENSI KETIK (baru): window.AndroidKeyboard.* di atas method-nya
+        // dipanggil Android di THREAD LAIN, bukan UI thread -- makanya tiap panggilan
+        // commitText/deleteBackward/dst harus loncat balik ke UI thread dulu lewat
+        // runOnUiThreadSafe() sebelum boleh menyentuh InputConnection. Loncatan ekstra
+        // ini nambah 1 antrean message-loop lagi yang bisa molor kalau UI thread
+        // lagi sibuk (render animasi tuts, saran kata, dst) -- paling kerasa pas
+        // ngetik cepat pakai deteksi nada gitar.
+        // WebMessageListener (androidx.webkit) BEDA: callback onPostMessage()-nya
+        // DIJAMIN jalan di UI thread, jadi loncatan balik itu tidak perlu lagi buat
+        // 4 aksi paling sering dipanggil saat mengetik (commitText, deleteBackward,
+        // deleteBackwardN, sendEnter) -- lihat handleFastTypingMessage() di bawah.
+        // Didaftarkan dengan nama beda ("AndroidKeyboardFast") supaya
+        // window.AndroidKeyboard.* yang lama TETAP ada utuh sebagai fallback penuh
+        // (dipakai semua aksi lain + WebView lawas yang belum dukung fitur ini) --
+        // JS yang otomatis pilih jalur cepat ini KALAU tersedia (lihat fastBridge()
+        // di index.html), jadi tidak ada risiko keyboard rusak kalau fitur ini
+        // ternyata tidak tersedia di sebagian HP.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             try {
                 WebViewCompat.addWebMessageListener(
-                        view,
-                        FAST_BRIDGE_NAME,
-                        Collections.singleton(ASSET_ORIGIN),
-                        (v, message, sourceOrigin, isMainFrame, replyProxy) ->
+                        webView,
+                        "AndroidKeyboardFast",
+                        Collections.singleton("https://appassets.androidplatform.net"),
+                        (view, message, sourceOrigin, isMainFrame, replyProxy) ->
                                 handleFastTypingMessage(message.getData()));
-            } catch (RuntimeException ignored) {
-                // Origin ditolak / fitur gagal: cadangan tetap tersedia.
+            } catch (Exception e) {
+                // Gagal daftar (mis. origin ditolak) -> diamkan saja. JS otomatis
+                // balik pakai window.AndroidKeyboard.* biasa, tidak ada yang rusak.
             }
         }
-    }
 
-    private void installClients(WebView view) {
-        // getUserMedia diblokir untuk file://; AssetLoader menyajikan file yang sama lewat origin https yang aman.
-        final WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
+        nativeMic = new NativeMicPitchDetector(this);
+
+        // Fitur clipboard: pantau perubahan clipboard sistem Android, lalu
+        // kirim isinya ke JavaScript supaya muncul di panel riwayat clipboard.
+        clipboardManager = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (clipboardManager != null) {
+            clipboardManager.addPrimaryClipChangedListener(clipListener);
+        }
+
+        // PENTING: getUserMedia (dipakai fitur deteksi nada gitar) DIBLOKIR browser/WebView
+        // kalau halaman dimuat lewat file:// langsung -- itu dianggap "origin tidak aman",
+        // apa pun izin Android-nya. WebViewAssetLoader ini bikin WebView memuat file yang
+        // SAMA PERSIS dari folder assets, tapi lewat alamat https://appassets.androidplatform.net/...
+        // yang dianggap origin aman, sehingga getUserMedia bisa benar-benar diizinkan.
+        assetLoader = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
                 .build();
 
-        view.setWebViewClient(new WebViewClientCompat() {
+        webView.setWebViewClient(new WebViewClientCompat() {
             @Override
-            public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest request) {
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 return assetLoader.shouldInterceptRequest(request.getUrl());
             }
         });
 
-        view.setWebChromeClient(new WebChromeClient() {
+        // Fitur mikrofon (deteksi nada gitar): JS memanggil getUserMedia({audio:true}),
+        // dan WebView butuh persetujuan lewat onPermissionRequest ini. Diberikan otomatis
+        // KALAU izin RECORD_AUDIO di level sistem Android sudah diizinkan lewat MainActivity
+        // (dicek otomatis oleh Android — kalau belum diizinkan, request ini tidak akan pernah
+        // datang dan mic tidak akan aktif, makanya aplikasi wajib dibuka sekali dulu).
+        webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onPermissionRequest(final PermissionRequest request) {
-                // Sudah di UI thread; grant() harus dipanggil langsung (jangan di-post).
+                // PENTING: onPermissionRequest ini SUDAH berjalan di UI thread bawaan
+                // Android. Sebelumnya kode ini membungkus grant() dengan webView.post(),
+                // yang menunda eksekusinya ke antrian berikutnya -- di sebagian WebView
+                // (termasuk yang dipakai beberapa HP ColorOS), penundaan ini bisa bikin
+                // permintaan izin keburu dianggap gagal sebelum grant() sempat jalan,
+                // persis menghasilkan error NotAllowedError. Sekarang dipanggil langsung.
                 for (String resource : request.getResources()) {
                     if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) {
                         request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
@@ -175,413 +179,303 @@ public class HtmlKeyboardService extends InputMethodService {
                 request.deny();
             }
         });
+
+        // Memuat file HTML lewat WebViewAssetLoader (BUKAN file:// lagi), supaya origin-nya
+        // dianggap aman dan getUserMedia bisa berfungsi.
+        webView.loadUrl("https://appassets.androidplatform.net/assets/public/index.html");
+
+        return webView;
     }
 
+    /**
+     * Dipanggil setiap kali kolom input baru mendapat fokus (mis. pindah dari
+     * kolom pencarian ke kolom chat). Berguna kalau nanti ingin menyesuaikan
+     * tampilan tombol Enter (Kirim/Cari/Enter biasa) sesuai imeOptions.
+     */
     @Override
     public void onStartInputView(EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
-
-        // Kolom baru: tunggu peta nada terbaru dari JS sebelum komit langsung.
-        noteMapReady = false;
+        // Deteksi kolom privat (password, incognito, dst) tiap kali pindah kolom.
+        noteMapReady = false;   // kolom baru: tunggu peta terbaru dari JS (lihat komit langsung)
         spaceDirectOk = false;
-
-        privateField = detectPrivateField(info);
-        selectionActive = info != null
-                && info.initialSelStart >= 0 && info.initialSelEnd >= 0
-                && info.initialSelStart != info.initialSelEnd;
+        privateField = isPrivateField(info);
+        selectionActive = info != null && info.initialSelStart != info.initialSelEnd
+                && info.initialSelStart >= 0 && info.initialSelEnd >= 0;
+        // Huruf besar otomatis HANYA di awal kalimat / awal kolom (bukan tiap kata / semua huruf):
+        // kolom teks biasa yang meminta kapitalisasi awal kalimat.
         capsPolicy = info != null && !privateField
                 && (info.inputType & InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT
                 && (info.inputType & InputType.TYPE_TEXT_FLAG_CAP_SENTENCES) != 0;
-
-        callJs(jsCall("onSelectionChanged", selectionActive),
-                jsCall("onPrivateField", privateField),
-                jsCall("onCapsPolicy", capsPolicy));
-
-        uiHandler.removeCallbacks(capsRunnable);
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "window.onSelectionChanged && window.onSelectionChanged(" + selectionActive + ")", null);
+            webView.evaluateJavascript(
+                    "window.onPrivateField && window.onPrivateField(" + privateField + ")", null);
+            webView.evaluateJavascript(
+                    "window.onCapsPolicy && window.onCapsPolicy(" + capsPolicy + ")", null);
+        }
+        capsHandler.removeCallbacks(capsRunnable);
         updateCapsNow();
-
         composingActive = false;
-        callJs(jsCall("onComposingLost"));
-
-        uiHandler.removeCallbacks(syncRunnable);
-        syncFieldText(true);   // mulai dari isi kolom yang sebenarnya
+        if (webView != null) {
+            webView.evaluateJavascript("window.onComposingLost && window.onComposingLost()", null);
+        }
+        capsHandler.removeCallbacks(syncRunnable);
+        syncFieldText(true);   // kolom baru / keyboard muncul lagi: mulai dari isi kolom yang sebenarnya
     }
 
+    /**
+     * Kirim ke JS teks asli SEBELUM kursor (maks. 60 huruf) supaya pelacak teks keyboard tidak "ketinggalan".
+     * Tanpa ini, kalau kolom dikosongkan lewat tombol X / diganti aplikasi, kata di bar saran terus menumpuk.
+     * Dilewati untuk kolom password. Teks ini hanya dikirim ke WebView lokal, tidak disimpan & tidak keluar perangkat.
+     */
+    private void syncFieldText(boolean force) {
+        if (webView == null || privateField) return;
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+        CharSequence before = ic.getTextBeforeCursor(60, 0);
+        if (before == null) return;
+        webView.evaluateJavascript(
+                "window.onFieldText && window.onFieldText(" + JSONObject.quote(before.toString()) + "," + force + ")", null);
+    }
+
+    /** Tanya Android: di posisi kursor sekarang, apakah huruf berikutnya harus kapital? Hasilnya dikirim ke JS. */
+    private void updateCapsNow() {
+        if (webView == null) return;
+        InputConnection ic = getCurrentInputConnection();
+        EditorInfo ei = getCurrentInputEditorInfo();
+        int m = 0;
+        if (capsPolicy && ic != null && ei != null) {
+            m = ic.getCursorCapsMode(TextUtils.CAP_MODE_SENTENCES);   // hanya awal kalimat
+        }
+        capsMode = m;
+        webView.evaluateJavascript(
+                "window.onAutoCaps && window.onAutoCaps(" + m + ")", null);
+    }
+
+    /** Sistem memberi tahu setiap kali posisi kursor / blok seleksi di kolom aktif berubah. */
     @Override
     public void onUpdateSelection(int oldSelStart, int oldSelEnd, int newSelStart, int newSelEnd,
                                   int candidatesStart, int candidatesEnd) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd,
                 candidatesStart, candidatesEnd);
-
         if (composingActive && candidatesStart == -1 && candidatesEnd == -1
-                && SystemClock.uptimeMillis() - lastComposeAt > COMPOSING_GRACE_MS) {
+                && System.currentTimeMillis() - lastComposeAt > 400) {
             composingActive = false;
-            callJs(jsCall("onComposingLost"));
+            if (webView != null) {
+                webView.evaluateJavascript("window.onComposingLost && window.onComposingLost()", null);
+            }
         }
-
-        // Didebounce: sekali saja setelah rentetan perubahan berhenti.
-        uiHandler.removeCallbacks(syncRunnable);
-        uiHandler.postDelayed(syncRunnable, FIELD_SYNC_DEBOUNCE_MS);
+        capsHandler.removeCallbacks(syncRunnable);
+        capsHandler.postDelayed(syncRunnable, 120);   // didebounce: satu kali setelah rentetan ketikan/perubahan berhenti
         if (capsPolicy) {
-            uiHandler.removeCallbacks(capsRunnable);
-            uiHandler.postDelayed(capsRunnable, CAPS_UPDATE_DELAY_MS);
+            capsHandler.removeCallbacks(capsRunnable);
+            capsHandler.postDelayed(capsRunnable, 50);
         }
-
-        final boolean hasSelection = newSelStart >= 0 && newSelEnd >= 0 && newSelStart != newSelEnd;
-        if (hasSelection != selectionActive) {
-            selectionActive = hasSelection;
-            callJs(jsCall("onSelectionChanged", hasSelection));
+        boolean has = newSelStart >= 0 && newSelEnd >= 0 && newSelStart != newSelEnd;
+        if (has != selectionActive) {
+            selectionActive = has;
+            if (webView != null) {
+                webView.evaluateJavascript(
+                        "window.onSelectionChanged && window.onSelectionChanged(" + has + ")", null);
+            }
         }
     }
 
+    /**
+     * Ada teks terseleksi (blok biru)? Kalau ya, hapus SELURUHNYA sekaligus dan kembalikan true.
+     * Flag selectionActive cuma "petunjuk cepat"; sebelum menghapus, seleksi dipastikan dulu
+     * lewat getSelectedText() (jalur langka, jadi tidak memperlambat ketukan hapus biasa).
+     * commitText("") menggantikan seluruh blok dengan kosong = terhapus semua.
+     */
+    private boolean deleteSelectionIfAny(InputConnection ic) {
+        if (!selectionActive) return false;
+        CharSequence sel = ic.getSelectedText(0);
+        boolean hasSel = sel != null && sel.length() > 0;
+        selectionActive = false;
+        if (hasSel) {
+            ic.commitText("", 1);
+        }
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "window.onSelectionChanged && window.onSelectionChanged(false)", null);
+        }
+        return hasSel;
+    }
+
+    /** Keyboard benar-benar terlihat lagi -> JS boleh menyalakan mic (kalau tidak dijeda manual). */
     @Override
     public void onWindowShown() {
         super.onWindowShown();
-        callJs(jsCall("onKeyboardShown"));
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "window.onKeyboardShown && window.onKeyboardShown()", null);
+        }
     }
 
-    /** Keyboard disembunyikan (tutup, pindah app, layar mati): mikrofon HARUS mati. */
+    /**
+     * Keyboard disembunyikan (tutup, pindah app, layar mati, dst) -> mikrofon HARUS mati.
+     * Dipakai onWindowHidden (bukan onFinishInputView) supaya mic tidak mati-hidup
+     * setiap kali cuma pindah antar kolom di layar yang sama.
+     */
     @Override
     public void onWindowHidden() {
         super.onWindowHidden();
-        uiHandler.removeCallbacks(capsRunnable);
-        uiHandler.removeCallbacks(syncRunnable);
-
+        capsHandler.removeCallbacks(capsRunnable);
+        capsHandler.removeCallbacks(syncRunnable);
         if (composingActive) {
-            final InputConnection ic = getCurrentInputConnection();
+            InputConnection ic = getCurrentInputConnection();
             if (ic != null) ic.finishComposingText();
             composingActive = false;
-            callJs(jsCall("onComposingLost"));
+            if (webView != null) {
+                webView.evaluateJavascript("window.onComposingLost && window.onComposingLost()", null);
+            }
         }
         if (nativeMic != null) nativeMic.stop();   // jaring pengaman kalau JS belum sempat menjawab
-        callJs(jsCall("onKeyboardHidden"));
-    }
-
-    @Override
-    public void onDestroy() {
-        uiHandler.removeCallbacks(capsRunnable);
-        uiHandler.removeCallbacks(syncRunnable);
-        if (clipboardManager != null) clipboardManager.removePrimaryClipChangedListener(clipListener);
-        if (nativeMic != null) nativeMic.stop();
         if (webView != null) {
-            detachFromParent(webView);
-            webView.destroy();   // field sengaja tidak di-null: callback mic yang masih antre tidak boleh kena NPE
-        }
-        super.onDestroy();
-    }
-
-    // =====================================================================================
-    // Sinkronisasi status ke JS
-    // =====================================================================================
-
-    /** Kirim teks asli sebelum kursor ke JS supaya pelacak teks tidak ketinggalan. Dilewati di kolom privat. */
-    private void syncFieldText(boolean force) {
-        if (webView == null || privateField) return;
-        final InputConnection ic = getCurrentInputConnection();
-        if (ic == null) return;
-        final CharSequence before = ic.getTextBeforeCursor(FIELD_TEXT_CONTEXT_CHARS, 0);
-        if (before == null) return;
-        callJs(jsCall("onFieldText", before.toString(), force));
-    }
-
-    /** Tanya Android apakah huruf berikutnya harus kapital di posisi kursor, lalu kabari JS. */
-    private void updateCapsNow() {
-        if (webView == null) return;
-        final InputConnection ic = getCurrentInputConnection();
-        final EditorInfo editorInfo = getCurrentInputEditorInfo();
-        int mode = 0;
-        if (capsPolicy && ic != null && editorInfo != null) {
-            mode = ic.getCursorCapsMode(TextUtils.CAP_MODE_SENTENCES);
-        }
-        capsMode = mode;
-        callJs(jsCall("onAutoCaps", mode));
-    }
-
-    private void pushClipboardToJs() {
-        if (clipboardManager == null || webView == null || !clipboardManager.hasPrimaryClip()) return;
-
-        final ClipData clip = clipboardManager.getPrimaryClip();
-        if (clip == null || clip.getItemCount() == 0) return;
-
-        final CharSequence item = clip.getItemAt(0).coerceToText(this);
-        if (item == null) return;
-
-        // Clip yang ditandai sensitif (mis. password manager, Android 13+) tidak boleh masuk riwayat.
-        boolean sensitive = false;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && clip.getDescription() != null) {
-            final PersistableBundle extras = clip.getDescription().getExtras();
-            sensitive = extras != null && extras.getBoolean("android.content.extra.IS_SENSITIVE", false);
-        }
-
-        final String js = jsCall("onClipboardChanged", item.toString(), sensitive);
-        runOnUiThreadSafe(() -> callJs(js));
-    }
-
-    // =====================================================================================
-    // Pembantu JS
-    // =====================================================================================
-
-    /** Bangun "window.fn && window.fn(args)"; String di-escape lewat JSONObject.quote(). Harus dieksekusi di UI thread. */
-    private static String jsCall(String function, Object... args) {
-        final StringBuilder sb = new StringBuilder("window.").append(function)
-                .append(" && window.").append(function).append('(');
-        for (int i = 0; i < args.length; i++) {
-            if (i > 0) sb.append(',');
-            sb.append(args[i] instanceof String ? JSONObject.quote((String) args[i]) : String.valueOf(args[i]));
-        }
-        return sb.append(')').toString();
-    }
-
-    /** Jalankan satu atau beberapa pernyataan JS sekaligus (satu panggilan evaluateJavascript). UI thread saja. */
-    private void callJs(String... statements) {
-        if (webView == null) return;
-        webView.evaluateJavascript(TextUtils.join(";", statements), null);
-    }
-
-    /** Callback JavascriptInterface datang dari thread WebView, bukan UI thread. */
-    private void runOnUiThreadSafe(Runnable action) {
-        if (webView != null) {
-            webView.post(action);
-        } else {
-            action.run();
-        }
-    }
-
-    private static void detachFromParent(View view) {
-        final ViewGroup parent = (ViewGroup) view.getParent();
-        if (parent != null) parent.removeView(view);   // WebView hanya boleh punya satu parent
-    }
-
-    // =====================================================================================
-    // Operasi InputConnection (dipakai bersama oleh KeyboardBridge dan jalur cepat)
-    // =====================================================================================
-
-    /** Ada blok terseleksi? Hapus seluruhnya dan kembalikan true. */
-    private boolean deleteSelectionIfAny(InputConnection ic) {
-        if (!selectionActive) return false;
-        final CharSequence selected = ic.getSelectedText(0);
-        final boolean hasSelection = selected != null && selected.length() > 0;
-        selectionActive = false;
-        if (hasSelection) ic.commitText("", 1);
-        callJs(jsCall("onSelectionChanged", false));
-        return hasSelection;
-    }
-
-    /** Hapus seleksi (kalau ada) atau {@code count} karakter sebelum kursor. */
-    private void deleteBackward(InputConnection ic, int count) {
-        if (count > 0 && !deleteSelectionIfAny(ic)) ic.deleteSurroundingText(count, 0);
-    }
-
-    /** Picu tombol aksi kolom (Kirim, Cari, Done, ...) kalau ada; kalau tidak, ketik baris baru. */
-    private void performEnter(InputConnection ic) {
-        final EditorInfo editorInfo = getCurrentInputEditorInfo();
-        final int action = editorInfo != null
-                ? (editorInfo.imeOptions & EditorInfo.IME_MASK_ACTION)
-                : EditorInfo.IME_ACTION_UNSPECIFIED;
-        final boolean noEnterAction = editorInfo != null
-                && (editorInfo.imeOptions & EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0;
-
-        if (!noEnterAction
-                && action != EditorInfo.IME_ACTION_NONE
-                && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
-            ic.performEditorAction(action);
-        } else {
-            ic.commitText("\n", 1);
+            webView.evaluateJavascript(
+                    "window.onKeyboardHidden && window.onKeyboardHidden()", null);
         }
     }
 
     /** Kolom password / incognito / minta tanpa personalisasi? */
-    private static boolean detectPrivateField(EditorInfo info) {
+    private static boolean isPrivateField(EditorInfo info) {
         if (info == null) return false;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+        if (Build.VERSION.SDK_INT >= 26
                 && (info.imeOptions & EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) {
             return true;
         }
-        final int inputClass = info.inputType & InputType.TYPE_MASK_CLASS;
-        final int variation = info.inputType & InputType.TYPE_MASK_VARIATION;
-        if (inputClass == InputType.TYPE_CLASS_TEXT) {
+        int cls = info.inputType & InputType.TYPE_MASK_CLASS;
+        int variation = info.inputType & InputType.TYPE_MASK_VARIATION;
+        if (cls == InputType.TYPE_CLASS_TEXT) {
             return variation == InputType.TYPE_TEXT_VARIATION_PASSWORD
                     || variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
                     || variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD;
         }
-        if (inputClass == InputType.TYPE_CLASS_NUMBER) {
+        if (cls == InputType.TYPE_CLASS_NUMBER) {
             return variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD;
         }
         return false;
     }
 
-    // =====================================================================================
-    // Komit langsung nada & jalur cepat WebMessageListener
-    // =====================================================================================
-
-    private void applyNoteMap(String json, boolean stable, boolean space) {
-        try {
-            final JSONArray array = new JSONArray(json);
-            final String[] map = new String[array.length()];
-            for (int i = 0; i < map.length; i++) {
-                map[i] = array.isNull(i) ? null : array.getString(i);
-            }
-            noteMap = map;
-            noteMapReady = true;
-            noteMapStable = stable;
-            spaceDirectOk = space;
-        } catch (JSONException e) {
-            noteMap = null;
-            noteMapReady = false;
-            noteMapStable = false;
-            spaceDirectOk = false;
+    @Override
+    public void onDestroy() {
+        capsHandler.removeCallbacks(capsRunnable);
+        capsHandler.removeCallbacks(syncRunnable);
+        if (clipboardManager != null) {
+            clipboardManager.removePrimaryClipChangedListener(clipListener);
         }
+        if (nativeMic != null) {
+            nativeMic.stop();
+        }
+        if (webView != null) {
+            ViewGroup parent = (ViewGroup) webView.getParent();
+            if (parent != null) parent.removeView(webView);
+            webView.destroy();   // field sengaja TIDAK di-null: callback mic yang masih antre tidak boleh kena NPE
+        }
+        super.onDestroy();
     }
 
-    /** Huruf yang boleh diketik langsung untuk nada idx, atau null kalau harus lewat JS. */
-    private String directCharFor(int idx) {
-        if (!noteMapReady || noteMap == null || idx < 0 || idx >= noteMap.length) return null;
-        return noteMap[idx];
+    /** Ambil teks clipboard terbaru, lalu kirim ke JavaScript lewat window.onClipboardChanged(). */
+    private void pushClipboardToJs() {
+        if (clipboardManager == null || webView == null) return;
+        if (!clipboardManager.hasPrimaryClip()) return;
+
+        ClipData clip = clipboardManager.getPrimaryClip();
+        if (clip == null || clip.getItemCount() == 0) return;
+
+        CharSequence item = clip.getItemAt(0).coerceToText(this);
+        if (item == null) return;
+
+        // Clip yang ditandai sensitif oleh pengirimnya (mis. password manager, Android 13+):
+        // jangan disimpan ke riwayat -- JS diberi tahu lewat argumen kedua.
+        boolean sensitive = false;
+        if (Build.VERSION.SDK_INT >= 23 && clip.getDescription() != null) {   // getExtras() baru ada di API 23
+            PersistableBundle extras = clip.getDescription().getExtras();
+            sensitive = extras != null && extras.getBoolean("android.content.extra.IS_SENSITIVE", false);
+        }
+
+        // JSONObject.quote() menghasilkan literal string JS yang aman (sudah termasuk tanda kutip),
+        // termasuk untuk karakter CR dan pemisah baris Unicode yang dulu merusak string JS.
+        final String js = "window.onClipboardChanged && window.onClipboardChanged("
+                + JSONObject.quote(item.toString()) + "," + sensitive + ")";
+
+        final WebView wv = webView;
+        wv.post(() -> wv.evaluateJavascript(js, null));
     }
 
-    /**
-     * Pesan dari window.AndroidKeyboardFast.postMessage() (fastBridge() di index.html), berformat
-     * JSON kecil seperti {"cmd":"commitText","text":"a"}. Callback ini dijamin di UI thread.
-     * Pesan rusak atau perintah tak dikenal diabaikan; JS selalu punya jalur cadangan.
-     */
-    private void handleFastTypingMessage(String data) {
-        if (data == null) return;
-        try {
-            final JSONObject message = new JSONObject(data);
-            final String command = message.optString("cmd", "");
-
-            if ("setNoteMap".equals(command)) {   // tidak butuh InputConnection
-                applyNoteMap(message.optString("map", ""),
-                        message.optBoolean("stable", false), message.optBoolean("space", false));
-                return;
-            }
-
-            final InputConnection ic = getCurrentInputConnection();
-            if (ic == null) return;
-            switch (command) {
-                case "commitText":
-                    if (!message.isNull("text")) ic.commitText(message.optString("text", ""), 1);
-                    break;
-                case "deleteBackward":
-                    deleteBackward(ic, 1);
-                    break;
-                case "deleteBackwardN":
-                    deleteBackward(ic, message.optInt("n", 1));
-                    break;
-                case "sendEnter":
-                    performEnter(ic);
-                    break;
-                default:
-                    break;
-            }
-        } catch (JSONException ignored) {
-            // Format tak terduga: abaikan, jangan sampai keyboard crash.
-        }
-    }
-
-    // =====================================================================================
-    // Listener mikrofon
-    // =====================================================================================
-
-    /** Semua callback datang di UI thread (lihat NativeMicPitchDetector.post()). */
-    private final class MicListener implements NativeMicPitchDetector.Listener {
-
-        @Override
-        public void onOnsetDetected() {
-            // Sengaja kosong: status "mendengar" hanya kosmetik, dan satu evaluateJavascript per
-            // petikan akan mengantre di main thread sebelum komit nada.
-        }
-
-        @Override
-        public void onPitchIndex(int idx, double freq) {
-            spaceDirectOk = false;   // teks akan berubah -> kelayakan spasi langsung basi
-
-            final String direct = directCharFor(idx);
-            final InputConnection ic = direct != null ? getCurrentInputConnection() : null;
-            if (ic != null) {
-                ic.commitText(direct, 1);   // ketik dulu, baru kabari JS
-                noteMapReady = noteMapStable;   // tidak stabil -> tunggu peta baru dari JS
-                callJs(jsCall("onNativePitchCommitted", idx, freq, direct, nativeMic.getLastLatencyMs()));
-            } else {
-                callJs(jsCall("onNativePitchIndex", idx, freq));
-            }
-        }
-
-        @Override
-        public void onOutOfRange(double freq) {
-            callJs(jsCall("onNativeOutOfRange", freq));
-        }
-
-        @Override
-        public void onUnclear() {
-            callJs(jsCall("onNativeUnclear"));
-        }
-
-        @Override
-        public void onKick() {
-            final InputConnection ic = spaceDirectOk ? getCurrentInputConnection() : null;
-            if (ic != null) {
-                ic.commitText(" ", 1);
-                spaceDirectOk = false;   // dua spasi beruntun butuh logika titik-ganda di JS
-                callJs(jsCall("onNativeKickCommitted", nativeMic.getLastLatencyMs()));
-            } else {
-                callJs(jsCall("onNativeKick"));
-            }
-        }
-
-        @Override
-        public void onNonTonalIgnored() {
-            // Sengaja kosong: bunyi non-nada diabaikan diam-diam.
-        }
-    }
-
-    // =====================================================================================
-    // Jembatan JavaScript: window.AndroidKeyboard.*
-    // =====================================================================================
-
-    /** Dipanggil dari thread WebView; hampir semuanya dipindah ke UI thread dulu. */
+    /** Objek yang diekspos ke JavaScript lewat window.AndroidKeyboard.* */
     private class KeyboardBridge {
 
         @JavascriptInterface
         public void commitText(final String text) {
             runOnUiThreadSafe(() -> {
-                final InputConnection ic = getCurrentInputConnection();
-                if (ic != null && text != null) ic.commitText(text, 1);
+                InputConnection ic = getCurrentInputConnection();
+                if (ic != null && text != null) {
+                    ic.commitText(text, 1);
+                }
             });
         }
 
         @JavascriptInterface
         public void deleteBackward() {
             runOnUiThreadSafe(() -> {
-                final InputConnection ic = getCurrentInputConnection();
-                if (ic != null) HtmlKeyboardService.this.deleteBackward(ic, 1);
+                InputConnection ic = getCurrentInputConnection();
+                if (ic != null) {
+                    // Ada blok biru? Satu ketukan hapus semuanya. Kalau tidak, hapus 1 karakter.
+                    if (!deleteSelectionIfAny(ic)) {
+                        ic.deleteSurroundingText(1, 0);
+                    }
+                }
             });
         }
 
-        /** Hapus beberapa karakter sekaligus (kata diganti lewat prediksi). */
+        /** Hapus beberapa karakter sekaligus — dipakai saat kata diganti lewat prediksi. */
         @JavascriptInterface
         public void deleteBackwardN(final int n) {
             runOnUiThreadSafe(() -> {
-                final InputConnection ic = getCurrentInputConnection();
-                if (ic != null) HtmlKeyboardService.this.deleteBackward(ic, n);
+                InputConnection ic = getCurrentInputConnection();
+                if (ic != null && n > 0) {
+                    if (!deleteSelectionIfAny(ic)) {
+                        ic.deleteSurroundingText(n, 0);
+                    }
+                }
             });
         }
 
         @JavascriptInterface
         public void sendEnter() {
             runOnUiThreadSafe(() -> {
-                final InputConnection ic = getCurrentInputConnection();
-                if (ic != null) performEnter(ic);
+                InputConnection ic = getCurrentInputConnection();
+                if (ic == null) return;
+
+                EditorInfo ei = getCurrentInputEditorInfo();
+                int action = (ei != null)
+                        ? (ei.imeOptions & EditorInfo.IME_MASK_ACTION)
+                        : EditorInfo.IME_ACTION_UNSPECIFIED;
+
+                boolean noEnterFlag = ei != null
+                        && (ei.imeOptions & EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0;
+
+                if (!noEnterFlag
+                        && action != EditorInfo.IME_ACTION_NONE
+                        && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
+                    // Kolom ini punya tombol aksi (Kirim, Cari, Done, dst) -> picu itu
+                    ic.performEditorAction(action);
+                } else {
+                    // Kolom multi-baris biasa -> ketik baris baru
+                    ic.commitText("\n", 1);
+                }
             });
         }
 
-        /** Dibaca JS saat halaman selesai dimuat (onStartInputView bisa datang lebih dulu). */
+        /** Dibaca JS saat halaman baru selesai dimuat (onStartInputView bisa datang lebih dulu). */
         @JavascriptInterface
         public boolean isPrivateField() {
             return privateField;
         }
 
-        /** 0 = huruf kecil; selain 0 = awal kalimat (huruf besar). */
+        /** Dibaca JS saat halaman selesai dimuat: 0 = huruf kecil, selain 0 = awal kalimat/kata (huruf besar). */
         @JavascriptInterface
         public int getCapsMode() {
             return capsMode;
@@ -594,13 +488,13 @@ public class HtmlKeyboardService extends InputMethodService {
 
         /** Teks yang sedang disusun (Rusia/Arab/Jepang/dst): diganti utuh tiap ada huruf baru. */
         @JavascriptInterface
-        public void setComposingText(final String text) {
+        public void setComposingText(final String t) {
             runOnUiThreadSafe(() -> {
-                final InputConnection ic = getCurrentInputConnection();
-                if (ic == null || text == null) return;
-                ic.setComposingText(text, 1);
-                composingActive = !text.isEmpty();
-                lastComposeAt = SystemClock.uptimeMillis();
+                InputConnection ic = getCurrentInputConnection();
+                if (ic == null || t == null) return;
+                ic.setComposingText(t, 1);
+                composingActive = !t.isEmpty();
+                lastComposeAt = System.currentTimeMillis();
             });
         }
 
@@ -608,13 +502,13 @@ public class HtmlKeyboardService extends InputMethodService {
         @JavascriptInterface
         public void finishComposing() {
             runOnUiThreadSafe(() -> {
-                final InputConnection ic = getCurrentInputConnection();
+                InputConnection ic = getCurrentInputConnection();
                 if (ic != null) ic.finishComposingText();
                 composingActive = false;
             });
         }
 
-        /** Getaran halus saat tombol disentuh; mengikuti pengaturan getar sistem, tanpa izin tambahan. */
+        /** Getaran halus saat tombol disentuh (Setelan: "Getaran keyboard"). Tidak butuh izin tambahan; mengikuti pengaturan getar sistem. */
         @JavascriptInterface
         public void haptic() {
             runOnUiThreadSafe(() -> {
@@ -622,34 +516,33 @@ public class HtmlKeyboardService extends InputMethodService {
             });
         }
 
-        /** Geser di spasi: pindahkan kursor ke kiri (delta &lt; 0) / kanan (delta &gt; 0) sebanyak |delta| karakter. */
+        /** Geser di tombol spasi: pindahkan kursor ke kiri (delta < 0) / kanan (delta > 0) sebanyak |delta| karakter. */
         @JavascriptInterface
         public void moveCursor(final int delta) {
             runOnUiThreadSafe(() -> {
-                final InputConnection ic = getCurrentInputConnection();
+                InputConnection ic = getCurrentInputConnection();
                 if (ic == null || delta == 0) return;
-                final int keyCode = delta < 0 ? KeyEvent.KEYCODE_DPAD_LEFT : KeyEvent.KEYCODE_DPAD_RIGHT;
-                final int steps = Math.min(Math.abs(delta), MAX_CURSOR_STEPS);
-                for (int i = 0; i < steps; i++) {
-                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, keyCode));
-                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, keyCode));
+                int code = delta < 0 ? KeyEvent.KEYCODE_DPAD_LEFT : KeyEvent.KEYCODE_DPAD_RIGHT;
+                int n = Math.min(Math.abs(delta), 40);
+                for (int i = 0; i < n; i++) {
+                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
+                    ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code));
                 }
             });
         }
 
-        /** Tombol "Bagikan": buka lembar bagikan Android dengan teks dari JS. */
+        /** Tombol "Bagikan" di kisi alat: buka lembar bagikan Android dengan teks dari JS. */
         @JavascriptInterface
-        public void shareText(final String text) {
+        public void shareText(final String t) {
             runOnUiThreadSafe(() -> {
                 try {
-                    final Intent send = new Intent(Intent.ACTION_SEND);
+                    Intent send = new Intent(Intent.ACTION_SEND);
                     send.setType("text/plain");
-                    send.putExtra(Intent.EXTRA_TEXT, text);
-                    final Intent chooser = Intent.createChooser(send, "Bagikan Guitarwiter");
+                    send.putExtra(Intent.EXTRA_TEXT, t);
+                    Intent chooser = Intent.createChooser(send, "Bagikan Guitarwiter");
                     chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     startActivity(chooser);
-                } catch (RuntimeException ignored) {
-                    // Tidak ada aplikasi penerima / aktivitas tidak bisa dibuka.
+                } catch (Exception ignored) {
                 }
             });
         }
@@ -659,32 +552,98 @@ public class HtmlKeyboardService extends InputMethodService {
             runOnUiThreadSafe(() -> requestHideSelf(0));
         }
 
-        /** Untuk tombol "globe" (ganti keyboard). */
+        /** Dipanggil kalau nanti ditambahkan tombol "globe" untuk ganti keyboard. */
         @JavascriptInterface
         public void switchToNextKeyboard() {
             runOnUiThreadSafe(() -> {
-                final InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-                if (imm != null) imm.showInputMethodPicker();
+                InputMethodManager imm =
+                        (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.showInputMethodPicker();
+                }
             });
         }
 
-        /** Cadangan bila AndroidKeyboardFast tidak tersedia: peta nada -> huruf untuk komit langsung. */
+        /** Cadangan bila AndroidKeyboardFast tidak tersedia: peta nada->huruf untuk komit langsung. */
         @JavascriptInterface
         public void setNoteMap(final String json) {
             runOnUiThreadSafe(() -> applyNoteMap(json, false, false));
         }
 
-        /** Mulai deteksi nada lewat AudioRecord native; hasil dikirim ke JS (window.onNative*). */
+        /**
+         * Mulai deteksi nada LEWAT JAVA NATIVE (AudioRecord), bukan getUserMedia().
+         * Hasil deteksi dikirim balik ke JS lewat window.onNativePitchIndex/dst.
+         */
         @JavascriptInterface
         public boolean startNativeMic() {
             if (nativeMic == null) return false;
             if (!nativeMic.hasPermission()) {
-                runOnUiThreadSafe(() -> callJs(jsCall("onNativeMicStatus", "permission", false)));
+                runOnUiThreadSafe(() -> webView.evaluateJavascript(
+                        "window.onNativeMicStatus && window.onNativeMicStatus('permission', false)", null));
                 return false;
             }
-            final boolean started = nativeMic.start(new MicListener());
+            boolean started = nativeMic.start(new NativeMicPitchDetector.Listener() {
+                @Override
+                public void onOnsetDetected() {
+                    // Sengaja kosong (boost latensi): status \"Mendengar petikan…\" cuma kosmetik dan
+                    // hasil ketikan muncul ~40ms kemudian. Satu evaluateJavascript per petikan
+                    // ikut mengantre di main thread SEBELUM komit nada dan menyibukkan thread JS.
+                }
+                @Override
+                public void onPitchIndex(int idx, double freq) {
+                    // JALUR LANGSUNG: ketik dulu di sini (UI thread, tanpa menunggu JS), lalu
+                    // kabari JS. Kalau peta belum siap / tidak ada InputConnection -> jalur lama.
+                    spaceDirectOk = false;   // teks berubah -> kelayakan spasi langsung basi sampai peta baru
+                    String direct = directCharFor(idx);
+                    if (direct != null) {
+                        InputConnection dic = getCurrentInputConnection();
+                        if (dic != null) {
+                            dic.commitText(direct, 1);
+                            noteMapReady = noteMapStable;   // stabil -> tetap siap; kalau tidak, tunggu peta baru dari JS
+                            webView.evaluateJavascript(
+                                    "window.onNativePitchCommitted && window.onNativePitchCommitted("
+                                            + idx + "," + freq + "," + JSONObject.quote(direct) + "," + nativeMic.getLastLatencyMs() + ")", null);
+                            return;
+                        }
+                    }
+                    webView.evaluateJavascript(
+                            "window.onNativePitchIndex && window.onNativePitchIndex(" + idx + "," + freq + ")", null);
+                }
+                @Override
+                public void onOutOfRange(double freq) {
+                    webView.evaluateJavascript(
+                            "window.onNativeOutOfRange && window.onNativeOutOfRange(" + freq + ")", null);
+                }
+                @Override
+                public void onUnclear() {
+                    webView.evaluateJavascript(
+                            "window.onNativeUnclear && window.onNativeUnclear()", null);
+                }
+                @Override
+                public void onKick() {
+                    // JALUR LANGSUNG spasi: ketik dulu di sini, baru kabari JS.
+                    if (spaceDirectOk) {
+                        InputConnection kic = getCurrentInputConnection();
+                        if (kic != null) {
+                            kic.commitText(" ", 1);
+                            spaceDirectOk = false;   // dua spasi beruntun butuh logika titik-ganda di JS
+                            webView.evaluateJavascript(
+                                    "window.onNativeKickCommitted && window.onNativeKickCommitted("
+                                            + nativeMic.getLastLatencyMs() + ")", null);
+                            return;
+                        }
+                    }
+                    webView.evaluateJavascript(
+                            "window.onNativeKick && window.onNativeKick()", null);
+                }
+                @Override
+                public void onNonTonalIgnored() {
+                    // Sengaja kosong: bunyi non-nada (kick/tap) diabaikan diam-diam, tanpa pesan status.
+                }
+            });
             if (started) {
-                runOnUiThreadSafe(() -> callJs(jsCall("onNativeMicStatus", "listening", true)));
+                runOnUiThreadSafe(() -> webView.evaluateJavascript(
+                        "window.onNativeMicStatus && window.onNativeMicStatus('listening', true)", null));
             }
             return started;
         }
@@ -704,6 +663,133 @@ public class HtmlKeyboardService extends InputMethodService {
         @JavascriptInterface
         public void stopNativeMic() {
             if (nativeMic != null) nativeMic.stop();
+        }
+    }
+
+    /** JavascriptInterface callback datang dari thread WebView, bukan UI thread. */
+    private void runOnUiThreadSafe(Runnable r) {
+        if (webView != null) {
+            webView.post(r);
+        } else {
+            r.run();
+        }
+    }
+
+    // ---- KOMIT LANGSUNG NADA (potong bolak-balik Java->JS->Java) ----
+    // JS mengirim peta idx nada -> huruf (null = jangan diketik langsung, mis. spasi/tanda baca
+    // yang butuh autokoreksi) lewat setNoteMap(). Kalau petanya siap, onPitchIndex() mengetik
+    // hurufnya LANGSUNG ke InputConnection lalu memberi tahu JS (onNativePitchCommitted) supaya
+    // JS memperbarui status tanpa mengetik ulang. Sesudah tiap komit langsung, noteMapReady
+    // dimatikan sampai JS mengirim peta baru (status shift/auto-caps bisa berubah) -- selama itu
+    // nada berikutnya lewat jalur lama yang selalu benar. HARUS konsisten dengan
+    // directNoteChar()/onNativePitchCommitted di index.html. Hanya diakses di UI thread.
+    private String[] noteMap = null;
+    private boolean noteMapReady = false;
+    // BARU (boost ketikan cepat): true kalau mengetik SATU huruf lewat peta ini TIDAK mengubah
+    // status keyboard (tidak ada shift sekali-pakai yang habis terpakai). Kalau stabil, peta
+    // tetap siap sesudah komit langsung, jadi nada berikutnya juga langsung diketik dari Java
+    // tanpa menunggu JS mengirim peta baru (dulu ~1 frame + hingga 60ms, dan selama itu tiap
+    // nada dipaksa lewat jalur lambat 2x IPC). Kalau JS ternyata beda, onNativePitchCommitted
+    // di index.html tetap memperbaiki (hapus + ketik ulang), jadi tidak ada risiko huruf salah.
+    private boolean noteMapStable = false;
+    // BARU: true kalau JS bilang mengetik spasi SEKARANG tidak butuh autokoreksi / titik-ganda /
+    // penyusunan huruf non-Latin. Kick (drum) lalu langsung mengetik spasi dari sini tanpa
+    // bolak-balik ke JS. Dimatikan tiap ada huruf diketik (teks berubah -> status autokoreksi
+    // basi) sampai JS mengirim peta baru; JS juga memverifikasi ulang di onNativeKickCommitted.
+    private boolean spaceDirectOk = false;
+
+    private void applyNoteMap(String json, boolean stable, boolean space) {
+        try {
+            org.json.JSONArray arr = new org.json.JSONArray(json);
+            String[] m = new String[arr.length()];
+            for (int i = 0; i < m.length; i++) {
+                m[i] = arr.isNull(i) ? null : arr.getString(i);
+            }
+            noteMap = m;
+            noteMapReady = true;
+            noteMapStable = stable;
+            spaceDirectOk = space;
+        } catch (Exception e) {
+            noteMap = null;
+            noteMapReady = false;
+            noteMapStable = false;
+            spaceDirectOk = false;
+        }
+    }
+
+    /** Huruf yang boleh diketik langsung untuk nada idx, atau null kalau harus lewat JS. */
+    private String directCharFor(int idx) {
+        if (!noteMapReady || noteMap == null || idx < 0 || idx >= noteMap.length) return null;
+        return noteMap[idx];
+    }
+
+    /**
+     * Penerima pesan dari window.AndroidKeyboardFast.postMessage() di JS
+     * (fastBridge() di index.html) -- lihat komentar panjang di onCreateInputView().
+     * Callback ini SUDAH DIJAMIN androidx.webkit jalan di UI thread, jadi BOLEH
+     * langsung menyentuh InputConnection di sini, TANPA runOnUiThreadSafe() lagi
+     * -- itu inti penghematan latensinya (1 loncatan thread lebih sedikit
+     * dibanding window.AndroidKeyboard.* / KeyboardBridge di atas).
+     * Format pesan JSON kecil: {"cmd":"commitText","text":"a"} dst -- HARUS
+     * sama persis dengan yang dikirim fastBridge() di index.html. Sengaja
+     * cuma menangani 4 aksi paling sering dipanggil saat mengetik (yang lain
+     * tetap lewat window.AndroidKeyboard.* biasa, tidak perlu secepat ini).
+     * Kalau parsing gagal / cmd tidak dikenal, diam saja -- tidak ada risiko
+     * keyboard rusak karena JS selalu punya window.AndroidKeyboard.* sebagai
+     * cadangan untuk semua aksi.
+     */
+    private void handleFastTypingMessage(String data) {
+        if (data == null) return;
+        try {
+            JSONObject msg = new JSONObject(data);
+            // Peta nada->huruf tidak butuh InputConnection: proses dulu sebelum cek ic.
+            if ("setNoteMap".equals(msg.optString("cmd", ""))) {
+                applyNoteMap(msg.optString("map", ""), msg.optBoolean("stable", false), msg.optBoolean("space", false));
+                return;
+            }
+            InputConnection ic = getCurrentInputConnection();
+            if (ic == null) return;
+            switch (msg.optString("cmd", "")) {
+                case "commitText": {
+                    String text = msg.isNull("text") ? null : msg.optString("text", null);
+                    if (text != null) ic.commitText(text, 1);
+                    break;
+                }
+                case "deleteBackward": {
+                    if (!deleteSelectionIfAny(ic)) {
+                        ic.deleteSurroundingText(1, 0);
+                    }
+                    break;
+                }
+                case "deleteBackwardN": {
+                    int n = msg.optInt("n", 1);
+                    if (n > 0 && !deleteSelectionIfAny(ic)) {
+                        ic.deleteSurroundingText(n, 0);
+                    }
+                    break;
+                }
+                case "sendEnter": {
+                    // HARUS sama persis dengan KeyboardBridge.sendEnter() di atas.
+                    EditorInfo ei = getCurrentInputEditorInfo();
+                    int action = (ei != null)
+                            ? (ei.imeOptions & EditorInfo.IME_MASK_ACTION)
+                            : EditorInfo.IME_ACTION_UNSPECIFIED;
+                    boolean noEnterFlag = ei != null
+                            && (ei.imeOptions & EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0;
+                    if (!noEnterFlag
+                            && action != EditorInfo.IME_ACTION_NONE
+                            && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
+                        ic.performEditorAction(action);
+                    } else {
+                        ic.commitText("\n", 1);
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+        } catch (Exception e) {
+            // Pesan rusak / format tak terduga -- abaikan, jangan sampai keyboard crash.
         }
     }
 }

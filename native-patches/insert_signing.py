@@ -1,19 +1,21 @@
-"""Menambahkan signingConfig release (null-safe) ke build.gradle.
-
-Kode di dalam android { } dievaluasi Gradle setiap build.gradle dibaca, termasuk saat assembleDebug
-yang TIDAK diberi env var KEYSTORE_PATH (hanya di-set untuk assembleRelease). Karena itu
-getenv() dicek dulu; tanpa pengecekan, assembleDebug ikut crash.
-
-Urutan: jalankan SETELAH insert_perf.py. Anchor "minifyEnabled false" (kemunculan pertama) harus
-berada di blok release bawaan template Capacitor.
-
-Pemakaian: python3 insert_signing.py <android/app/build.gradle>
-Aman dijalankan berkali-kali (idempotent).
-"""
 import sys
-from pathlib import Path
 
-SIGNING_CONFIGS_BLOCK = """android {
+path = sys.argv[1]
+
+with open(path, "r", encoding="utf-8") as f:
+    content = f.read()
+
+if "signingConfigs" in content:
+    print("Signing config sudah ada, lewati.")
+    sys.exit(0)
+
+# PENTING: blok ini dibuat "null-safe" dengan pengecekan getenv() dulu.
+# Kenapa? Karena kode di dalam android{} dievaluasi Gradle SETIAP KALI
+# build.gradle dibaca -- termasuk saat menjalankan assembleDebug, yang
+# TIDAK dikasih env var KEYSTORE_PATH sama sekali (itu cuma di-set saat
+# assembleRelease). Tanpa pengecekan ini, assembleDebug ikut crash gara-gara
+# System.getenv("KEYSTORE_PATH") bernilai null dan dipaksa dipakai sebagai path file.
+signing_configs_block = """android {
     signingConfigs {
         release {
             def ksPath = System.getenv("KEYSTORE_PATH")
@@ -26,34 +28,17 @@ SIGNING_CONFIGS_BLOCK = """android {
         }
     }
 """
+content = content.replace("android {", signing_configs_block, 1)
 
-RELEASE_ANCHOR = "minifyEnabled false"
-RELEASE_REPLACEMENT = "signingConfig signingConfigs.release\n            minifyEnabled false"
+# Tambahkan "signingConfig signingConfigs.release" di dalam blok release buildTypes.
+# Anchor: baris "minifyEnabled" yang selalu ada bawaan template Capacitor.
+content = content.replace(
+    "minifyEnabled false",
+    "signingConfig signingConfigs.release\n            minifyEnabled false",
+    1
+)
 
+with open(path, "w", encoding="utf-8") as f:
+    f.write(content)
 
-def main() -> int:
-    if len(sys.argv) < 2:
-        print("Pemakaian: python3 insert_signing.py <build.gradle>")
-        return 1
-
-    path = Path(sys.argv[1])
-    content = path.read_text(encoding="utf-8")
-
-    if "signingConfigs" in content:
-        print("Signing config sudah ada, lewati.")
-        return 0
-    # Gagal keras daripada diam-diam menghasilkan APK release yang tidak bertanda tangan.
-    for anchor in ("android {", RELEASE_ANCHOR):
-        if anchor not in content:
-            print(f'FATAL: anchor "{anchor}" tidak ditemukan di build.gradle.')
-            return 1
-
-    content = content.replace("android {", SIGNING_CONFIGS_BLOCK, 1)
-    content = content.replace(RELEASE_ANCHOR, RELEASE_REPLACEMENT, 1)
-    path.write_text(content, encoding="utf-8")
-    print("OK: signing config (null-safe) ditambahkan ke build.gradle")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+print("Signing config (null-safe) berhasil ditambahkan ke build.gradle")

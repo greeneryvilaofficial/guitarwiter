@@ -1,12 +1,15 @@
-"""Mendaftarkan HtmlKeyboardService (IME) di AndroidManifest.xml.
-
-Pemakaian: python3 insert_service.py <android/app/src/main/AndroidManifest.xml>
-Aman dijalankan berkali-kali (idempotent).
-"""
 import sys
-from pathlib import Path
 
-SERVICE_BLOCK = """    <service
+path = sys.argv[1]
+
+with open(path, "r", encoding="utf-8") as f:
+    content = f.read()
+
+if "HtmlKeyboardService" in content:
+    print("Service sudah terdaftar, lewati.")
+    sys.exit(0)
+
+service_block = """    <service
         android:name=".HtmlKeyboardService"
         android:label="Guitarwiter"
         android:permission="android.permission.BIND_INPUT_METHOD"
@@ -20,26 +23,9 @@ SERVICE_BLOCK = """    <service
     </service>
 </application>"""
 
+content = content.replace("</application>", service_block, 1)
 
-def main() -> int:
-    if len(sys.argv) < 2:
-        print("Pemakaian: python3 insert_service.py <AndroidManifest.xml>")
-        return 1
+with open(path, "w", encoding="utf-8") as f:
+    f.write(content)
 
-    path = Path(sys.argv[1])
-    content = path.read_text(encoding="utf-8")
-
-    if "HtmlKeyboardService" in content:
-        print("Service sudah terdaftar, lewati.")
-        return 0
-    if "</application>" not in content:
-        print("FATAL: tag </application> tidak ditemukan, manifest tidak diubah.")
-        return 1
-
-    path.write_text(content.replace("</application>", SERVICE_BLOCK, 1), encoding="utf-8")
-    print("OK: service ditambahkan ke AndroidManifest.xml")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+print("Service berhasil ditambahkan ke AndroidManifest.xml")

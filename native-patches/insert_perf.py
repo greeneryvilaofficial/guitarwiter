@@ -1,46 +1,34 @@
-"""Membuat build "debug" non-debuggable supaya secepat release.
-
-APK debug bawaan Gradle bersifat debuggable=true, sehingga ART mematikan optimasi (inlining dsb.)
-dan loop deteksi nada di thread audio jadi lebih lambat. Build debug tetap ditandatangani kunci
-debug (bisa dipasang biasa), hanya saja debuggable=false.
-
-Pemakaian: python3 insert_perf.py <android/app/build.gradle>
-Aman dijalankan berkali-kali (idempotent).
-
-PENTING: blok debug TIDAK boleh memuat teks "minifyEnabled false". insert_signing.py memakai
-kemunculan pertama teks itu sebagai anchor untuk menyisipkan signingConfig ke blok RELEASE.
-"""
 import sys
-from pathlib import Path
 
-MARKER = "GUITARWITER_PERF"
+# Dipanggil sebagai: python3 insert_perf.py <android/app/build.gradle>
+#
+# Kenapa: APK "debug" bawaan Gradle bersifat debuggable=true. Aplikasi debuggable dikompilasi ART
+# dengan mode --debuggable (inlining/optimasi dimatikan) sehingga loop deteksi nada (YIN) di thread
+# audio dan semua kode Java lain jalan lebih lambat dibanding APK release. Di sini build "debug"
+# tetap ditandatangani kunci debug (tetap bisa dipasang biasa) tapi debuggable=false.
+# Idempotent: aman dijalankan berkali-kali.
+# PENTING: blok debug TIDAK boleh memuat teks "minifyEnabled false" -- insert_signing.py memakai teks itu
+# sebagai anchor (kemunculan pertama) untuk menyisipkan signingConfig ke blok RELEASE.
 
-DEBUG_BLOCK = """buildTypes {
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as f:
+    content = f.read()
+
+if "GUITARWITER_PERF" in content:
+    print("Patch performa sudah ada, lewati.")
+    sys.exit(0)
+
+if "buildTypes {" not in content:
+    print("FATAL: tidak menemukan blok buildTypes { di build.gradle.")
+    sys.exit(1)
+
+block = """buildTypes {
         // GUITARWITER_PERF: debug dibuat non-debuggable supaya secepat release
         debug {
             debuggable false
         }"""
+content = content.replace("buildTypes {", block, 1)
 
-
-def main() -> int:
-    if len(sys.argv) < 2:
-        print("Pemakaian: python3 insert_perf.py <build.gradle>")
-        return 1
-
-    path = Path(sys.argv[1])
-    content = path.read_text(encoding="utf-8")
-
-    if MARKER in content:
-        print("Patch performa sudah ada, lewati.")
-        return 0
-    if "buildTypes {" not in content:
-        print("FATAL: blok buildTypes { tidak ditemukan di build.gradle.")
-        return 1
-
-    path.write_text(content.replace("buildTypes {", DEBUG_BLOCK, 1), encoding="utf-8")
-    print("OK: build debug dibuat non-debuggable (lebih cepat).")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+with open(path, "w", encoding="utf-8") as f:
+    f.write(content)
+print("OK: build debug dibuat non-debuggable (lebih cepat).")

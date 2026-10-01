@@ -1,33 +1,23 @@
-"""Menambahkan dependency androidx.webkit (WebViewAssetLoader, WebMessageListener) ke build.gradle.
-
-Pemakaian: python3 insert_webkit_dependency.py <android/app/build.gradle>
-Aman dijalankan berkali-kali (idempotent).
-"""
 import sys
-from pathlib import Path
 
-DEPENDENCY_LINE = '    implementation "androidx.webkit:webkit:1.10.0"\n'
+path = sys.argv[1]
 
+with open(path, "r", encoding="utf-8") as f:
+    content = f.read()
 
-def main() -> int:
-    if len(sys.argv) < 2:
-        print("Pemakaian: python3 insert_webkit_dependency.py <build.gradle>")
-        return 1
+DEP_LINE = '    implementation "androidx.webkit:webkit:1.10.0"\n'
 
-    path = Path(sys.argv[1])
-    content = path.read_text(encoding="utf-8")
+if "androidx.webkit:webkit" in content:
+    print("Dependency androidx.webkit sudah ada, lewati.")
+    sys.exit(0)
 
-    if "androidx.webkit:webkit" in content:
-        print("Dependency androidx.webkit sudah ada, lewati.")
-        return 0
-    if "dependencies {" not in content:
-        print("FATAL: blok dependencies { tidak ditemukan di build.gradle.")
-        return 1
+if "dependencies {" not in content:
+    print("FATAL: tidak menemukan blok dependencies { di build.gradle.")
+    sys.exit(1)
 
-    path.write_text(content.replace("dependencies {", "dependencies {\n" + DEPENDENCY_LINE, 1), encoding="utf-8")
-    print("OK: dependency androidx.webkit ditambahkan ke build.gradle")
-    return 0
+content = content.replace("dependencies {", "dependencies {\n" + DEP_LINE, 1)
 
+with open(path, "w", encoding="utf-8") as f:
+    f.write(content)
 
-if __name__ == "__main__":
-    sys.exit(main())
+print("Dependency androidx.webkit berhasil ditambahkan ke build.gradle")
