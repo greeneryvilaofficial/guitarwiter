@@ -3809,7 +3809,49 @@
     // untuk kasus F2/F3. HARUS sinkron dengan yinDetect() di
     // NativeMicPitchDetector.java.
 
+    // Langkah 6 (BARU, "HD"): penajaman frekuensi lewat Goertzel BERJENDELA
+    // (Hann) pada frekuensi non-bulat, dipindai tiap 5 sen di sekitar hasil
+    // YIN. Beda dengan goertzelMag() lama yang membulatkan ke bin FFT (~10 Hz
+    // per bin), ini presisi sampai ~1-2 sen. Hanya dipakai kalau puncaknya
+    // jelas (bukan di tepi pindaian) dan geserannya <= 30 sen; selain itu
+    // hasil YIN dipertahankan. HARUS sinkron dengan NativeMicPitchDetector.java.
+    finalFreq = goertzelRefine(buf, finalFreq, sampleRate);
+
     return { freq: finalFreq, clarity: probability };
+  }
+
+  let _hannCache = null;
+  function goertzelWin(buf, targetFreq, sampleRate){
+    const N = buf.length;
+    if(!_hannCache || _hannCache.length !== N){
+      _hannCache = new Float32Array(N);
+      for(let n=0;n<N;n++) _hannCache[n] = 0.5 - 0.5*Math.cos(2*Math.PI*n/(N-1));
+    }
+    const w = 2*Math.PI*targetFreq/sampleRate;
+    const cosine = Math.cos(w), sine = Math.sin(w), coeff = 2*cosine;
+    let q1=0, q2=0;
+    for(let n=0;n<N;n++){
+      const q0 = coeff*q1 - q2 + buf[n]*_hannCache[n];
+      q2=q1; q1=q0;
+    }
+    const real = q1 - q2*cosine, imag = q2*sine;
+    return real*real + imag*imag;
+  }
+  function goertzelRefine(buf, freq, sampleRate){
+    const STEPS = 6, STEP_CENTS = 5; // pindai -30..+30 sen
+    const mags = new Array(2*STEPS+1);
+    let best = 0;
+    for(let i=-STEPS;i<=STEPS;i++){
+      const f = freq*Math.pow(2, i*STEP_CENTS/1200);
+      mags[i+STEPS] = goertzelWin(buf, f, sampleRate);
+      if(mags[i+STEPS] > mags[best+STEPS]) best = i;
+    }
+    if(best <= -STEPS || best >= STEPS) return freq; // puncak di tepi -> tidak yakin
+    const a = mags[best+STEPS-1], b = mags[best+STEPS], c = mags[best+STEPS+1];
+    const denom = a - 2*b + c;
+    const frac = denom ? 0.5*(a - c)/denom : 0;
+    if(!isFinite(frac) || Math.abs(frac) > 1) return freq;
+    return freq*Math.pow(2, (best + frac)*STEP_CENTS/1200);
   }
 
   /**
