@@ -1,65 +1,65 @@
-import sys
-import os
+"""Menimpa ikon launcher default Capacitor dengan ikon aplikasi.
+
+Pemakaian: python3 insert_icon.py <android/app/src/main/res> <native-patches/app-icon>
+Aman dijalankan berkali-kali (idempotent); memberi peringatan jelas kalau ada folder sumber yang hilang.
+"""
 import shutil
+import sys
+from pathlib import Path
 
-# Dipanggil sebagai: python3 insert_icon.py <path_ke_android/app/src/main/res> <path_ke_native-patches/app-icon>
-#
-# Kenapa dibikin script terpisah (bukan cuma "cp -r" langsung di YAML): supaya
-# logikanya konsisten dengan insert_permission.py / insert_service.py / dkk --
-# aman dijalankan berkali-kali (idempotent), dan kasih pesan jelas kalau ada
-# folder sumber yang kelewatan (misalnya lupa nge-commit satu mipmap density).
-
-if len(sys.argv) < 3:
-    print("Pemakaian: python3 insert_icon.py <res_dir> <app_icon_src_dir>")
-    sys.exit(1)
-
-res_dir = sys.argv[1]
-icon_src_root = sys.argv[2]
-
-# ---- Timpa ikon launcher default Capacitor (mipmap-*) dengan foto pribadi ----
-MIPMAP_FOLDERS = [
+MIPMAP_FOLDERS = (
     "mipmap-mdpi",
     "mipmap-hdpi",
     "mipmap-xhdpi",
     "mipmap-xxhdpi",
     "mipmap-xxxhdpi",
     "mipmap-anydpi-v26",  # adaptive icon (ic_launcher.xml + ic_launcher_round.xml)
-]
+)
 
-any_copied = False
-for folder in MIPMAP_FOLDERS:
-    src = os.path.join(icon_src_root, folder)
-    dst = os.path.join(res_dir, folder)
-    if not os.path.isdir(src):
-        print(f"PERINGATAN: {src} tidak ditemukan di repo, folder ini dilewati.")
-        continue
-    os.makedirs(dst, exist_ok=True)
-    for fname in os.listdir(src):
-        shutil.copy(os.path.join(src, fname), os.path.join(dst, fname))
-    any_copied = True
-    print(f"OK: isi {folder} ditimpa dengan ikon foto pribadi.")
+LAUNCHER_BACKGROUND_XML = """<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#111111</color>
+</resources>
+"""
 
-if not any_copied:
-    print("FATAL: tidak ada satupun folder mipmap sumber yang ditemukan -- cek path app-icon di repo.")
-    sys.exit(1)
 
-# ---- Set warna latar adaptive icon ----
-# PENTING: template default Capacitor (hasil `cap add android`) SUDAH otomatis
-# menyediakan file values/ic_launcher_background.xml berisi <color name="ic_launcher_background">.
-# Kalau kita tambah warna dengan NAMA SAMA ke colors.xml (file berbeda), Android
-# menganggapnya resource duplikat walau beda file -- build gagal ("Duplicate resources").
-# Makanya di sini kita TIMPA LANGSUNG file ic_launcher_background.xml yang sudah
-# ada itu, bukan menambah entri baru di colors.xml.
-bg_color_path = os.path.join(res_dir, "values", "ic_launcher_background.xml")
-os.makedirs(os.path.dirname(bg_color_path), exist_ok=True)
+def copy_mipmaps(icon_root: Path, res_dir: Path) -> bool:
+    copied_any = False
+    for folder in MIPMAP_FOLDERS:
+        source = icon_root / folder
+        if not source.is_dir():
+            print(f"PERINGATAN: {source} tidak ditemukan, folder ini dilewati.")
+            continue
+        target = res_dir / folder
+        target.mkdir(parents=True, exist_ok=True)
+        for file in source.iterdir():
+            if file.is_file():
+                shutil.copy(file, target / file.name)
+        copied_any = True
+        print(f"OK: isi {folder} ditimpa dengan ikon aplikasi.")
+    return copied_any
 
-with open(bg_color_path, "w", encoding="utf-8") as f:
-    f.write(
-        '<?xml version="1.0" encoding="utf-8"?>\n'
-        "<resources>\n"
-        '    <color name="ic_launcher_background">#111111</color>\n'
-        "</resources>\n"
-    )
-print("Warna ic_launcher_background ditimpa di values/ic_launcher_background.xml (bukan colors.xml).")
 
-print("Selesai: ikon launcher foto pribadi terpasang.")
+def main() -> int:
+    if len(sys.argv) < 3:
+        print("Pemakaian: python3 insert_icon.py <res_dir> <app_icon_src_dir>")
+        return 1
+
+    res_dir = Path(sys.argv[1])
+    icon_root = Path(sys.argv[2])
+
+    if not copy_mipmaps(icon_root, res_dir):
+        print("FATAL: tidak ada folder mipmap sumber yang ditemukan; cek path app-icon di repo.")
+        return 1
+
+    # Template Capacitor sudah punya values/ic_launcher_background.xml. Menambah warna bernama sama
+    # di colors.xml dianggap resource duplikat oleh Android (build gagal), jadi file itu ditimpa langsung.
+    background_path = res_dir / "values" / "ic_launcher_background.xml"
+    background_path.parent.mkdir(parents=True, exist_ok=True)
+    background_path.write_text(LAUNCHER_BACKGROUND_XML, encoding="utf-8")
+    print("OK: warna ic_launcher_background ditimpa di values/ic_launcher_background.xml.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
