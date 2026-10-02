@@ -195,11 +195,9 @@ public class NativeMicPitchDetector {
     // tidak ikut karena di hop pertama datanya belum cukup siklus buat YIN.
     private static final long FAST_READ_MS = 12;
     private static final double FAST_MIN_PROB = 0.90;
-    // Zona tengah (D#4-G#4 = tuts f..l, di bawah FAST_MID_MAX_FREQ): fundamental lebih rendah berarti
-    // di hop pertama cuma ada sedikit siklus di jendela, jadi probabilitas YIN-nya jarang sampai 0.90
-    // walau nadanya bersih -> jalur cepat hampir selalu gagal dan jatuh ke bacaan normal (lebih lambat)
-    // dibanding z..m. Syarat lain (kategori aman, <FAST_MAX_CENTS dari pusat) tetap berlaku.
-    // Kembalikan ke 0.90 kalau muncul huruf salah di zona ini.
+    // Zona tengah (D#4-G#4 = tuts f..l, di bawah FAST_MID_MAX_FREQ): probabilitas YIN di bacaan pertama
+    // jarang sampai 0.90 walau nadanya bersih. Syarat lain (kategori aman, <FAST_MAX_CENTS dari pusat)
+    // tetap berlaku. Kembalikan ke 0.90 kalau muncul huruf salah di zona ini.
     private static final double FAST_MIN_PROB_MID = 0.85;
     private static final double FAST_MID_MAX_FREQ = 450.0;
     // Alias oktaf-naik dari angka (idx 0-9, 82-139Hz) ada di 165-277Hz. Jalur cepat SEBELUMNYA
@@ -213,9 +211,28 @@ public class NativeMicPitchDetector {
     // data lebih banyak (umur minimum sejak onset) dan minta bacaan yang sepakat lebih banyak;
     // bacaan yang barusan dikoreksi oktaf oleh Goertzel dituntut paling banyak.
     private static final double LOW_ZONE_MAX_FREQ = 300.0;
-    private static final long LOW_ZONE_MIN_AGE_MS = 50;   // dulu 66: 1 hop lebih cepat untuk tuts a,s,d; konsensus 2/3 bacaan tetap dipertahankan sebagai pengaman oktaf
+    private static final long LOW_ZONE_MIN_AGE_MS = 66;
+    // Untuk bacaan >= LOW_ZONE_FAST_AGE_MIN_FREQ (tuts a,s,d: C4-D4) cukup 50ms (1 hop lebih cepat). Di bawah itu
+    // (angka, q-p, o,p) TETAP 66ms: di situlah kesalahan oktaf-turun terjadi kalau terlalu cepat (diuji simulasi).
+    private static final long LOW_ZONE_FAST_AGE_MS = 50;
+    private static final double LOW_ZONE_FAST_AGE_MIN_FREQ = 255.0;
     private static final int LOW_ZONE_CONFIRM = 2;
     private static final int LOW_ZONE_CONFIRM_CORRECTED = 3;
+    // ---- BACAAN POTONGAN-SESUDAH-PETIKAN ("tail read") ----
+    // Masalah: window = 4096 sampel TERBARU (~85ms). Di 17-50ms pertama sesudah petikan, 60-80% isinya
+    // masih sunyi/derau SEBELUM nada, sehingga CMNDF YIN tidak turun di bawah YIN_THRESHOLD (keyakinan
+    // ~0.2-0.7) -> tidak ada bacaan sama sekali sampai ~60-85ms, lalu masih harus menunggu konsensus.
+    // Nada lebih rendah (o,p,s..l) paling terasa lambat karena butuh lebih banyak sampel dari z..m.
+    // Solusi: HANYA kalau bacaan window penuh null, baca ulang pada potongan yang berisi cuma sampel
+    // SESUDAH hop onset (tailSamples), lewat yinDetect() yang SAMA (termasuk lintasan high-pass &
+    // verifikasi oktaf), jadi aturan zona rendah/konsensus/isCategorySafe tidak berubah. Hanya dipakai
+    // di 1400-2700 sampel pertama (hop ke-2..3, ~30-55ms); sesudah itu window penuh sudah cukup bersih.
+    // Nonaktifkan: TAIL_READ = false.
+    private static final boolean TAIL_READ = true;
+    private static final int TAIL_MIN_SAMPLES = 1400;
+    private static final double TAIL_ACCEPT_MIN_FREQ = 225.0;
+    private static final int TAIL_MAX_SAMPLES = 2700;
+    private float[] tailBuf = new float[0];
     private static final double TAP_DECAY_RATIO = 0.30;
     private static final double STRONG_PROBABILITY = 0.80;
 
@@ -433,6 +450,7 @@ public class NativeMicPitchDetector {
         // menjatuhkan seluruh aplikasi). Kalau rec sudah di-release, read() mengembalikan
         // kode error negatif -> loop berhenti rapi.
         long fastAt = 0;
+        int tailSamples = 0;   // sampel sejak AKHIR hop onset -- lihat TAIL_READ
         boolean fastTried = true;
         final int[] fIdx = new int[1];
         final double[] fCents = new double[1];
@@ -475,6 +493,7 @@ public class NativeMicPitchDetector {
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;
                     fastAt = now + FAST_READ_MS;
+                    tailSamples = 0;
                     fastTried = false;
                     lastOnsetAt = now;
                     onsetPeakRms = rms;
@@ -483,6 +502,7 @@ public class NativeMicPitchDetector {
                     postOnset();
                 }
             } else if (state == STATE_SAMPLING) {
+                tailSamples += read;
                 onsetLowE += hopLowSq;
                 onsetFullE += sumSq;
                 // Terus perbarui puncak RMS sejak onset -- puncak sungguhan sering
@@ -510,6 +530,15 @@ public class NativeMicPitchDetector {
                 }
                 if (now >= sampleAt) {
                     PitchReading r = yinDetect(window, BUFFER_SAMPLES, sampleRate);
+                    if (TAIL_READ && r == null && tailSamples >= TAIL_MIN_SAMPLES && tailSamples <= TAIL_MAX_SAMPLES) {
+                        if (tailBuf.length < tailSamples) tailBuf = new float[TAIL_MAX_SAMPLES];
+                        System.arraycopy(window, BUFFER_SAMPLES - tailSamples, tailBuf, 0, tailSamples);
+                        r = yinDetect(tailBuf, tailSamples, sampleRate);
+                        // Bacaan potongan hanya dipercaya kalau jelas di atas zona angka/oktaf: hasil di bawah
+                        // TAIL_ACCEPT_MIN_FREQ atau yang barusan dikoreksi oktaf dibuang (tunggu window penuh).
+                        // Uji simulasi: tanpa batas ini q-p sering terbaca jadi angka (oktaf turun).
+                        if (r != null && (r.freq < TAIL_ACCEPT_MIN_FREQ || r.octaveCorrected)) r = null;
+                    }
                     sampleTries++;
                     // Seberapa besar sinyal sudah meluruh dari puncaknya -- lihat
                     // TAP_DECAY_RATIO buat penjelasan lengkap kenapa ini pembeda
@@ -564,7 +593,7 @@ public class NativeMicPitchDetector {
                                 requiredConfirm = Math.max(requiredConfirm,
                                         r.octaveCorrected ? LOW_ZONE_CONFIRM_CORRECTED : LOW_ZONE_CONFIRM);
                             }
-                            boolean ageOk = !lowZone || (now - lastOnsetAt) >= LOW_ZONE_MIN_AGE_MS;
+                            boolean ageOk = !lowZone || (now - lastOnsetAt) >= (r.freq >= LOW_ZONE_FAST_AGE_MIN_FREQ ? LOW_ZONE_FAST_AGE_MS : LOW_ZONE_MIN_AGE_MS);
                             // Tuts fungsi (shift/backspace/enter) mengubah/menghapus teks: minta 3 bacaan
                             // sepakat + umur minimum, dan JANGAN dipaksa komit saat jatah percobaan habis.
                             boolean functionalKey = FUNCTIONAL_KEYS_STRICT && "functional".equals(categoryOfIndex(idxOut[0]));
@@ -658,6 +687,7 @@ public class NativeMicPitchDetector {
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;
                     fastAt = now + FAST_READ_MS;
+                    tailSamples = 0;
                     fastTried = false;
                     lastOnsetAt = now;
                     onsetPeakRms = rms;
@@ -830,11 +860,73 @@ public class NativeMicPitchDetector {
     private double[] yinDiff = new double[0];
     private double[] yinCmnd = new double[0];
 
+    // ---- LINTASAN KEDUA "HIGH-PASS" (fix tuts a-l: kadang tidak muncul / lambat) ----
+    // Nada a-l (C4-G#4, 261-415Hz) tepat di atas daerah dengung/resonansi badan gitar &
+    // mic HP (~90-210Hz). Dengung itu tidak harmonik dengan senar, jadi YIN (a) balik NULL
+    // (tidak ada ketikan) atau (b) mengunci ke dengungnya (salah oktaf / di luar jangkauan)
+    // sehingga konsensus tidak pernah tercapai (lama). Solusi: kalau lintasan pertama gagal
+    // atau hasilnya < HP_ACCEPT_MIN_FREQ, saring dulu dengan high-pass Butterworth orde-6
+    // (HP_CUTOFF_HZ) lalu jalankan YIN lagi. Hasil lintasan kedua HANYA dipakai kalau
+    // >= HP_ACCEPT_MIN_FREQ dan yakin (>= HP_MIN_PROB), jadi nada rendah (angka, q-p) tidak
+    // pernah "naik jadi huruf" karena filter ini. Uji simulasi: a-l benar 36/36 walau
+    // ada resonansi kuat; 0/60 nada rendah salah. Nonaktifkan: HP_SECOND_PASS = false.
+    private static final boolean HP_SECOND_PASS = true;
+    private static final double HP_CUTOFF_HZ = 250.0;
+    private static final double HP_ACCEPT_MIN_FREQ = 255.0;
+    private static final double HP_MIN_PROB = 0.80;
+    private static final double HP_MIN_RMS = 0.003;   // sesudah disaring energinya wajar lebih kecil
+    private static final double[] HP_Q = {0.5176, 0.7071, 1.9319};  // Butterworth orde-6
+    private float[] hpBuf = new float[0];
+    private double[] hpCoef = null;     // 5 koefisien per seksi: b0,b1,b2,a1,a2
+    private int hpCoefRate = 0;
+
+    private void highPassFilter(float[] in, float[] out, int size, int sampleRate) {
+        if (hpCoef == null || hpCoefRate != sampleRate) {
+            hpCoef = new double[HP_Q.length * 5];
+            double w = 2 * Math.PI * HP_CUTOFF_HZ / sampleRate;
+            double c = Math.cos(w), sn = Math.sin(w);
+            for (int k = 0; k < HP_Q.length; k++) {
+                double a = sn / (2 * HP_Q[k]);
+                double a0 = 1 + a;
+                double b0 = (1 + c) / 2 / a0;
+                hpCoef[k * 5] = b0;
+                hpCoef[k * 5 + 1] = -(1 + c) / a0;
+                hpCoef[k * 5 + 2] = b0;
+                hpCoef[k * 5 + 3] = -2 * c / a0;
+                hpCoef[k * 5 + 4] = (1 - a) / a0;
+            }
+            hpCoefRate = sampleRate;
+        }
+        System.arraycopy(in, 0, out, 0, size);
+        for (int k = 0; k < HP_Q.length; k++) {
+            final double b0 = hpCoef[k * 5], b1 = hpCoef[k * 5 + 1], b2 = hpCoef[k * 5 + 2];
+            final double a1 = hpCoef[k * 5 + 3], a2 = hpCoef[k * 5 + 4];
+            double z1 = 0, z2 = 0;
+            for (int i = 0; i < size; i++) {
+                double v = out[i];
+                double o = b0 * v + z1;
+                z1 = b1 * v - a1 * o + z2;
+                z2 = b2 * v - a2 * o;
+                out[i] = (float) o;
+            }
+        }
+    }
+
     private PitchReading yinDetect(float[] buf, int size, int sampleRate) {
+        PitchReading r = yinCore(buf, size, sampleRate, YIN_MIN_RMS);
+        if (!HP_SECOND_PASS || (r != null && r.freq >= HP_ACCEPT_MIN_FREQ)) return r;
+        if (hpBuf.length < size) hpBuf = new float[BUFFER_SAMPLES];
+        highPassFilter(buf, hpBuf, size, sampleRate);
+        PitchReading r2 = yinCore(hpBuf, size, sampleRate, HP_MIN_RMS);
+        if (r2 != null && r2.freq >= HP_ACCEPT_MIN_FREQ && r2.probability >= HP_MIN_PROB) return r2;
+        return r;
+    }
+
+    private PitchReading yinCore(float[] buf, int size, int sampleRate, double minRms) {
         double rms = 0;
         for (int i = 0; i < size; i++) rms += (double) buf[i] * buf[i];
         rms = Math.sqrt(rms / size);
-        if (rms < YIN_MIN_RMS) return null;
+        if (rms < minRms) return null;
 
         int minTau = Math.max(2, (int) Math.floor(sampleRate / MAX_VALID_FREQ));
         int maxTau = Math.min(size / 2 - 1, (int) Math.ceil(sampleRate / MIN_VALID_FREQ));
@@ -954,6 +1046,7 @@ public class NativeMicPitchDetector {
 
         return new PitchReading(finalFreq, probability, octaveChanged);
     }
+
 
     // Batas atas setengah-frekuensi yang masih zona angka (C#3 138.6Hz + 50 sen).
     private static final double DIGIT_HALF_MAX_FREQ = 143.0;
