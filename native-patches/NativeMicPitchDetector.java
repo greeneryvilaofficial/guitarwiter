@@ -87,6 +87,11 @@ public class NativeMicPitchDetector {
     // tercepat yang wajar (~150-160ms bahkan di teknik tapping cepat), jadi
     // aman. HARUS sama persis dengan COOLDOWN_MS di index.html.
     private static final long COOLDOWN_MS = 70;   // nilai ASLI dikembalikan: versi lebih sensitif bikin derau/dengung jadi huruf berulang
+    // Cooldown juga dihitung dari ONSET, bukan cuma dari komit. Sejak komit bisa terjadi di ~33ms (bacaan potongan),
+    // cooldown = komit+70 membuka jendela retrigger di ~117ms; dulu (komit 50-83ms) paling cepat ~150ms. Jendela
+    // yang lebih awal itu rawan menangkap pantulan/ekor petikan yang sama sebagai ketikan kedua (ganda).
+    // Ini mengembalikan jarak pengaman lama tanpa memperlambat komit pertama.
+    private static final long MIN_COOLDOWN_FROM_ONSET_MS = 150;
     // PENTING (fix "kedeteksi ganda / dobel ketikan"): dulu, begitu COOLDOWN_MS
     // lewat, mic langsung siap mendeteksi onset baru lagi -- padahal senar
     // gitar yang baru dipetik itu MASIH BERDENGUNG jauh lebih lama, dan
@@ -524,7 +529,7 @@ public class NativeMicPitchDetector {
                         lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
                         commit(fIdx[0], fr.freq);
                         state = STATE_RELEASING;
-                        cooldownUntil = now + COOLDOWN_MS;
+                        cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
                         releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
                     }
                 }
@@ -557,7 +562,7 @@ public class NativeMicPitchDetector {
                         lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
                         postKick();
                         state = STATE_RELEASING;
-                        cooldownUntil = now + COOLDOWN_MS;
+                        cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
                         releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
                     } else if (r != null) {
                         int[] idxOut = new int[1];
@@ -610,13 +615,13 @@ public class NativeMicPitchDetector {
                                 lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
                                 commit(idxOut[0], r.freq);
                                 state = STATE_RELEASING;
-                                cooldownUntil = now + COOLDOWN_MS;
+                                cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
                                 releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
                             }
                             if (!(consensus || forceCommit) && functionalKey && sampleTries >= MAX_SAMPLE_TRIES) {
                                 // tuts fungsi tanpa konsensus penuh: abaikan diam-diam
                                 state = STATE_RELEASING;
-                                cooldownUntil = now + COOLDOWN_MS;
+                                cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
                                 releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
                             }
                             // kalau belum cukup konsensus & masih ada jatah percobaan,
@@ -631,7 +636,7 @@ public class NativeMicPitchDetector {
                             // KickClassifier (spasi cuma untuk kick sungguhan).
                             resolveNonTonalHit(onsetLowE, onsetFullE, onsetPeakRms, decayRatio, r.probability);
                             state = STATE_RELEASING;
-                            cooldownUntil = now + COOLDOWN_MS;
+                            cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
                             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
                         } else if (sampleTries < MAX_SAMPLE_TRIES) {
                             // Bacaannya persis di batas dua kategori tuts berbeda (mis. angka
@@ -640,7 +645,7 @@ public class NativeMicPitchDetector {
                         } else {
                             postUnclear();
                             state = STATE_RELEASING;
-                            cooldownUntil = now + COOLDOWN_MS;
+                            cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
                             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
                         }
                     } else if (sampleTries >= MAX_SAMPLE_TRIES) {
@@ -654,7 +659,7 @@ public class NativeMicPitchDetector {
                         // KickClassifier, selain itu diabaikan.
                         resolveNonTonalHit(onsetLowE, onsetFullE, onsetPeakRms, decayRatio, 0.0);
                         state = STATE_RELEASING;
-                        cooldownUntil = now + COOLDOWN_MS;
+                        cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
                         releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
                     }
                     // kalau belum yakin & masih ada jatah percobaan, lanjut ke hop berikutnya
