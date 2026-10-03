@@ -48,6 +48,8 @@ public class NativeMicPitchDetector {
         // gitar, TV, dst), ATAU kick tapi mode kick sedang dimatikan ("Nada saja").
         // Tidak boleh mengetik apa pun -- cuma untuk umpan balik status di UI.
         void onNonTonalIgnored();
+        // Sebuah petikan DIBUANG oleh gerbang anti-gema (dengungan senar / sisa ring). Hanya umpan balik UI.
+        void onEchoBlocked(boolean sameNote);
     }
 
     // Rate cadangan. Rate yang dipakai sebenarnya dipilih di start(): utamakan rate NATIVE
@@ -101,7 +103,7 @@ public class NativeMicPitchDetector {
     // RMS-nya turun di bawah RELEASE_RMS dulu (bukan cuma nunggu waktu) baru
     // boleh siap deteksi onset baru lagi. HARUS sama persis dengan
     // RELEASE_RMS & MAX_RELEASE_WAIT_MS di index.html.
-    private static final double RELEASE_RMS = 0.012;
+    private static final double RELEASE_RMS = 0.009;   // < ONSET_RMS (0.012): hysteresis. Nada tinggi/senar tipis itu pelan; kalau release=onset, riak ring di sekitar 0.012 melepas kunci lalu terbaca petikan baru
     private static final long MAX_RELEASE_WAIT_MS = 1500;
     private static final int MAX_SAMPLE_TRIES = 5;   // dulu 4: +1 supaya batas akhir (SETTLE + tries x hop) tetap ~sama walau mulainya lebih awal; // HARUS sama persis dengan batas percobaan di index.html
     private static final double YIN_THRESHOLD = 0.15; // HARUS sama persis dengan THRESHOLD di index.html
@@ -283,7 +285,15 @@ public class NativeMicPitchDetector {
     // nada lain >= ECHO_OTHER_NOTE_PEAK. Petikan ulang sungguhan hampir selalu sekeras petikan
     // pertama; gema/dengungan jauh lebih pelan. Di luar jendela ini tidak ada pembatasan.
     private static final long ECHO_WINDOW_MS = 380;
-    private static final double ECHO_SAME_NOTE_PEAK = 0.70;
+    private static final double ECHO_SAME_NOTE_PEAK = 0.60;
+    // NADA SAMA punya jendela lebih panjang: sisa ring senar tipis (nada tinggi, pelan) bisa
+    // naik-turun di sekitar ambang jauh sesudah 380 ms. Dalam jendela ini petikan ulang nada
+    // yang sama HARUS (a) cukup keras dibanding petikan sebelumnya DAN (b) didahului lembah
+    // beneran: puncaknya >= SAME_NOTE_VALLEY_RATIO x level terpelan sejak komit terakhir.
+    // Ring yang cuma beating tidak punya lembah dalam, petikan ulang sungguhan punya.
+    private static final long SAME_NOTE_WINDOW_MS = 1200;
+    private static final double SAME_NOTE_VALLEY_RATIO = 1.8;
+    private double minRmsSinceCommit = Double.MAX_VALUE;   // thread rekam saja
     private static final double ECHO_OTHER_NOTE_PEAK = 0.35;
     private volatile long touchMuteUntil = 0;
     private int lastCommitIdx = -1;          // hanya diakses di thread rekam
@@ -297,14 +307,29 @@ public class NativeMicPitchDetector {
 
     private boolean isEcho(int idx, double peak, long onsetAt) {
         if (lastCommitIdx < 0) return false;
-        if (onsetAt - lastCommitOnsetAt > ECHO_WINDOW_MS) return false;
-        double need = (idx == lastCommitIdx) ? ECHO_SAME_NOTE_PEAK : ECHO_OTHER_NOTE_PEAK;
-        return peak < lastCommitPeak * need;
+        long dt = onsetAt - lastCommitOnsetAt;
+        if (idx == lastCommitIdx) {
+            if (dt > SAME_NOTE_WINDOW_MS) return false;
+            if (peak < lastCommitPeak * ECHO_SAME_NOTE_PEAK) return true;
+            // Lembah: dalam jendela panjang, level harus pernah turun dulu sebelum lonjakan ini.
+            // Di bawah 380 ms jalur retrigger sudah menjaga lembah lewat recentMin, jadi
+            // syarat ini baru berlaku sesudahnya (ring yang naik lagi belakangan).
+            if (dt > ECHO_WINDOW_MS && minRmsSinceCommit < Double.MAX_VALUE
+                    && peak < minRmsSinceCommit * SAME_NOTE_VALLEY_RATIO) return true;
+            return false;
+        }
+        if (dt > ECHO_WINDOW_MS) return false;
+        return peak < lastCommitPeak * ECHO_OTHER_NOTE_PEAK;
     }
 
     /** Kirim nada ke keyboard kecuali kalau ini gema dari petikan sebelumnya. true = terkirim. */
     private boolean emitNote(int idx, double freq, double peak, long onsetAt) {
-        if (isEcho(idx, peak, onsetAt)) return false;
+        if (isEcho(idx, peak, onsetAt)) {
+            final boolean same = (idx == lastCommitIdx);
+            postFast(() -> { if (listener != null) listener.onEchoBlocked(same); });
+            return false;
+        }
+        minRmsSinceCommit = Double.MAX_VALUE;
         lastCommitIdx = idx;
         lastCommitOnsetAt = onsetAt;
         lastCommitPeak = peak;
@@ -373,6 +398,7 @@ public class NativeMicPitchDetector {
 
         this.listener = listener;
         lastCommitIdx = -1;
+        minRmsSinceCommit = Double.MAX_VALUE;
         touchMuteUntil = 0;
 
         // Tentukan rate: native perangkat dulu, 44100 sebagai cadangan.
@@ -769,6 +795,7 @@ public class NativeMicPitchDetector {
                 }
             }
 
+            if (rms < minRmsSinceCommit) minRmsSinceCommit = rms;
             recentHopRms[recentHopIdx] = rms;
             recentHopIdx = (recentHopIdx + 1) % recentHopRms.length;
 

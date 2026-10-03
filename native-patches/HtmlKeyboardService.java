@@ -646,6 +646,12 @@ public class HtmlKeyboardService extends InputMethodService {
                 public void onNonTonalIgnored() {
                     // Sengaja kosong: bunyi non-nada (kick/tap) diabaikan diam-diam, tanpa pesan status.
                 }
+
+                @Override
+                public void onEchoBlocked(boolean sameNote) {
+                    runOnUiThreadSafe(() -> webView.evaluateJavascript(
+                            "window.onNativeEchoBlocked && window.onNativeEchoBlocked(" + sameNote + ")", null));
+                }
             });
             if (started) {
                 runOnUiThreadSafe(() -> webView.evaluateJavascript(
