@@ -3544,6 +3544,11 @@
     }
     scheduleNoteMapSync();
   };
+  window.onNativeNotGuitar = function(reason){
+    // Tampil hanya kalau "Info nada" aktif: bunyi bernada yang dibuang filter "Gitar saja".
+    const why = reason===1 ? 'terlalu pelan' : reason===2 ? 'nada meliuk' : 'bukan petikan';
+    showStatus('🎸 bukan gitar diabaikan (' + why + ')');
+  };
   window.onNativeEchoBlocked = function(sameNote){
     // Tampil hanya kalau "Info nada" aktif (showStatus menyaring sendiri): tanda bahwa gerbang
     // anti-gema membuang dengungan/sisa ring, bukan petikanmu yang hilang.
