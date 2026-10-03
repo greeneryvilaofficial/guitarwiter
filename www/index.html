@@ -3544,6 +3544,11 @@
     }
     scheduleNoteMapSync();
   };
+  window.onNativeEchoBlocked = function(sameNote){
+    // Tampil hanya kalau "Info nada" aktif (showStatus menyaring sendiri): tanda bahwa gerbang
+    // anti-gema membuang dengungan/sisa ring, bukan petikanmu yang hilang.
+    showStatus('↩ gema diabaikan' + (sameNote ? ' (nada sama)' : ''));
+  };
   window.onNativeNonTonalIgnored = function(){
     // diabaikan diam-diam (klasifikasi kick dimatikan)
   };
