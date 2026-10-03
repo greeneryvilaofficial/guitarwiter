@@ -320,11 +320,25 @@ public class NativeMicPitchDetector {
     // Rentang geser nada (maks - min, sen) dari SEMUA bacaan sejak onset. Suara orang hampir tidak pernah
     // diam di satu nada: bergeser puluhan sen dalam ~70 ms. Senar yang sudah settle tetap < ~15 sen.
     private static final double G_SPREAD_L1 = 40, G_SPREAD_L2 = 22;
+    // JALUR CEPAT BERSYARAT (respons ~seperti Gboard untuk petikan "khas gitar"). Petikan senar sudah
+    // mencapai puncak & mulai meluruh di hop kedua setelah onset (rasio hop2/hop-pemicu ~0.9-1.1),
+    // sedangkan suara dengan awalan lunak MASIH NAIK (rasio ~1.1-2.6). Jadi: kalau level hop kedua
+    // tidak lebih dari G_ABRUPT_RATIO x level hop pemicu ("awalan tiba-tiba"), nada >= FAST_MIN_FREQ
+    // yang bersih & cukup keras boleh langsung diketik tanpa menunggu 3 bacaan. Yang tidak memenuhi
+    // syarat tetap lewat jalur ketat. BATAS: suara yang mulainya mendadak seperti konsonan letup
+    // bisa menyerupai petikan dan lolos; diukur dari sinyal sintetis, belum dari gitar/suara nyata.
+    private static final double G_ABRUPT_RATIO = 1.12;
+    private static final double G_FAST_MIN_PEAK = 0.05;      // jalur cepat hanya untuk bunyi KERAS (dekat mic)
+    private static final double G_FAST_MIN_PROB = 0.92;
+    private static final double G_FAST_MAX_CENTS = 10.0;
+    private static final int    G_MIN_READS_ABRUPT = 2;      // awalan tiba-tiba: cukup 2 bacaan di jalur ketat
     private static final int    G_MIN_READS_L2 = 3;                              // level ketat: minimal bacaan valid sebelum komit
     private static final long   G_RISING_AGE_MS = 25;                            // puncak masih "baru" = level belum mulai turun
     private double gLastReadFreq = 0;    // thread rekam saja
     private int gWobbleCount = 0;
     private int gReads = 0;
+    private double gOnsetHopRms = 0;
+    private boolean gAbrupt = false, gAbruptKnown = false;
     private double gFirstFreq = 0, gMinOff = 0, gMaxOff = 0;
     private long gPeakAt = 0;
 
@@ -348,10 +362,11 @@ public class NativeMicPitchDetector {
         }
         if (peak < guitarMinPeak()) { reasonOut[0] = 1; return 2; }
         if (gWobbleCount >= (strict ? G_WOBBLE_L2 : G_WOBBLE_L1)) { reasonOut[0] = 2; return 2; }
-        if (gReads >= 3 && (gMaxOff - gMinOff) > (strict ? G_SPREAD_L2 : G_SPREAD_L1)) { reasonOut[0] = 2; return 2; }
+        final int minReads = (strict && gAbrupt) ? G_MIN_READS_ABRUPT : G_MIN_READS_L2;
+        if (gReads >= minReads && (gMaxOff - gMinOff) > (strict ? G_SPREAD_L2 : G_SPREAD_L1)) { reasonOut[0] = 2; return 2; }
         boolean rising = decayRatio > 0.97 && (now - gPeakAt) < G_RISING_AGE_MS;
         boolean flat = tries >= 3 && decayRatio > (strict ? G_SUSTAIN_L2 : G_SUSTAIN_L1);
-        boolean needMore = strict && gReads < G_MIN_READS_L2 && tries < MAX_SAMPLE_TRIES;
+        boolean needMore = strict && gReads < minReads && tries < MAX_SAMPLE_TRIES;
         if (rising || flat) {
             if (tries >= MAX_SAMPLE_TRIES) { reasonOut[0] = 3; return 2; }
             return 1;
@@ -621,7 +636,7 @@ public class NativeMicPitchDetector {
                 if (rms > ONSET_RMS && rms > smoothedRms * ONSET_RATIO && now > cooldownUntil && now > touchMuteUntil) {
                     state = STATE_SAMPLING;
                     sampleTries = 0;
-                    gLastReadFreq = 0; gWobbleCount = 0; gPeakAt = now; gReads = 0; gFirstFreq = 0; gMinOff = 0; gMaxOff = 0;
+                    gLastReadFreq = 0; gWobbleCount = 0; gPeakAt = now; gReads = 0; gFirstFreq = 0; gMinOff = 0; gMaxOff = 0; gOnsetHopRms = rms; gAbrupt = false; gAbruptKnown = false;
                     candidateIdx = -1;
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;
@@ -643,16 +658,18 @@ public class NativeMicPitchDetector {
                 // butuh sedikit waktu buat naik penuh), jadi dilacak terus selama
                 // fase SAMPLING (baik pas nunggu SETTLE_MS maupun pas benar-benar
                 // mengukur), bukan cuma diambil dari satu hop pemicu onset saja.
+                if (!gAbruptKnown) { gAbrupt = rms <= gOnsetHopRms * G_ABRUPT_RATIO; gAbruptKnown = true; }
                 if (rms > onsetPeakRms) { onsetPeakRms = rms; gPeakAt = now; }
                 // JALUR CEPAT: satu bacaan awal di hop pertama sesudah onset (lihat FAST_*).
-                if (!fastTried && now >= fastAt && now < sampleAt && guitarLevel < 2
-                        && (guitarLevel == 0 || onsetPeakRms >= guitarMinPeak())) {
+                if (!fastTried && now >= fastAt && now < sampleAt
+                        && (guitarLevel == 0 || (gAbrupt && onsetPeakRms >= G_FAST_MIN_PEAK))) {
                     fastTried = true;
                     PitchReading fr = yinDetect(window, BUFFER_SAMPLES, sampleRate);
                     if (fr != null && fr.freq >= FAST_MIN_FREQ
                             && fr.probability >= (fr.freq < FAST_MID_MAX_FREQ ? FAST_MIN_PROB_MID : FAST_MIN_PROB)
                             && isCategorySafe(fr.freq, fr.probability, fIdx, fCents)
-                            && fCents[0] < FAST_MAX_CENTS
+                            && fCents[0] < (guitarLevel == 0 ? FAST_MAX_CENTS : Math.min(FAST_MAX_CENTS, G_FAST_MAX_CENTS))
+                            && (guitarLevel == 0 || fr.probability >= G_FAST_MIN_PROB)
                             && (!FUNCTIONAL_KEYS_STRICT || "letterOrSymbol".equals(categoryOfIndex(fIdx[0])))
                             && fIdx[0] >= 0 && fIdx[0] < NOTE_COUNT) {
                         lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
@@ -836,7 +853,7 @@ public class NativeMicPitchDetector {
                         && rms > recentMin * RETRIGGER_RATIO) {
                     state = STATE_SAMPLING;
                     sampleTries = 0;
-                    gLastReadFreq = 0; gWobbleCount = 0; gPeakAt = now; gReads = 0; gFirstFreq = 0; gMinOff = 0; gMaxOff = 0;
+                    gLastReadFreq = 0; gWobbleCount = 0; gPeakAt = now; gReads = 0; gFirstFreq = 0; gMinOff = 0; gMaxOff = 0; gOnsetHopRms = rms; gAbrupt = false; gAbruptKnown = false;
                     candidateIdx = -1;
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;

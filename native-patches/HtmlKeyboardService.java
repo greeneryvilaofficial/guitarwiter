@@ -11,6 +11,7 @@ import android.os.PersistableBundle;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.HapticFeedbackConstants;
+import android.media.AudioManager;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -512,6 +513,35 @@ public class HtmlKeyboardService extends InputMethodService {
         @JavascriptInterface
         public void touchMute() {
             if (nativeMic != null) nativeMic.muteForTouch();   // hanya menulis field volatile -> aman di thread mana pun
+        }
+
+        /**
+         * Satu panggilan per sentuhan tuts (cepat, 1x lompat JNI): bungkam mic + bunyi tuts + getar,
+         * persis cara Gboard -- bunyi memakai efek bawaan Android (AudioManager.playSoundEffect), yang
+         * langsung dimainkan sistem tanpa jeda WebAudio dan otomatis mengikuti "Suara sentuh" sistem.
+         * kind: 0 huruf/umum, 1 spasi, 2 hapus, 3 enter.
+         */
+        @JavascriptInterface
+        public void keyTap(final int kind, final boolean vibrate, final boolean sound, final int volPercent) {
+            if (nativeMic != null) nativeMic.muteForTouch();
+            if (sound) {
+                try {
+                    AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+                    if (am != null) {
+                        int fx = kind == 1 ? AudioManager.FX_KEYPRESS_SPACEBAR
+                               : kind == 2 ? AudioManager.FX_KEYPRESS_DELETE
+                               : kind == 3 ? AudioManager.FX_KEYPRESS_RETURN
+                               : AudioManager.FX_KEYPRESS_STANDARD;
+                        if (volPercent > 0) am.playSoundEffect(fx, Math.min(1f, volPercent / 100f));
+                        else am.playSoundEffect(fx);
+                    }
+                } catch (Throwable ignored) { }
+            }
+            if (vibrate) {
+                runOnUiThreadSafe(() -> {
+                    if (webView != null) webView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+                });
+            }
         }
 
         /** Getaran halus saat tombol disentuh (Setelan: "Getaran keyboard"). Tidak butuh izin tambahan; mengikuti pengaturan getar sistem. */
