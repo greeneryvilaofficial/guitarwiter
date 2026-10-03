@@ -64,9 +64,12 @@ Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
 | `ONSET_RMS`, `RETRIGGER_*`, `COOLDOWN_MS` | sensitivitas petikan; terlalu sensitif = huruf berulang/acak |
 | `TOUCH_MUTE_MS` | sesudah tuts disentuh jari, onset mic dibungkam sebentar (getar/klik/ketukan jari tidak jadi huruf hantu) |
 | `ECHO_WINDOW_MS`, `ECHO_SAME_NOTE_PEAK`, `ECHO_OTHER_NOTE_PEAK` | gerbang anti-gema: petikan baru dalam jendela ini harus cukup keras dibanding petikan sebelumnya, kalau tidak dianggap dengungan & diabaikan |
+| `SAME_NOTE_WINDOW_MS`, `SAME_NOTE_VALLEY_RATIO` | nada SAMA dalam jendela panjang harus didahului lembah beneran (puncak >= 1.8x level terpelan sejak komit terakhir). Menangkap sisa ring senar tipis (nada tinggi x c v b n m) yang naik lagi belakangan |
+| `RELEASE_RMS` (0.009) | sengaja di bawah `ONSET_RMS` (0.012): hysteresis supaya riak ring di sekitar ambang tidak melepas kunci lalu dibaca petikan baru |
 
 ## Masalah umum
 - **Satu petikan muncul dua kali** → naikkan `ECHO_SAME_NOTE_PEAK` (mis. 0.8) / `ECHO_WINDOW_MS`. Kalau petikan ulang cepat pada nada yang sama malah tidak muncul, turunkan (mis. 0.55).
+- **Nada tinggi (x c v b n m) masih dobel** → naikkan `SAME_NOTE_VALLEY_RATIO` (mis. 2.2) atau `SAME_NOTE_WINDOW_MS` (mis. 1800). Nyalakan "Info nada": muncul "↩ gema diabaikan" tiap kali gerbang membuang sesuatu. Kalau petikan ulang cepat di nada yang sama malah hilang, turunkan rasio ke 1.5.
 - **Huruf hantu saat mengetik dengan jari** → naikkan `TOUCH_MUTE_MS` (mis. 300).
 - **Huruf berulang (`eeee`) atau muncul sendiri** → sensitivitas terlalu tinggi / derau ruangan; naikkan `ONSET_RMS`.
 - **Nada tertukar huruf ↔ angka** → salah oktaf pada nada rendah; lihat `LOW_ZONE_*`.
