@@ -62,8 +62,12 @@ Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
 | `FAST_*` | jalur cepat nada pertama (hanya ≥ 300 Hz, syarat ketat) |
 | `LOW_ZONE_*` | nada < 300 Hz menunggu data lebih banyak (mencegah salah oktaf angka↔huruf) |
 | `ONSET_RMS`, `RETRIGGER_*`, `COOLDOWN_MS` | sensitivitas petikan; terlalu sensitif = huruf berulang/acak |
+| `TOUCH_MUTE_MS` | sesudah tuts disentuh jari, onset mic dibungkam sebentar (getar/klik/ketukan jari tidak jadi huruf hantu) |
+| `ECHO_WINDOW_MS`, `ECHO_SAME_NOTE_PEAK`, `ECHO_OTHER_NOTE_PEAK` | gerbang anti-gema: petikan baru dalam jendela ini harus cukup keras dibanding petikan sebelumnya, kalau tidak dianggap dengungan & diabaikan |
 
 ## Masalah umum
+- **Satu petikan muncul dua kali** → naikkan `ECHO_SAME_NOTE_PEAK` (mis. 0.8) / `ECHO_WINDOW_MS`. Kalau petikan ulang cepat pada nada yang sama malah tidak muncul, turunkan (mis. 0.55).
+- **Huruf hantu saat mengetik dengan jari** → naikkan `TOUCH_MUTE_MS` (mis. 300).
 - **Huruf berulang (`eeee`) atau muncul sendiri** → sensitivitas terlalu tinggi / derau ruangan; naikkan `ONSET_RMS`.
 - **Nada tertukar huruf ↔ angka** → salah oktaf pada nada rendah; lihat `LOW_ZONE_*`.
 - **Terasa delay** → lihat angka `· xx ms` di status keyboard (waktu di dalam kode). Sisanya adalah latensi audio masuk Android (`AudioRecord`) yang tidak bisa dipangkas dari Java.
