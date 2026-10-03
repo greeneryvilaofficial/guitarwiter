@@ -3,7 +3,7 @@
 // dimuat walau tanpa koneksi internet (penting karena WebView keyboard
 // akan sering dibuka tanpa jaringan aktif).
 
-const CACHE_NAME = 'genjreng-ketik-cache-v19'; // dinaikkan: urutan ketik-dulu + bungkam mic saat sentuhan + gesture per jari
+const CACHE_NAME = 'genjreng-ketik-cache-v17'; // dinaikkan: urutan ketik-dulu + bungkam mic saat sentuhan + gesture per jari
 const CORE_ASSETS = [
   'index.html',
   'manifest.json',
