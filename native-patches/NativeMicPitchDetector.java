@@ -437,7 +437,6 @@ public class NativeMicPitchDetector {
                 audioRecord = candidate;
                 sampleRate = rate;
                 hopSamples = rate / 60;
-            twelfthMinSamples = rate * TWELFTH_MIN_SAMPLES_MS / 1000;
                 break;
             }
             if (candidate != null) candidate.release();
@@ -588,7 +587,6 @@ public class NativeMicPitchDetector {
                 // JALUR CEPAT: satu bacaan awal di hop pertama sesudah onset (lihat FAST_*).
                 if (!fastTried && now >= fastAt && now < sampleAt) {
                     fastTried = true;
-                    twelfthEnabled = false;   // jendela baru ~1 hop: belum cukup untuk verifikasi f/3
                     PitchReading fr = yinDetect(window, BUFFER_SAMPLES, sampleRate);
                     if (fr != null && fr.freq >= FAST_MIN_FREQ
                             && fr.probability >= (fr.freq < FAST_MID_MAX_FREQ ? FAST_MIN_PROB_MID : FAST_MIN_PROB)
@@ -604,7 +602,6 @@ public class NativeMicPitchDetector {
                     }
                 }
                 if (now >= sampleAt) {
-                    twelfthEnabled = tailSamples >= twelfthMinSamples;
                     PitchReading r = yinDetect(window, BUFFER_SAMPLES, sampleRate);
                     if (TAIL_READ && r == null && tailSamples >= TAIL_MIN_SAMPLES && tailSamples <= TAIL_MAX_SAMPLES) {
                         if (tailBuf.length < tailSamples) tailBuf = new float[TAIL_MAX_SAMPLES];
@@ -675,7 +672,7 @@ public class NativeMicPitchDetector {
                             boolean functionalKey = FUNCTIONAL_KEYS_STRICT && "functional".equals(categoryOfIndex(idxOut[0]));
                             if (functionalKey) {
                                 requiredConfirm = Math.max(requiredConfirm, 3);
-                                ageOk = ageOk && (now - lastOnsetAt) >= LOW_ZONE_MIN_AGE_MS && twelfthEnabled;   // dan sudah lolos verifikasi f/3
+                                ageOk = ageOk && (now - lastOnsetAt) >= LOW_ZONE_MIN_AGE_MS;
                             }
                             boolean consensus = candidateCount >= requiredConfirm && ageOk;
                             boolean forceCommit = sampleTries >= MAX_SAMPLE_TRIES && !functionalKey;
@@ -902,7 +899,7 @@ public class NativeMicPitchDetector {
     // false = SEMUA tuts (shift, backspace, emoji, ?123, enter, tanda baca) diperlakukan sama
     // seperti nada biasa: langsung terdeteksi, termasuk lewat jalur cepat. true = tuts fungsi
     // dipersulit (3 bacaan sepakat, tidak dipaksa komit) untuk mencegah salah-picu.
-    private static final boolean FUNCTIONAL_KEYS_STRICT = true;
+    private static final boolean FUNCTIONAL_KEYS_STRICT = false;
 
     private void commit(int idx, double freq) {
         if (!PITCH_MODE_TOGGLE_KEYS && (idx == 38 || idx == 40)) return;
@@ -1109,15 +1106,6 @@ public class NativeMicPitchDetector {
                 if (magAtHalf >= magAtFreq * 0.6) finalFreq = halfFreq;
             }
         }
-        // Langkah 5b (BARU): verifikasi "DUA BELAS" (harmonik ke-3). Di HP, fundamental nada rendah sering nyaris
-        // hilang sementara harmonik ke-3 kuat -> YIN membaca 3x frekuensi aslinya (+19 semitone). Contoh nyata:
-        // Q (D3) terbaca A4 = Shift/capslock, P (B3) terbaca F#5 = ?123, S (C#4) terbaca G#5 = emoji.
-        // Uji oktaf di atas hanya melihat f/2 dan tidak menangkap ini. Di sini dicari bukti "sisir harmonik"
-        // dari fundamental f/3: puncak SEMPIT (jauh lebih tinggi dari tetangganya) di f/3, 2f/3, 4f/3, 5f/3.
-        // Nada asli di f tidak punya energi di titik-titik itu, jadi >= 2 puncak sekaligus bukan kebetulan.
-        if (twelfthEnabled && finalFreq == rawFreq && rawFreq / 3 >= MIN_VALID_FREQ && twelfthIsReal(buf, size, rawFreq, sampleRate)) {
-            finalFreq = rawFreq / 3;
-        }
         // Arah "naik" (kalau energi di rawFreq lemah dibanding di 2x-nya, berarti
         // aslinya satu oktaf lebih tinggi -- buat kasus G#3/A2) DIHAPUS lagi di
         // sini. Senar BAWAH gitar (mis. E2) itu wajar punya harmonik ke-2 yang
@@ -1141,37 +1129,6 @@ public class NativeMicPitchDetector {
 
     // Batas atas setengah-frekuensi yang masih zona angka (C#3 138.6Hz + 50 sen).
     private static final double DIGIT_HALF_MAX_FREQ = 143.0;
-
-    /**
-     * True kalau di spektrum ada sisir harmonik dari fundamental f/3 (lihat Langkah 5b di yinCore).
-     * Syarat per titik: amplitudo >= TWELFTH_MIN_REL x amplitudo di f DAN puncak sempit
-     * (>= TWELFTH_PEAK_RATIO x tetangga kiri/kanan sejauh max(7%, 30 Hz)). Perlu >= TWELFTH_MIN_HITS titik.
-     */
-    private static final double TWELFTH_MIN_REL = 0.05;
-    private static final double TWELFTH_PEAK_RATIO = 3.0;
-    private static final int TWELFTH_MIN_HITS = 2;
-    // Verifikasi f/3 hanya bermakna kalau jendela memuat >= ~69 ms sinyal nada (di bawah itu puncak harmonik
-    // tidak terpisah dari bocoran spektrum, A4 asli pun tampak "punya" f/3). Diatur recordLoop() per bacaan.
-    private static final int TWELFTH_MIN_SAMPLES_MS = 69;
-    private boolean twelfthEnabled = false;
-    private volatile int twelfthMinSamples = FALLBACK_SAMPLE_RATE * TWELFTH_MIN_SAMPLES_MS / 1000;
-    private static boolean twelfthIsReal(float[] buf, int size, double f, int sampleRate) {
-        final double aF = ampWin(buf, size, f, sampleRate);
-        if (aF <= 0) return false;
-        final double[] ratios = {2.0 / 3, 4.0 / 3, 1.0 / 3, 5.0 / 3};
-        int hits = 0;
-        for (int k = 0; k < ratios.length; k++) {
-            final double fk = f * ratios[k];
-            final double a = ampWin(buf, size, fk, sampleRate);
-            if (a < aF * TWELFTH_MIN_REL) continue;                    // terlalu kecil: bukan bukti
-            final double off = f / 6.0;   // titik tengah antar harmonik f/3 (jauh dari harmonik nada asli di f, dan melewati lebar lobus jendela pendek)
-            final double nb = Math.max(ampWin(buf, size, fk - off, sampleRate), ampWin(buf, size, fk + off, sampleRate));
-            if (a >= nb * TWELFTH_PEAK_RATIO && ++hits >= TWELFTH_MIN_HITS) return true;
-            // sisa titik tak mungkin lagi mencapai syarat -> berhenti lebih awal (hemat CPU)
-            if (hits + (ratios.length - 1 - k) < TWELFTH_MIN_HITS) return false;
-        }
-        return false;
-    }
 
     // Amplitudo Goertzel berjendela, diambil yang tertinggi di +-20 sen (toleransi tuning).
     private static double ampWin(float[] buf, int size, double f, int sampleRate) {
