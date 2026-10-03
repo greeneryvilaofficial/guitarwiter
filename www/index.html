@@ -884,7 +884,7 @@
       btn.className='key fn key-shift';
       btn.id='shiftBtn';
       btn.innerHTML='<span class="ch">'+ICONS.shift+'</span><span class="tag">'+note.name+'</span><span class="bubble"></span>';
-      btn.addEventListener('pointerdown', ()=>{ keyFeedback(); shiftToggle(btn); });
+      btn.addEventListener('pointerdown', ()=>{ shiftToggle(btn); keyFeedback(); });
       keyMap['shift'] = btn;
     } else if(def.type==='backspace'){
       btn.className='key fn key-backspace';
@@ -2371,7 +2371,14 @@
       o.start(); o.stop(_audioCtx.currentTime + 0.03);
     }catch(e){}
   }
+  // Mic tetap menyala saat mengetik dengan jari: getar, bunyi klik & ketukan jari terdengar mic dan
+  // bisa jadi huruf hantu. Kabari Java tiap sentuhan supaya onset mic dibungkam ~220 ms.
+  function micTouchMute(){
+    if(fastBridge('touchMute')) return;
+    try{ const a = window.AndroidKeyboard; if(a && a.touchMute) a.touchMute(); }catch(e){}
+  }
   function keyFeedback(){
+    micTouchMute();
     if(prefs.haptic){
       try{
         if(window.AndroidKeyboard && window.AndroidKeyboard.haptic) window.AndroidKeyboard.haptic();
@@ -2990,10 +2997,10 @@
   function wireLetterKey(btn){
     btn.addEventListener('pointerdown', (e)=>{
       if(G) endGesture();
-      keyFeedback();
       const wasShift = shiftActive, wasAuto = autoShift;
       manualPress(btn);                                   // ketikan langsung, tanpa menunggu jari diangkat
-      G = { btn, x0:e.clientX, y0:e.clientY, wasShift, wasAuto, glide:false, path:[btn.dataset.origChar], pts:[[e.clientX, e.clientY]], popup:null, timer:null };
+      keyFeedback();                                      // getar/suara + bungkam mic SESUDAH teks terkirim
+      G = { pid:e.pointerId, btn, x0:e.clientX, y0:e.clientY, wasShift, wasAuto, glide:false, path:[btn.dataset.origChar], pts:[[e.clientX, e.clientY]], popup:null, timer:null };
       const items = altItemsFor(btn);
       if(items.length) G.timer = setTimeout(()=> openAlt(items), LONG_PRESS_MS);
       document.addEventListener('pointermove', onGMove, true);
@@ -3008,9 +3015,9 @@
     if(G){ if(G.timer) clearTimeout(G.timer); if(G.popup && G.popup.el) G.popup.el.remove(); }
     const g = G; G = null; return g;
   }
-  function onGCancel(){ endGesture(); trailEnd(); }
+  function onGCancel(e){ if(G && e && e.pointerId !== G.pid) return; endGesture(); trailEnd(); }
   function onGMove(e){
-    if(!G) return;
+    if(!G || e.pointerId !== G.pid) return;   // abaikan jari lain (mengetik cepat dengan dua jari)
     if(G.popup){ highlightAlt(e.clientX); return; }
     const dist = Math.hypot(e.clientX - G.x0, e.clientY - G.y0);
     if(!G.glide){
@@ -3021,6 +3028,7 @@
     extendGlide(e);
   }
   function onGUp(e){
+    if(G && e && e.pointerId !== G.pid) return;   // jari ke-1 naik saat gesture sudah milik jari ke-2
     const g = endGesture();
     if(!g) return;
     if(g.popup){ commitAlt(g); return; }
@@ -3296,6 +3304,7 @@
         timer = null;
         btn.classList.add('key-longpress-num');
         const num = btn.dataset.cornerNum;
+        micTouchMute();
         backspace();                         // hapus huruf yang barusan diketik
         showBubble(btn, num);
         appendText(num);
@@ -3336,6 +3345,7 @@
       const interval = START_INTERVAL_MS + (MIN_INTERVAL_MS - START_INTERVAL_MS) * t;
       repeatTimer = setTimeout(()=>{
         if(!active) return;
+        micTouchMute();
         action();
         scheduleNext();
       }, interval);
@@ -3360,7 +3370,6 @@
 
   // ---------------- Key actions (silent — no internal synthesized audio) ----------------
   function manualPress(el){
-    flash(el);
     let ch;
     if(mode==='symbols' && el.dataset.symbolChar){
       ch = el.dataset.symbolChar;
@@ -3369,16 +3378,19 @@
       ch = (shiftActive && /^[a-z]$/.test(base)) ? base.toUpperCase() : base;
       if(shiftActive && !capsLock){ shiftActive=false; updateShiftVisual(); }
     }
+    appendText(ch);          // teks terkirim ke Android DULU (persis Gboard), efek visual sesudahnya
+    flash(el);
     showBubble(el, ch);
-    appendText(ch);
   }
   function functionalPress(el){
+    const type = el.dataset.type;
+    let lbl = null;
+    if(type==='backspace'){ backspace(); lbl = '⌫'; }          // aksi DULU, getar/efek sesudahnya
+    else if(type==='enter'){ pressEnter(); lbl = '↵'; }
+    else if(type==='literal'){ const c = el.dataset.char; appendText(c); lbl = (c===' ' ? '␣' : c); }
     keyFeedback();
     flash(el);
-    const type = el.dataset.type;
-    if(type==='backspace'){ showBubble(el,'⌫'); backspace(); }
-    else if(type==='enter'){ showBubble(el,'↵'); pressEnter(); }
-    else if(type==='literal'){ const c = el.dataset.char; showBubble(el, c===' '?'␣':c); appendText(c); }
+    if(lbl) showBubble(el, lbl);
   }
   // BARU: dipanggil kalau ada tap/ketukan badan gitar (bunyi keras tapi tidak
   // periodik sama sekali). Cari tombol spasi di layout biar dapat feedback
