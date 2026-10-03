@@ -50,9 +50,6 @@ public class NativeMicPitchDetector {
         void onNonTonalIgnored();
         // Sebuah petikan DIBUANG oleh gerbang anti-gema (dengungan senar / sisa ring). Hanya umpan balik UI.
         void onEchoBlocked(boolean sameNote);
-        // Bunyi bernada tapi tidak mirip petikan senar (suara orang bernyanyi/bersenandung, dengung TV,
-        // sirine, bunyi terlalu pelan/jauh) dibuang oleh filter "Gitar saja". Hanya umpan balik UI.
-        void onNotGuitar(int reason);   // 1 terlalu pelan, 2 nada meliuk (vokal), 3 level bertahan datar/naik (vokal/dengung)
     }
 
     // Rate cadangan. Rate yang dipakai sebenarnya dipilih di start(): utamakan rate NATIVE
@@ -221,10 +218,10 @@ public class NativeMicPitchDetector {
     // data lebih banyak (umur minimum sejak onset) dan minta bacaan yang sepakat lebih banyak;
     // bacaan yang barusan dikoreksi oktaf oleh Goertzel dituntut paling banyak.
     private static final double LOW_ZONE_MAX_FREQ = 300.0;
-    private static final long LOW_ZONE_MIN_AGE_MS = 50;
+    private static final long LOW_ZONE_MIN_AGE_MS = 66;
     // Untuk bacaan >= LOW_ZONE_FAST_AGE_MIN_FREQ (tuts a,s,d: C4-D4) cukup 50ms (1 hop lebih cepat). Di bawah itu
     // (angka, q-p, o,p) TETAP 66ms: di situlah kesalahan oktaf-turun terjadi kalau terlalu cepat (diuji simulasi).
-    private static final long LOW_ZONE_FAST_AGE_MS = 33;
+    private static final long LOW_ZONE_FAST_AGE_MS = 50;
     private static final double LOW_ZONE_FAST_AGE_MIN_FREQ = 255.0;
     private static final int LOW_ZONE_CONFIRM = 2;
     private static final int LOW_ZONE_CONFIRM_CORRECTED = 3;
@@ -302,95 +299,6 @@ public class NativeMicPitchDetector {
     private int lastCommitIdx = -1;          // hanya diakses di thread rekam
     private long lastCommitOnsetAt = 0;
     private double lastCommitPeak = 0;
-
-    // ---- FILTER "GITAR SAJA" ----
-    // Senar yang dipetik punya tanda-tanda khas: nadanya STABIL (tidak meliuk), levelnya MELURUH
-    // sesudah puncak (bukan datar/terus naik seperti vokal & dengung), dan cukup keras di mic.
-    // Level 1 = normal, 2 = ketat (jalur cepat dimatikan, semua syarat diperketat).
-    // Angka-angka di bawah dipilih dari sifat sinyal, BELUM diuji dengan beragam gitar/ruangan:
-    // setel lewat konstanta ini kalau petikan sungguhan ikut terbuang atau suara lain masih lolos.
-    // Selalu aktif (tidak ada tombol): Guitarwiter hanya menangkap petikan gitar. Level dikunci 2 (ketat: jalur cepat mati, min 3 bacaan, syarat diperketat);
-    // ganti jadi 1 di sini kalau petikan sungguhan ikut terbuang (lebih longgar & lebih cepat).
-    private static final int guitarLevel = 2;
-
-    private static final double G_MIN_PEAK_L1 = 0.020, G_MIN_PEAK_L2 = 0.035;     // puncak RMS minimum
-    private static final double G_SUSTAIN_L1 = 0.97,  G_SUSTAIN_L2 = 0.88;       // rms/puncak >= ini sesudah >=3 bacaan = datar
-    private static final int    G_WOBBLE_L1 = 2,      G_WOBBLE_L2 = 1;           // jumlah lompatan nada 55/35..150 sen antar bacaan
-    private static final double G_WOBBLE_CENTS_L1 = 55, G_WOBBLE_CENTS_L2 = 35;
-    // Rentang geser nada (maks - min, sen) dari SEMUA bacaan sejak onset. Suara orang hampir tidak pernah
-    // diam di satu nada: bergeser puluhan sen dalam ~70 ms. Senar yang sudah settle tetap < ~15 sen.
-    private static final double G_SPREAD_L1 = 40, G_SPREAD_L2 = 22;
-    // JALUR CEPAT BERSYARAT (respons ~seperti Gboard untuk petikan "khas gitar"). Petikan senar sudah
-    // mencapai puncak & mulai meluruh di hop kedua setelah onset (rasio hop2/hop-pemicu ~0.9-1.1),
-    // sedangkan suara dengan awalan lunak MASIH NAIK (rasio ~1.1-2.6). Jadi: kalau level hop kedua
-    // tidak lebih dari G_ABRUPT_RATIO x level hop pemicu ("awalan tiba-tiba"), nada >= FAST_MIN_FREQ
-    // yang bersih & cukup keras boleh langsung diketik tanpa menunggu 3 bacaan. Yang tidak memenuhi
-    // syarat tetap lewat jalur ketat. BATAS: suara yang mulainya mendadak seperti konsonan letup
-    // bisa menyerupai petikan dan lolos; diukur dari sinyal sintetis, belum dari gitar/suara nyata.
-    private static final long   REJECT_RELEASE_WAIT_MS = 250;   // kunci singkat sesudah bunyi dibuang filter gitar
-    private static final double G_ABRUPT_RATIO = 1.12;
-    // BARU: "awalan tiba-tiba" dinilai juga dari KETAJAMAN LONJAKAN di hop pemicu (rms pemicu / rms hop sebelumnya).
-    // Uji lama (hop ke-2 <= 1.12x hop pemicu) bergantung pada FASE petikan terhadap batas hop: hanya petikan yang
-    // kebetulan jatuh di awal hop (~20%) lolos, sisanya (~80%) dianggap "lunak" dan kena jalur ketat yang lambat.
-    // Petikan senar naik dari hening ke keras dalam <2 ms (rasio puluhan x); suara orang naik bertahap (rasio ~1.5-3x).
-    private static final double G_SHARP_RATIO = 6.0;
-    private static final double G_FAST_MIN_PEAK = 0.05;      // jalur cepat hanya untuk bunyi KERAS (dekat mic)
-    private static final double G_FAST_MIN_PROB = 0.90;
-    private static final double G_FAST_MAX_CENTS = 10.0;
-    private static final int    G_MIN_READS_ABRUPT = 2;      // awalan tiba-tiba: cukup 2 bacaan di jalur ketat
-    // Jalur "awalan tiba-tiba, 2 bacaan" hanya untuk bunyi yang levelnya SUDAH meluruh dari puncak (petikan senar). Suara
-    // yang ditahan (level datar ~1.0) harus lewat jalur 3 bacaan, tempat uji "datar/terus naik" bisa menolaknya.
-    private static final double G_ABRUPT_MAX_DECAY = 0.95;
-    private static final int    G_MIN_READS_L2 = 3;                              // level ketat: minimal bacaan valid sebelum komit
-    private static final long   G_RISING_AGE_MS = 25;                            // puncak masih "baru" = level belum mulai turun
-    private double gLastReadFreq = 0;    // thread rekam saja
-    private int gWobbleCount = 0;
-    private int gReads = 0;
-    private double gOnsetHopRms = 0;
-    private final float[] fastBuf = new float[BUFFER_SAMPLES];   // hop terbaru untuk jalur cepat (thread rekam saja)
-    private boolean gAbrupt = false, gAbruptKnown = false;
-    private boolean gRetrig = false;   // onset ini menimpa dengung nada sebelumnya (RELEASING->SAMPLING)
-    private double gFirstFreq = 0, gMinOff = 0, gMaxOff = 0;
-    private long gPeakAt = 0;
-
-    private double guitarMinPeak() { return guitarLevel >= 2 ? G_MIN_PEAK_L2 : G_MIN_PEAK_L1; }
-
-    /** 0 = lolos / 1 = tahan dulu (tunggu bacaan berikut) / 2 = buang (bukan petikan). reason lewat reasonOut[0]. */
-    private int guitarVerdict(PitchReading r, double decayRatio, double peak, long now, int tries, int[] reasonOut) {
-        final boolean strict = guitarLevel >= 2;
-        if (gLastReadFreq > 0) {
-            double dc = Math.abs(1200.0 * Math.log(r.freq / gLastReadFreq) / Math.log(2));
-            // 35..150 sen = meliuk. Di atas itu kemungkinan lompatan oktaf YIN, bukan liukan -> diabaikan.
-            if (dc > (strict ? G_WOBBLE_CENTS_L2 : G_WOBBLE_CENTS_L1) && dc < 150) gWobbleCount++;
-        }
-        gLastReadFreq = r.freq;
-        gReads++;
-        if (gRetrig) {
-            // Petikan baru jatuh di atas dengung nada sebelumnya: bacaan bergantian di antara dua nada (terlihat
-            // "meliuk") dan level tidak meluruh bersih. Ini permainan gitar, bukan vokal -> hanya cek puncak minimum.
-            if (peak < guitarMinPeak()) { reasonOut[0] = 1; return 2; }
-            final int mr = (guitarLevel >= 2 && gAbrupt && decayRatio <= G_ABRUPT_MAX_DECAY) ? G_MIN_READS_ABRUPT : G_MIN_READS_L2;
-            return (gReads < mr && tries < MAX_SAMPLE_TRIES) ? 1 : 0;
-        }
-        if (gFirstFreq <= 0) gFirstFreq = r.freq;
-        double off = 1200.0 * Math.log(r.freq / gFirstFreq) / Math.log(2);
-        if (Math.abs(off) < 150) {                 // lompatan oktaf YIN tidak dihitung sebagai geseran
-            if (off < gMinOff) gMinOff = off;
-            if (off > gMaxOff) gMaxOff = off;
-        }
-        if (peak < guitarMinPeak()) { reasonOut[0] = 1; return 2; }
-        if (gWobbleCount >= (strict ? G_WOBBLE_L2 : G_WOBBLE_L1)) { reasonOut[0] = 2; return 2; }
-        final int minReads = (strict && gAbrupt && decayRatio <= G_ABRUPT_MAX_DECAY) ? G_MIN_READS_ABRUPT : G_MIN_READS_L2;
-        if (gReads >= minReads && (gMaxOff - gMinOff) > (strict ? G_SPREAD_L2 : G_SPREAD_L1)) { reasonOut[0] = 2; return 2; }
-        boolean rising = decayRatio > 0.97 && (now - gPeakAt) < G_RISING_AGE_MS;
-        boolean flat = tries >= 3 && decayRatio > (strict ? G_SUSTAIN_L2 : G_SUSTAIN_L1);
-        boolean needMore = strict && gReads < minReads && tries < MAX_SAMPLE_TRIES;
-        if (rising || flat) {
-            if (tries >= MAX_SAMPLE_TRIES) { reasonOut[0] = 3; return 2; }
-            return 1;
-        }
-        return needMore ? 1 : 0;
-    }
 
     /** Dipanggil JS tiap tuts disentuh: abaikan onset baru sebentar (suara getar/klik/ketukan jari). */
     public void muteForTouch() {
@@ -529,6 +437,7 @@ public class NativeMicPitchDetector {
                 audioRecord = candidate;
                 sampleRate = rate;
                 hopSamples = rate / 60;
+            twelfthMinSamples = rate * TWELFTH_MIN_SAMPLES_MS / 1000;
                 break;
             }
             if (candidate != null) candidate.release();
@@ -654,7 +563,6 @@ public class NativeMicPitchDetector {
                 if (rms > ONSET_RMS && rms > smoothedRms * ONSET_RATIO && now > cooldownUntil && now > touchMuteUntil) {
                     state = STATE_SAMPLING;
                     sampleTries = 0;
-                    gLastReadFreq = 0; gWobbleCount = 0; gPeakAt = now; gReads = 0; gFirstFreq = 0; gMinOff = 0; gMaxOff = 0; gOnsetHopRms = rms; gAbrupt = (rms >= recentHopRms[(recentHopIdx + recentHopRms.length - 1) % recentHopRms.length] * G_SHARP_RATIO); gAbruptKnown = gAbrupt; gRetrig = false;
                     candidateIdx = -1;
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;
@@ -676,27 +584,16 @@ public class NativeMicPitchDetector {
                 // butuh sedikit waktu buat naik penuh), jadi dilacak terus selama
                 // fase SAMPLING (baik pas nunggu SETTLE_MS maupun pas benar-benar
                 // mengukur), bukan cuma diambil dari satu hop pemicu onset saja.
-                if (!gAbruptKnown) { gAbrupt = rms <= gOnsetHopRms * G_ABRUPT_RATIO; gAbruptKnown = true; }
-                if (rms > onsetPeakRms) { onsetPeakRms = rms; gPeakAt = now; }
+                if (rms > onsetPeakRms) onsetPeakRms = rms;
                 // JALUR CEPAT: satu bacaan awal di hop pertama sesudah onset (lihat FAST_*).
-                if (!fastTried && now >= fastAt && now < sampleAt
-                        && (guitarLevel == 0 || (gAbrupt && onsetPeakRms >= G_FAST_MIN_PEAK))) {
+                if (!fastTried && now >= fastAt && now < sampleAt) {
                     fastTried = true;
-                    PitchReading fr;
-                    if (guitarLevel > 0) {
-                        // Hop terbaru ini sudah murni SESUDAH onset (hop pemicu ada di belakangnya), jadi dibaca
-                        // sendirian: ~800 sampel, SATU pass YIN (puluhan kali lebih murah dari jendela 4096 yang
-                        // 80% masih sunyi, tanpa pass high-pass tambahan) dan probabilitasnya jauh lebih tajam.
-                        System.arraycopy(window, BUFFER_SAMPLES - read, fastBuf, 0, read);
-                        fr = yinCore(fastBuf, read, sampleRate, YIN_MIN_RMS);
-                    } else {
-                        fr = yinDetect(window, BUFFER_SAMPLES, sampleRate);
-                    }
+                    twelfthEnabled = false;   // jendela baru ~1 hop: belum cukup untuk verifikasi f/3
+                    PitchReading fr = yinDetect(window, BUFFER_SAMPLES, sampleRate);
                     if (fr != null && fr.freq >= FAST_MIN_FREQ
                             && fr.probability >= (fr.freq < FAST_MID_MAX_FREQ ? FAST_MIN_PROB_MID : FAST_MIN_PROB)
                             && isCategorySafe(fr.freq, fr.probability, fIdx, fCents)
-                            && fCents[0] < (guitarLevel == 0 ? FAST_MAX_CENTS : Math.min(FAST_MAX_CENTS, G_FAST_MAX_CENTS))
-                            && (guitarLevel == 0 || fr.probability >= G_FAST_MIN_PROB)
+                            && fCents[0] < FAST_MAX_CENTS
                             && (!FUNCTIONAL_KEYS_STRICT || "letterOrSymbol".equals(categoryOfIndex(fIdx[0])))
                             && fIdx[0] >= 0 && fIdx[0] < NOTE_COUNT) {
                         lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
@@ -707,6 +604,7 @@ public class NativeMicPitchDetector {
                     }
                 }
                 if (now >= sampleAt) {
+                    twelfthEnabled = tailSamples >= twelfthMinSamples;
                     PitchReading r = yinDetect(window, BUFFER_SAMPLES, sampleRate);
                     if (TAIL_READ && r == null && tailSamples >= TAIL_MIN_SAMPLES && tailSamples <= TAIL_MAX_SAMPLES) {
                         if (tailBuf.length < tailSamples) tailBuf = new float[TAIL_MAX_SAMPLES];
@@ -741,22 +639,6 @@ public class NativeMicPitchDetector {
                         int[] idxOut = new int[1];
                         double[] centsOffOut = new double[1];
                         boolean safe = isCategorySafe(r.freq, r.probability, idxOut, centsOffOut);
-                        // Filter "Gitar saja": hanya bacaan nada yang valid yang dinilai mirip-senar atau tidak.
-                        int gv = 0;
-                        final int[] gReason = new int[1];
-                        if (guitarLevel > 0 && safe && !(decayRatio < TAP_DECAY_RATIO && r.probability < STRONG_PROBABILITY)) {
-                            gv = guitarVerdict(r, decayRatio, onsetPeakRms, now, sampleTries, gReason);
-                        }
-                        if (gv == 2) {
-                            final int why = gReason[0];
-                            postFast(() -> { if (listener != null) listener.onNotGuitar(why); });
-                            // Bunyi yang dibuang BUKAN petikan yang diketik, jadi tidak perlu menunggu dengung reda
-                            // selama MAX_RELEASE_WAIT_MS (1,5 dtk): petikan sungguhan yang datang sesudahnya tidak boleh
-                            // ikut terkunci. Kunci pendek saja, cukup untuk membuang riak bunyi yang sama.
-                            state = STATE_RELEASING;
-                            cooldownUntil = now + COOLDOWN_MS;
-                            releaseWaitUntil = now + REJECT_RELEASE_WAIT_MS;
-                        } else {
                         // BARU: walau isCategorySafe() bilang "aman", kalau sinyalnya
                         // sudah meluruh SANGAT cepat (ciri tap) DAN periodisitasnya
                         // tidak sampai sangat meyakinkan, jangan percaya sebagai nada
@@ -793,10 +675,10 @@ public class NativeMicPitchDetector {
                             boolean functionalKey = FUNCTIONAL_KEYS_STRICT && "functional".equals(categoryOfIndex(idxOut[0]));
                             if (functionalKey) {
                                 requiredConfirm = Math.max(requiredConfirm, 3);
-                                ageOk = ageOk && (now - lastOnsetAt) >= LOW_ZONE_MIN_AGE_MS;
+                                ageOk = ageOk && (now - lastOnsetAt) >= LOW_ZONE_MIN_AGE_MS && twelfthEnabled;   // dan sudah lolos verifikasi f/3
                             }
-                            boolean consensus = candidateCount >= requiredConfirm && ageOk && gv == 0;
-                            boolean forceCommit = sampleTries >= MAX_SAMPLE_TRIES && !functionalKey && gv == 0;
+                            boolean consensus = candidateCount >= requiredConfirm && ageOk;
+                            boolean forceCommit = sampleTries >= MAX_SAMPLE_TRIES && !functionalKey;
                             if (consensus || forceCommit) {
                                 // Sudah dapat cukup bacaan berturut yang sepakat (paling
                                 // umum), ATAU jatah percobaan sudah habis -- pakai bacaan
@@ -837,7 +719,6 @@ public class NativeMicPitchDetector {
                             cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
                             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
                         }
-                        }   // akhir cabang filter gitar (gv != 2)
                     } else if (sampleTries >= MAX_SAMPLE_TRIES) {
                         // Beberapa hop berturut SAMA SEKALI tidak dapat sinyal periodik
                         // (yinDetect() balikin null terus) walau tadinya cukup keras buat
@@ -883,7 +764,6 @@ public class NativeMicPitchDetector {
                         && rms > recentMin * RETRIGGER_RATIO) {
                     state = STATE_SAMPLING;
                     sampleTries = 0;
-                    gLastReadFreq = 0; gWobbleCount = 0; gPeakAt = now; gReads = 0; gFirstFreq = 0; gMinOff = 0; gMaxOff = 0; gOnsetHopRms = rms; gAbrupt = false; gAbruptKnown = false; gRetrig = true;
                     candidateIdx = -1;
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;
@@ -1022,7 +902,7 @@ public class NativeMicPitchDetector {
     // false = SEMUA tuts (shift, backspace, emoji, ?123, enter, tanda baca) diperlakukan sama
     // seperti nada biasa: langsung terdeteksi, termasuk lewat jalur cepat. true = tuts fungsi
     // dipersulit (3 bacaan sepakat, tidak dipaksa komit) untuk mencegah salah-picu.
-    private static final boolean FUNCTIONAL_KEYS_STRICT = false;
+    private static final boolean FUNCTIONAL_KEYS_STRICT = true;
 
     private void commit(int idx, double freq) {
         if (!PITCH_MODE_TOGGLE_KEYS && (idx == 38 || idx == 40)) return;
@@ -1124,21 +1004,6 @@ public class NativeMicPitchDetector {
         return r;
     }
 
-    /** d(tau) = sum (x[j]-x[j+tau])^2 untuk j < span; 4 akumulator (lihat catatan di yinCore). */
-    private static double yinDiffAt(float[] buf, int tau, int span, int span4) {
-        double s0 = 0, s1 = 0, s2 = 0, s3 = 0;
-        int j = 0;
-        for (; j < span4; j += 4) {
-            double d0 = buf[j] - buf[j + tau];
-            double d1 = buf[j + 1] - buf[j + 1 + tau];
-            double d2 = buf[j + 2] - buf[j + 2 + tau];
-            double d3 = buf[j + 3] - buf[j + 3 + tau];
-            s0 += d0 * d0; s1 += d1 * d1; s2 += d2 * d2; s3 += d3 * d3;
-        }
-        for (; j < span; j++) { double d = buf[j] - buf[j + tau]; s0 += d * d; }
-        return (s0 + s1) + (s2 + s3);
-    }
-
     private PitchReading yinCore(float[] buf, int size, int sampleRate, double minRms) {
         double rms = 0;
         for (int i = 0; i < size; i++) rms += (double) buf[i] * buf[i];
@@ -1149,37 +1014,37 @@ public class NativeMicPitchDetector {
         int maxTau = Math.min(size / 2 - 1, (int) Math.ceil(sampleRate / MIN_VALID_FREQ));
         if (maxTau <= minTau) return null;
 
-        // Langkah 1-3 (dioptimalkan, hasil IDENTIK dengan versi lama): d(tau) dan CMNDF dihitung BERTAHAP dari
-        // tau kecil, dan berhenti begitu tau pertama di bawah YIN_THRESHOLD (+ pendakian ke minimum lokalnya)
-        // ditemukan. Versi lama menghitung SEMUA tau sampai batas nada terendah dulu baru mencari, padahal
-        // keputusan hanya memakai tau <= hasil. Nada menengah/tinggi (kebanyakan huruf) jadi 2-4x lebih ringan;
-        // bacaan tanpa nada (null) tetap menghitung seluruh rentang seperti dulu. Loop dalam memakai 4 akumulator
-        // terpisah supaya CPU bisa mem-pipeline penjumlahan (rantai tunggal tidak bisa).
-        if (yinDiff.length < maxTau + 2) {
-            yinDiff = new double[maxTau + 2];
-            yinCmnd = new double[maxTau + 2];
+        // Langkah 1: fungsi selisih d(tau), cuma dihitung untuk rentang tau yang relevan.
+        if (yinDiff.length < maxTau + 1) {
+            yinDiff = new double[maxTau + 1];
+            yinCmnd = new double[maxTau + 1];
         }
-        final double[] dif = yinDiff;
-        final double[] cm = yinCmnd;
-        final int span = size - maxTau;
-        final int span4 = span & ~3;
-        cm[minTau] = 1;
+        final double[] diff = yinDiff;
+        for (int tau = minTau; tau <= maxTau; tau++) {
+            double sum = 0;
+            for (int j = 0; j < size - maxTau; j++) {
+                double d = buf[j] - buf[j + tau];
+                sum += d * d;
+            }
+            diff[tau] = sum;
+        }
+
+        // Langkah 2: cumulative mean normalized difference function (CMNDF).
+        final double[] cmnd = yinCmnd;
         double runningSum = 0;
+        cmnd[minTau] = 1;
+        for (int tau = minTau + 1; tau <= maxTau; tau++) {
+            runningSum += diff[tau];
+            cmnd[tau] = diff[tau] * (tau - minTau) / (runningSum != 0 ? runningSum : 1e-9);
+        }
+
+        // Langkah 3: cari tau TERKECIL (frekuensi tertinggi valid) yang CMNDF-nya
+        // sudah di bawah ambang -- ini yang bikin YIN menghindari salah pilih
+        // oktaf ke bawah (keliru mengunci ke 2x periode/setengah frekuensi asli).
         int tauEstimate = -1;
         for (int tau = minTau + 1; tau <= maxTau; tau++) {
-            double sum = yinDiffAt(buf, tau, span, span4);
-            dif[tau] = sum;
-            runningSum += sum;
-            cm[tau] = sum * (tau - minTau) / (runningSum != 0 ? runningSum : 1e-9);
-            if (cm[tau] < YIN_THRESHOLD) {
-                while (tau + 1 <= maxTau) {
-                    int nt = tau + 1;
-                    double s2 = yinDiffAt(buf, nt, span, span4);
-                    dif[nt] = s2;
-                    runningSum += s2;
-                    cm[nt] = s2 * (nt - minTau) / (runningSum != 0 ? runningSum : 1e-9);
-                    if (cm[nt] < cm[tau]) tau = nt; else break;
-                }
+            if (cmnd[tau] < YIN_THRESHOLD) {
+                while (tau + 1 <= maxTau && cmnd[tau + 1] < cmnd[tau]) tau++;
                 tauEstimate = tau;
                 break;
             }
@@ -1200,14 +1065,14 @@ public class NativeMicPitchDetector {
         int x2 = tauEstimate < maxTau ? tauEstimate + 1 : tauEstimate;
         double betterTau = tauEstimate;
         if (x0 != tauEstimate && x2 != tauEstimate) {
-            double s0 = cm[x0], s1 = cm[tauEstimate], s2 = cm[x2];
+            double s0 = cmnd[x0], s1 = cmnd[tauEstimate], s2 = cmnd[x2];
             double denom = 2 * (2 * s1 - s2 - s0);
             if (denom != 0) betterTau = tauEstimate + (s2 - s0) / denom;
         }
         if (betterTau <= 0) return null;
 
         double rawFreq = sampleRate / betterTau;
-        double probability = 1 - cm[tauEstimate];
+        double probability = 1 - cmnd[tauEstimate];
 
         // Langkah 5: verifikasi oktaf lewat ENERGI SPEKTRAL LANGSUNG (algoritma
         // Goertzel -- cara ringan mengukur energi di satu frekuensi spesifik
@@ -1244,6 +1109,15 @@ public class NativeMicPitchDetector {
                 if (magAtHalf >= magAtFreq * 0.6) finalFreq = halfFreq;
             }
         }
+        // Langkah 5b (BARU): verifikasi "DUA BELAS" (harmonik ke-3). Di HP, fundamental nada rendah sering nyaris
+        // hilang sementara harmonik ke-3 kuat -> YIN membaca 3x frekuensi aslinya (+19 semitone). Contoh nyata:
+        // Q (D3) terbaca A4 = Shift/capslock, P (B3) terbaca F#5 = ?123, S (C#4) terbaca G#5 = emoji.
+        // Uji oktaf di atas hanya melihat f/2 dan tidak menangkap ini. Di sini dicari bukti "sisir harmonik"
+        // dari fundamental f/3: puncak SEMPIT (jauh lebih tinggi dari tetangganya) di f/3, 2f/3, 4f/3, 5f/3.
+        // Nada asli di f tidak punya energi di titik-titik itu, jadi >= 2 puncak sekaligus bukan kebetulan.
+        if (twelfthEnabled && finalFreq == rawFreq && rawFreq / 3 >= MIN_VALID_FREQ && twelfthIsReal(buf, size, rawFreq, sampleRate)) {
+            finalFreq = rawFreq / 3;
+        }
         // Arah "naik" (kalau energi di rawFreq lemah dibanding di 2x-nya, berarti
         // aslinya satu oktaf lebih tinggi -- buat kasus G#3/A2) DIHAPUS lagi di
         // sini. Senar BAWAH gitar (mis. E2) itu wajar punya harmonik ke-2 yang
@@ -1267,6 +1141,37 @@ public class NativeMicPitchDetector {
 
     // Batas atas setengah-frekuensi yang masih zona angka (C#3 138.6Hz + 50 sen).
     private static final double DIGIT_HALF_MAX_FREQ = 143.0;
+
+    /**
+     * True kalau di spektrum ada sisir harmonik dari fundamental f/3 (lihat Langkah 5b di yinCore).
+     * Syarat per titik: amplitudo >= TWELFTH_MIN_REL x amplitudo di f DAN puncak sempit
+     * (>= TWELFTH_PEAK_RATIO x tetangga kiri/kanan sejauh max(7%, 30 Hz)). Perlu >= TWELFTH_MIN_HITS titik.
+     */
+    private static final double TWELFTH_MIN_REL = 0.05;
+    private static final double TWELFTH_PEAK_RATIO = 3.0;
+    private static final int TWELFTH_MIN_HITS = 2;
+    // Verifikasi f/3 hanya bermakna kalau jendela memuat >= ~69 ms sinyal nada (di bawah itu puncak harmonik
+    // tidak terpisah dari bocoran spektrum, A4 asli pun tampak "punya" f/3). Diatur recordLoop() per bacaan.
+    private static final int TWELFTH_MIN_SAMPLES_MS = 69;
+    private boolean twelfthEnabled = false;
+    private volatile int twelfthMinSamples = FALLBACK_SAMPLE_RATE * TWELFTH_MIN_SAMPLES_MS / 1000;
+    private static boolean twelfthIsReal(float[] buf, int size, double f, int sampleRate) {
+        final double aF = ampWin(buf, size, f, sampleRate);
+        if (aF <= 0) return false;
+        final double[] ratios = {2.0 / 3, 4.0 / 3, 1.0 / 3, 5.0 / 3};
+        int hits = 0;
+        for (int k = 0; k < ratios.length; k++) {
+            final double fk = f * ratios[k];
+            final double a = ampWin(buf, size, fk, sampleRate);
+            if (a < aF * TWELFTH_MIN_REL) continue;                    // terlalu kecil: bukan bukti
+            final double off = f / 6.0;   // titik tengah antar harmonik f/3 (jauh dari harmonik nada asli di f, dan melewati lebar lobus jendela pendek)
+            final double nb = Math.max(ampWin(buf, size, fk - off, sampleRate), ampWin(buf, size, fk + off, sampleRate));
+            if (a >= nb * TWELFTH_PEAK_RATIO && ++hits >= TWELFTH_MIN_HITS) return true;
+            // sisa titik tak mungkin lagi mencapai syarat -> berhenti lebih awal (hemat CPU)
+            if (hits + (ratios.length - 1 - k) < TWELFTH_MIN_HITS) return false;
+        }
+        return false;
+    }
 
     // Amplitudo Goertzel berjendela, diambil yang tertinggi di +-20 sen (toleransi tuning).
     private static double ampWin(float[] buf, int size, double f, int sampleRate) {
