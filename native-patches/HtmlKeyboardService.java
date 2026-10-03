@@ -677,14 +677,26 @@ public class HtmlKeyboardService extends InputMethodService {
                     // Sengaja kosong: bunyi non-nada (kick/tap) diabaikan diam-diam, tanpa pesan status.
                 }
 
+                // Pesan diagnostik (hanya terlihat kalau "Info nada" aktif) dibatasi 1 per 400 ms supaya bunyi latar
+                // yang terus memicu onset tidak membanjiri thread JS -- thread yang sama dipakai untuk ketikan.
+                private long lastDiagAt = 0;
+                private boolean diagAllowed() {
+                    long t = android.os.SystemClock.uptimeMillis();
+                    if (t - lastDiagAt < 400) return false;
+                    lastDiagAt = t;
+                    return true;
+                }
+
                 @Override
                 public void onNotGuitar(int reason) {
+                    if (!diagAllowed()) return;
                     runOnUiThreadSafe(() -> webView.evaluateJavascript(
                             "window.onNativeNotGuitar && window.onNativeNotGuitar(" + reason + ")", null));
                 }
 
                 @Override
                 public void onEchoBlocked(boolean sameNote) {
+                    if (!diagAllowed()) return;
                     runOnUiThreadSafe(() -> webView.evaluateJavascript(
                             "window.onNativeEchoBlocked && window.onNativeEchoBlocked(" + sameNote + ")", null));
                 }
