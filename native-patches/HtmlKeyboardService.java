@@ -648,6 +648,12 @@ public class HtmlKeyboardService extends InputMethodService {
                 }
 
                 @Override
+                public void onNotGuitar(int reason) {
+                    runOnUiThreadSafe(() -> webView.evaluateJavascript(
+                            "window.onNativeNotGuitar && window.onNativeNotGuitar(" + reason + ")", null));
+                }
+
+                @Override
                 public void onEchoBlocked(boolean sameNote) {
                     runOnUiThreadSafe(() -> webView.evaluateJavascript(
                             "window.onNativeEchoBlocked && window.onNativeEchoBlocked(" + sameNote + ")", null));

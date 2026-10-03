@@ -50,6 +50,9 @@ public class NativeMicPitchDetector {
         void onNonTonalIgnored();
         // Sebuah petikan DIBUANG oleh gerbang anti-gema (dengungan senar / sisa ring). Hanya umpan balik UI.
         void onEchoBlocked(boolean sameNote);
+        // Bunyi bernada tapi tidak mirip petikan senar (suara orang bernyanyi/bersenandung, dengung TV,
+        // sirine, bunyi terlalu pelan/jauh) dibuang oleh filter "Gitar saja". Hanya umpan balik UI.
+        void onNotGuitar(int reason);   // 1 terlalu pelan, 2 nada meliuk (vokal), 3 level bertahan datar/naik (vokal/dengung)
     }
 
     // Rate cadangan. Rate yang dipakai sebenarnya dipilih di start(): utamakan rate NATIVE
@@ -299,6 +302,48 @@ public class NativeMicPitchDetector {
     private int lastCommitIdx = -1;          // hanya diakses di thread rekam
     private long lastCommitOnsetAt = 0;
     private double lastCommitPeak = 0;
+
+    // ---- FILTER "GITAR SAJA" ----
+    // Senar yang dipetik punya tanda-tanda khas: nadanya STABIL (tidak meliuk), levelnya MELURUH
+    // sesudah puncak (bukan datar/terus naik seperti vokal & dengung), dan cukup keras di mic.
+    // Level 1 = normal, 2 = ketat (jalur cepat dimatikan, semua syarat diperketat).
+    // Angka-angka di bawah dipilih dari sifat sinyal, BELUM diuji dengan beragam gitar/ruangan:
+    // setel lewat konstanta ini kalau petikan sungguhan ikut terbuang atau suara lain masih lolos.
+    // Selalu aktif (tidak ada tombol): Guitarwiter hanya menangkap petikan gitar. Level dikunci 1 (normal);
+    // ganti jadi 2 di sini kalau mau lebih ketat (jalur cepat mati, syarat diperketat).
+    private static final int guitarLevel = 1;
+
+    private static final double G_MIN_PEAK_L1 = 0.020, G_MIN_PEAK_L2 = 0.040;     // puncak RMS minimum
+    private static final double G_SUSTAIN_L1 = 0.97,  G_SUSTAIN_L2 = 0.88;       // rms/puncak >= ini sesudah >=3 bacaan = datar
+    private static final int    G_WOBBLE_L1 = 2,      G_WOBBLE_L2 = 1;           // jumlah lompatan nada 55/35..150 sen antar bacaan
+    private static final double G_WOBBLE_CENTS_L1 = 55, G_WOBBLE_CENTS_L2 = 35;
+    private static final long   G_RISING_AGE_MS = 25;                            // puncak masih "baru" = level belum mulai turun
+    private double gLastReadFreq = 0;    // thread rekam saja
+    private int gWobbleCount = 0;
+    private long gPeakAt = 0;
+
+    private double guitarMinPeak() { return guitarLevel >= 2 ? G_MIN_PEAK_L2 : G_MIN_PEAK_L1; }
+
+    /** 0 = lolos / 1 = tahan dulu (tunggu bacaan berikut) / 2 = buang (bukan petikan). reason lewat reasonOut[0]. */
+    private int guitarVerdict(PitchReading r, double decayRatio, double peak, long now, int tries, int[] reasonOut) {
+        final boolean strict = guitarLevel >= 2;
+        if (gLastReadFreq > 0) {
+            double dc = Math.abs(1200.0 * Math.log(r.freq / gLastReadFreq) / Math.log(2));
+            // 35..150 sen = meliuk. Di atas itu kemungkinan lompatan oktaf YIN, bukan liukan -> diabaikan.
+            if (dc > (strict ? G_WOBBLE_CENTS_L2 : G_WOBBLE_CENTS_L1) && dc < 150) gWobbleCount++;
+        }
+        gLastReadFreq = r.freq;
+        if (peak < guitarMinPeak()) { reasonOut[0] = 1; return 2; }
+        if (gWobbleCount >= (strict ? G_WOBBLE_L2 : G_WOBBLE_L1)) { reasonOut[0] = 2; return 2; }
+        boolean rising = decayRatio > 0.97 && (now - gPeakAt) < G_RISING_AGE_MS;
+        boolean flat = tries >= 3 && decayRatio > (strict ? G_SUSTAIN_L2 : G_SUSTAIN_L1);
+        boolean hold = rising || flat || (strict && tries < 2);
+        if (hold) {
+            if (tries >= MAX_SAMPLE_TRIES) { reasonOut[0] = 3; return 2; }
+            return 1;
+        }
+        return 0;
+    }
 
     /** Dipanggil JS tiap tuts disentuh: abaikan onset baru sebentar (suara getar/klik/ketukan jari). */
     public void muteForTouch() {
@@ -562,6 +607,7 @@ public class NativeMicPitchDetector {
                 if (rms > ONSET_RMS && rms > smoothedRms * ONSET_RATIO && now > cooldownUntil && now > touchMuteUntil) {
                     state = STATE_SAMPLING;
                     sampleTries = 0;
+                    gLastReadFreq = 0; gWobbleCount = 0; gPeakAt = now;
                     candidateIdx = -1;
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;
@@ -583,9 +629,10 @@ public class NativeMicPitchDetector {
                 // butuh sedikit waktu buat naik penuh), jadi dilacak terus selama
                 // fase SAMPLING (baik pas nunggu SETTLE_MS maupun pas benar-benar
                 // mengukur), bukan cuma diambil dari satu hop pemicu onset saja.
-                if (rms > onsetPeakRms) onsetPeakRms = rms;
+                if (rms > onsetPeakRms) { onsetPeakRms = rms; gPeakAt = now; }
                 // JALUR CEPAT: satu bacaan awal di hop pertama sesudah onset (lihat FAST_*).
-                if (!fastTried && now >= fastAt && now < sampleAt) {
+                if (!fastTried && now >= fastAt && now < sampleAt && guitarLevel < 2
+                        && (guitarLevel == 0 || onsetPeakRms >= guitarMinPeak())) {
                     fastTried = true;
                     PitchReading fr = yinDetect(window, BUFFER_SAMPLES, sampleRate);
                     if (fr != null && fr.freq >= FAST_MIN_FREQ
@@ -636,6 +683,19 @@ public class NativeMicPitchDetector {
                         int[] idxOut = new int[1];
                         double[] centsOffOut = new double[1];
                         boolean safe = isCategorySafe(r.freq, r.probability, idxOut, centsOffOut);
+                        // Filter "Gitar saja": hanya bacaan nada yang valid yang dinilai mirip-senar atau tidak.
+                        int gv = 0;
+                        final int[] gReason = new int[1];
+                        if (guitarLevel > 0 && safe && !(decayRatio < TAP_DECAY_RATIO && r.probability < STRONG_PROBABILITY)) {
+                            gv = guitarVerdict(r, decayRatio, onsetPeakRms, now, sampleTries, gReason);
+                        }
+                        if (gv == 2) {
+                            final int why = gReason[0];
+                            postFast(() -> { if (listener != null) listener.onNotGuitar(why); });
+                            state = STATE_RELEASING;
+                            cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
+                            releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
+                        } else {
                         // BARU: walau isCategorySafe() bilang "aman", kalau sinyalnya
                         // sudah meluruh SANGAT cepat (ciri tap) DAN periodisitasnya
                         // tidak sampai sangat meyakinkan, jangan percaya sebagai nada
@@ -674,8 +734,8 @@ public class NativeMicPitchDetector {
                                 requiredConfirm = Math.max(requiredConfirm, 3);
                                 ageOk = ageOk && (now - lastOnsetAt) >= LOW_ZONE_MIN_AGE_MS;
                             }
-                            boolean consensus = candidateCount >= requiredConfirm && ageOk;
-                            boolean forceCommit = sampleTries >= MAX_SAMPLE_TRIES && !functionalKey;
+                            boolean consensus = candidateCount >= requiredConfirm && ageOk && gv == 0;
+                            boolean forceCommit = sampleTries >= MAX_SAMPLE_TRIES && !functionalKey && gv == 0;
                             if (consensus || forceCommit) {
                                 // Sudah dapat cukup bacaan berturut yang sepakat (paling
                                 // umum), ATAU jatah percobaan sudah habis -- pakai bacaan
@@ -716,6 +776,7 @@ public class NativeMicPitchDetector {
                             cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
                             releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
                         }
+                        }   // akhir cabang filter gitar (gv != 2)
                     } else if (sampleTries >= MAX_SAMPLE_TRIES) {
                         // Beberapa hop berturut SAMA SEKALI tidak dapat sinyal periodik
                         // (yinDetect() balikin null terus) walau tadinya cukup keras buat
@@ -761,6 +822,7 @@ public class NativeMicPitchDetector {
                         && rms > recentMin * RETRIGGER_RATIO) {
                     state = STATE_SAMPLING;
                     sampleTries = 0;
+                    gLastReadFreq = 0; gWobbleCount = 0; gPeakAt = now;
                     candidateIdx = -1;
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;
