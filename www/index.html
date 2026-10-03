@@ -2377,7 +2377,14 @@
     if(fastBridge('touchMute')) return;
     try{ const a = window.AndroidKeyboard; if(a && a.touchMute) a.touchMute(); }catch(e){}
   }
-  function keyFeedback(){
+  // kind: 0 huruf/umum, 1 spasi, 2 hapus, 3 enter (bunyi tuts berbeda per jenis, seperti Gboard).
+  // Jalur utama: SATU panggilan native (bungkam mic + bunyi bawaan Android + getar). WebAudio hanya cadangan
+  // untuk mode browser.
+  function keyFeedback(kind){
+    try{
+      const a = window.AndroidKeyboard;
+      if(a && a.keyTap){ a.keyTap(kind|0, !!prefs.haptic, !!prefs.sound, prefs.soundVol|0); return; }
+    }catch(e){}
     micTouchMute();
     if(prefs.haptic){
       try{
@@ -3298,8 +3305,8 @@
     btn.addEventListener('pointerdown', (e)=>{
       startX = e.clientX; startY = e.clientY;
       clearTimer();
-      keyFeedback();
       manualPress(btn);                      // huruf langsung masuk, tanpa jeda
+      keyFeedback();                         // bunyi/getar SESUDAH teks terkirim
       timer = setTimeout(()=>{
         timer = null;
         btn.classList.add('key-longpress-num');
@@ -3388,7 +3395,7 @@
     if(type==='backspace'){ backspace(); lbl = '⌫'; }          // aksi DULU, getar/efek sesudahnya
     else if(type==='enter'){ pressEnter(); lbl = '↵'; }
     else if(type==='literal'){ const c = el.dataset.char; appendText(c); lbl = (c===' ' ? '␣' : c); }
-    keyFeedback();
+    keyFeedback(type==='backspace' ? 2 : type==='enter' ? 3 : (type==='literal' && el.dataset.char===' ') ? 1 : 0);
     flash(el);
     if(lbl) showBubble(el, lbl);
   }
