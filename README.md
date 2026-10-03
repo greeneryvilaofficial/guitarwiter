@@ -66,12 +66,14 @@ Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
 | `ECHO_WINDOW_MS`, `ECHO_SAME_NOTE_PEAK`, `ECHO_OTHER_NOTE_PEAK` | gerbang anti-gema: petikan baru dalam jendela ini harus cukup keras dibanding petikan sebelumnya, kalau tidak dianggap dengungan & diabaikan |
 | `SAME_NOTE_WINDOW_MS`, `SAME_NOTE_VALLEY_RATIO` | nada SAMA dalam jendela panjang harus didahului lembah beneran (puncak >= 1.8x level terpelan sejak komit terakhir). Menangkap sisa ring senar tipis (nada tinggi x c v b n m) yang naik lagi belakangan |
 | `guitarLevel` (konstanta di `NativeMicPitchDetector.java`, dikunci 2 = ketat; ganti ke 1 = longgar & lebih cepat) | filter "Gitar saja", SELALU aktif tanpa tombol. Nada yang dibuang: terlalu pelan (`G_MIN_PEAK_*`), nadanya meliuk seperti vokal (`G_WOBBLE_*`), atau levelnya datar/terus naik tanpa meluruh seperti vokal & dengung (`G_SUSTAIN_*`, `G_RISING_AGE_MS`). Level 2 mematikan jalur cepat dan menunggu minimal 3 bacaan valid (±80 ms); nada yang bergeser lebih dari `G_SPREAD_L2` sen antar bacaan dibuang (suara orang jarang diam di satu nada). Hanya berlaku di mic native (APK). |
+| `G_ABRUPT_RATIO`, `G_FAST_MIN_PEAK`, `G_FAST_MIN_PROB`, `G_FAST_MAX_CENTS`, `G_MIN_READS_ABRUPT` | **jalur cepat bersyarat** (respons mendekati ketikan Gboard): kalau awalan bunyi "tiba-tiba" (level hop kedua <= 1.12x hop pemicu, ciri petikan senar), keras (>= 0.05) dan nadanya bersih (prob >= 0.92, < 10 sen dari pusat), nada >= 300 Hz langsung diketik ±25 ms. Nada rendah dengan awalan tiba-tiba cukup 2 bacaan, sisanya 3 bacaan. Bunyi yang tidak memenuhi syarat tetap lewat jalur ketat (filter suara tidak longgar) |
 | `RELEASE_RMS` (0.009) | sengaja di bawah `ONSET_RMS` (0.012): hysteresis supaya riak ring di sekitar ambang tidak melepas kunci lalu dibaca petikan baru |
 
 ## Masalah umum
 - **Satu petikan muncul dua kali** → naikkan `ECHO_SAME_NOTE_PEAK` (mis. 0.8) / `ECHO_WINDOW_MS`. Kalau petikan ulang cepat pada nada yang sama malah tidak muncul, turunkan (mis. 0.55).
 - **Nada tinggi (x c v b n m) masih dobel** → naikkan `SAME_NOTE_VALLEY_RATIO` (mis. 2.2) atau `SAME_NOTE_WINDOW_MS` (mis. 1800). Nyalakan "Info nada": muncul "↩ gema diabaikan" tiap kali gerbang membuang sesuatu. Kalau petikan ulang cepat di nada yang sama malah hilang, turunkan rasio ke 1.5.
 - **Petikan gitar ikut terbuang (terutama gitar listrik berdistorsi/sustain panjang)** → set `guitarLevel = 1`, atau naikkan `G_SPREAD_L2` (mis. 30) / turunkan `G_MIN_PEAK_L2`. Nyalakan "Info nada": "🎸 bukan gitar diabaikan (alasan)" memberi tahu kenapa.
+- **Terasa kurang responsif** → longgarkan jalur cepat: `G_ABRUPT_RATIO` 1.25, `G_FAST_MIN_PEAK` 0.035. Kalau suara mulai lolos lagi, kembalikan.
 - **Suara orang / TV masih lolos** → perkecil `G_SPREAD_L2` (mis. 15) atau naikkan `G_MIN_PEAK_L2` (mis. 0.03) supaya hanya bunyi yang dekat mic dan keras yang masuk.
 - **Huruf hantu saat mengetik dengan jari** → naikkan `TOUCH_MUTE_MS` (mis. 300).
 - **Huruf berulang (`eeee`) atau muncul sendiri** → sensitivitas terlalu tinggi / derau ruangan; naikkan `ONSET_RMS`.
@@ -80,3 +82,8 @@ Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
 - **Mode tiba-tiba pindah ke simbol/emoji** → set `PITCH_MODE_TOGGLE_KEYS = false`.
 
 Kebijakan privasi: [privacy-policy.md](privacy-policy.md)
+
+## Bunyi & getar tuts (v1.3.0)
+- Setiap sentuhan tuts memanggil SATU fungsi native `keyTap(kind, getar, bunyi, volume)`: bungkam mic + bunyi tuts + getar. Bunyi memakai efek bawaan Android (`AudioManager.playSoundEffect`) seperti Gboard: beda untuk huruf, spasi, hapus, enter, dan mengikuti pengaturan "Suara sentuh" sistem.
+- Teks selalu dikirim ke aplikasi lebih dulu, bunyi/getar menyusul.
+- Nyalakan di Setelan keyboard: "Suara klik" dan "Getaran keyboard". Kalau tetap senyap, cek Setelan Android > Suara > "Suara sentuh".
