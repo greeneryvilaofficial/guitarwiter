@@ -272,6 +272,46 @@ public class NativeMicPitchDetector {
     private static final double MIN_VALID_FREQ = 440.0 * Math.pow(2, (BASE_MIDI - 3 - 69) / 12.0);
     private static final double MAX_VALID_FREQ = 440.0 * Math.pow(2, (BASE_MIDI + NOTE_COUNT - 1 + 3 - 69) / 12.0);
 
+    // ---- ANTI KETIKAN GANDA (bersih) ----
+    // (1) Mic tetap menyala saat mengetik dengan JARI: getar haptic, bunyi klik tuts, dan ketukan jari
+    // di layar terdengar mic sebagai "petikan" -> huruf hantu. Setiap sentuhan tuts, JS memanggil
+    // muteForTouch(); selama TOUCH_MUTE_MS onset baru TIDAK diterima.
+    private static final long TOUCH_MUTE_MS = 220;
+    // (2) Gema petikan: dengungan / beating senar yang naik lagi beberapa ratus ms sesudah petikan
+    // kebaca sebagai onset baru. Dalam ECHO_WINDOW_MS sejak onset terakhir, onset baru harus cukup
+    // KERAS dibanding puncak petikan sebelumnya: nada yang SAMA harus >= ECHO_SAME_NOTE_PEAK,
+    // nada lain >= ECHO_OTHER_NOTE_PEAK. Petikan ulang sungguhan hampir selalu sekeras petikan
+    // pertama; gema/dengungan jauh lebih pelan. Di luar jendela ini tidak ada pembatasan.
+    private static final long ECHO_WINDOW_MS = 380;
+    private static final double ECHO_SAME_NOTE_PEAK = 0.70;
+    private static final double ECHO_OTHER_NOTE_PEAK = 0.35;
+    private volatile long touchMuteUntil = 0;
+    private int lastCommitIdx = -1;          // hanya diakses di thread rekam
+    private long lastCommitOnsetAt = 0;
+    private double lastCommitPeak = 0;
+
+    /** Dipanggil JS tiap tuts disentuh: abaikan onset baru sebentar (suara getar/klik/ketukan jari). */
+    public void muteForTouch() {
+        touchMuteUntil = System.currentTimeMillis() + TOUCH_MUTE_MS;
+    }
+
+    private boolean isEcho(int idx, double peak, long onsetAt) {
+        if (lastCommitIdx < 0) return false;
+        if (onsetAt - lastCommitOnsetAt > ECHO_WINDOW_MS) return false;
+        double need = (idx == lastCommitIdx) ? ECHO_SAME_NOTE_PEAK : ECHO_OTHER_NOTE_PEAK;
+        return peak < lastCommitPeak * need;
+    }
+
+    /** Kirim nada ke keyboard kecuali kalau ini gema dari petikan sebelumnya. true = terkirim. */
+    private boolean emitNote(int idx, double freq, double peak, long onsetAt) {
+        if (isEcho(idx, peak, onsetAt)) return false;
+        lastCommitIdx = idx;
+        lastCommitOnsetAt = onsetAt;
+        lastCommitPeak = peak;
+        commit(idx, freq);
+        return true;
+    }
+
     private final Context context;
     private final android.os.Handler mainHandler;
     private Listener listener;
@@ -332,6 +372,8 @@ public class NativeMicPitchDetector {
         if (!hasPermission()) return false;
 
         this.listener = listener;
+        lastCommitIdx = -1;
+        touchMuteUntil = 0;
 
         // Tentukan rate: native perangkat dulu, 44100 sebagai cadangan.
         int nativeRate = FALLBACK_SAMPLE_RATE;
@@ -491,7 +533,7 @@ public class NativeMicPitchDetector {
             long now = System.currentTimeMillis();
 
             if (state == STATE_IDLE) {
-                if (rms > ONSET_RMS && rms > smoothedRms * ONSET_RATIO && now > cooldownUntil) {
+                if (rms > ONSET_RMS && rms > smoothedRms * ONSET_RATIO && now > cooldownUntil && now > touchMuteUntil) {
                     state = STATE_SAMPLING;
                     sampleTries = 0;
                     candidateIdx = -1;
@@ -527,7 +569,7 @@ public class NativeMicPitchDetector {
                             && (!FUNCTIONAL_KEYS_STRICT || "letterOrSymbol".equals(categoryOfIndex(fIdx[0])))
                             && fIdx[0] >= 0 && fIdx[0] < NOTE_COUNT) {
                         lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
-                        commit(fIdx[0], fr.freq);
+                        emitNote(fIdx[0], fr.freq, onsetPeakRms, lastOnsetAt);
                         state = STATE_RELEASING;
                         cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
                         releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
@@ -613,7 +655,7 @@ public class NativeMicPitchDetector {
                                 // umum), ATAU jatah percobaan sudah habis -- pakai bacaan
                                 // TERAKHIR yang lolos ini (lebih baik daripada nyerah total).
                                 lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
-                                commit(idxOut[0], r.freq);
+                                emitNote(idxOut[0], r.freq, onsetPeakRms, lastOnsetAt);
                                 state = STATE_RELEASING;
                                 cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
                                 releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
@@ -681,7 +723,12 @@ public class NativeMicPitchDetector {
                 // tunggu reda dulu. Tiga syarat ini sengaja dipisah (bukan cuma satu
                 // ambang) supaya beating/riak dari SATU strum yang sama tidak
                 // kehitung berkali-kali sebagai huruf berbeda-beda.
-                if (now > cooldownUntil
+                // Puncak petikan yang barusan dikomit baru benar-benar tercapai beberapa ms sesudah
+                // komit jalur cepat -- terus perbarui supaya gerbang gema membandingkan ke puncak asli.
+                if (now - lastCommitOnsetAt < 90 && rms > lastCommitPeak) lastCommitPeak = rms;
+                boolean echoLoud = (now - lastCommitOnsetAt > ECHO_WINDOW_MS)
+                        || rms >= lastCommitPeak * ECHO_OTHER_NOTE_PEAK;
+                if (now > cooldownUntil && now > touchMuteUntil && echoLoud
                         && now - lastOnsetAt > (rms > recentMin * STRONG_RETRIGGER_RATIO
                                 ? STRONG_RETRIGGER_GAP_MS : MIN_RETRIGGER_GAP_MS)
                         && rms > RETRIGGER_MIN_RMS

@@ -508,6 +508,12 @@ public class HtmlKeyboardService extends InputMethodService {
             });
         }
 
+        /** Cadangan bila AndroidKeyboardFast tidak tersedia: lihat handleFastTypingMessage("touchMute"). */
+        @JavascriptInterface
+        public void touchMute() {
+            if (nativeMic != null) nativeMic.muteForTouch();   // hanya menulis field volatile -> aman di thread mana pun
+        }
+
         /** Getaran halus saat tombol disentuh (Setelan: "Getaran keyboard"). Tidak butuh izin tambahan; mengikuti pengaturan getar sistem. */
         @JavascriptInterface
         public void haptic() {
@@ -742,6 +748,11 @@ public class HtmlKeyboardService extends InputMethodService {
         if (data == null) return;
         try {
             JSONObject msg = new JSONObject(data);
+            // Sentuhan tuts: bungkam onset mic sebentar (getar/klik/ketukan jari bukan petikan).
+            if ("touchMute".equals(msg.optString("cmd", ""))) {
+                if (nativeMic != null) nativeMic.muteForTouch();
+                return;
+            }
             // Peta nada->huruf tidak butuh InputConnection: proses dulu sebelum cek ic.
             if ("setNoteMap".equals(msg.optString("cmd", ""))) {
                 applyNoteMap(msg.optString("map", ""), msg.optBoolean("stable", false), msg.optBoolean("space", false));
