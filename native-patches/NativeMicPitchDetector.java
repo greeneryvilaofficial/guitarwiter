@@ -309,17 +309,23 @@ public class NativeMicPitchDetector {
     // Level 1 = normal, 2 = ketat (jalur cepat dimatikan, semua syarat diperketat).
     // Angka-angka di bawah dipilih dari sifat sinyal, BELUM diuji dengan beragam gitar/ruangan:
     // setel lewat konstanta ini kalau petikan sungguhan ikut terbuang atau suara lain masih lolos.
-    // Selalu aktif (tidak ada tombol): Guitarwiter hanya menangkap petikan gitar. Level dikunci 1 (normal);
-    // ganti jadi 2 di sini kalau mau lebih ketat (jalur cepat mati, syarat diperketat).
-    private static final int guitarLevel = 1;
+    // Selalu aktif (tidak ada tombol): Guitarwiter hanya menangkap petikan gitar. Level dikunci 2 (ketat: jalur cepat mati, min 3 bacaan, syarat diperketat);
+    // ganti jadi 1 di sini kalau petikan sungguhan ikut terbuang (lebih longgar & lebih cepat).
+    private static final int guitarLevel = 2;
 
-    private static final double G_MIN_PEAK_L1 = 0.020, G_MIN_PEAK_L2 = 0.040;     // puncak RMS minimum
+    private static final double G_MIN_PEAK_L1 = 0.020, G_MIN_PEAK_L2 = 0.035;     // puncak RMS minimum
     private static final double G_SUSTAIN_L1 = 0.97,  G_SUSTAIN_L2 = 0.88;       // rms/puncak >= ini sesudah >=3 bacaan = datar
     private static final int    G_WOBBLE_L1 = 2,      G_WOBBLE_L2 = 1;           // jumlah lompatan nada 55/35..150 sen antar bacaan
     private static final double G_WOBBLE_CENTS_L1 = 55, G_WOBBLE_CENTS_L2 = 35;
+    // Rentang geser nada (maks - min, sen) dari SEMUA bacaan sejak onset. Suara orang hampir tidak pernah
+    // diam di satu nada: bergeser puluhan sen dalam ~70 ms. Senar yang sudah settle tetap < ~15 sen.
+    private static final double G_SPREAD_L1 = 40, G_SPREAD_L2 = 22;
+    private static final int    G_MIN_READS_L2 = 3;                              // level ketat: minimal bacaan valid sebelum komit
     private static final long   G_RISING_AGE_MS = 25;                            // puncak masih "baru" = level belum mulai turun
     private double gLastReadFreq = 0;    // thread rekam saja
     private int gWobbleCount = 0;
+    private int gReads = 0;
+    private double gFirstFreq = 0, gMinOff = 0, gMaxOff = 0;
     private long gPeakAt = 0;
 
     private double guitarMinPeak() { return guitarLevel >= 2 ? G_MIN_PEAK_L2 : G_MIN_PEAK_L1; }
@@ -333,16 +339,24 @@ public class NativeMicPitchDetector {
             if (dc > (strict ? G_WOBBLE_CENTS_L2 : G_WOBBLE_CENTS_L1) && dc < 150) gWobbleCount++;
         }
         gLastReadFreq = r.freq;
+        gReads++;
+        if (gFirstFreq <= 0) gFirstFreq = r.freq;
+        double off = 1200.0 * Math.log(r.freq / gFirstFreq) / Math.log(2);
+        if (Math.abs(off) < 150) {                 // lompatan oktaf YIN tidak dihitung sebagai geseran
+            if (off < gMinOff) gMinOff = off;
+            if (off > gMaxOff) gMaxOff = off;
+        }
         if (peak < guitarMinPeak()) { reasonOut[0] = 1; return 2; }
         if (gWobbleCount >= (strict ? G_WOBBLE_L2 : G_WOBBLE_L1)) { reasonOut[0] = 2; return 2; }
+        if (gReads >= 3 && (gMaxOff - gMinOff) > (strict ? G_SPREAD_L2 : G_SPREAD_L1)) { reasonOut[0] = 2; return 2; }
         boolean rising = decayRatio > 0.97 && (now - gPeakAt) < G_RISING_AGE_MS;
         boolean flat = tries >= 3 && decayRatio > (strict ? G_SUSTAIN_L2 : G_SUSTAIN_L1);
-        boolean hold = rising || flat || (strict && tries < 2);
-        if (hold) {
+        boolean needMore = strict && gReads < G_MIN_READS_L2 && tries < MAX_SAMPLE_TRIES;
+        if (rising || flat) {
             if (tries >= MAX_SAMPLE_TRIES) { reasonOut[0] = 3; return 2; }
             return 1;
         }
-        return 0;
+        return needMore ? 1 : 0;
     }
 
     /** Dipanggil JS tiap tuts disentuh: abaikan onset baru sebentar (suara getar/klik/ketukan jari). */
@@ -607,7 +621,7 @@ public class NativeMicPitchDetector {
                 if (rms > ONSET_RMS && rms > smoothedRms * ONSET_RATIO && now > cooldownUntil && now > touchMuteUntil) {
                     state = STATE_SAMPLING;
                     sampleTries = 0;
-                    gLastReadFreq = 0; gWobbleCount = 0; gPeakAt = now;
+                    gLastReadFreq = 0; gWobbleCount = 0; gPeakAt = now; gReads = 0; gFirstFreq = 0; gMinOff = 0; gMaxOff = 0;
                     candidateIdx = -1;
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;
@@ -822,7 +836,7 @@ public class NativeMicPitchDetector {
                         && rms > recentMin * RETRIGGER_RATIO) {
                     state = STATE_SAMPLING;
                     sampleTries = 0;
-                    gLastReadFreq = 0; gWobbleCount = 0; gPeakAt = now;
+                    gLastReadFreq = 0; gWobbleCount = 0; gPeakAt = now; gReads = 0; gFirstFreq = 0; gMinOff = 0; gMaxOff = 0;
                     candidateIdx = -1;
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;
