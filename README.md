@@ -77,21 +77,3 @@ Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
 - **Mode tiba-tiba pindah ke simbol/emoji** → set `PITCH_MODE_TOGGLE_KEYS = false`.
 
 Kebijakan privasi: [privacy-policy.md](privacy-policy.md)
-
-## v1.1.4 — perbaikan tombol Q / Shift / ?123 yang salah picu
-**Gejala:** menekan/memetik Q kadang jadi capslock; F#5 (?123) atau G#5 (emoji) kadang pindah mode sendiri.
-**Penyebab (terukur):** harmonik ke-3 dari nada rendah jatuh tepat di nada tombol fungsi (+19 semitone):
-D3 (Q) -> 440 Hz = A4 (Shift), B3 (P) -> 740 Hz = F#5 (?123), C#4 (S) -> 831 Hz = G#5 (emoji). Di HP, fundamental nada
-rendah sering lemah sehingga YIN membaca harmonik ke-3. Selain itu dua deteksi A4 < 350 ms dihitung sebagai ketuk-ganda
-= capslock.
-**Perbaikan:**
-- `NativeMicPitchDetector.java`: verifikasi "dua belas" (`twelfthIsReal`, Langkah 5b) mencari sisir harmonik fundamental f/3
-  (puncak sempit di f/3, 2f/3, 4f/3, 5f/3; butuh >= 2 titik). Hanya aktif kalau jendela memuat >= 69 ms sinyal
-  (`TWELFTH_MIN_SAMPLES_MS`); di bawah itu A4 asli tak bisa dibedakan dari D3 lemah.
-- `FUNCTIONAL_KEYS_STRICT = true`: Shift, Hapus, ?123, emoji, Enter wajib 3 bacaan sepakat + sinyal cukup panjang
-  (~60 ms rata-rata, +-20 ms dari sebelumnya). **Huruf, angka, koma, spasi, titik tidak berubah** (jalur cepat tetap).
-- `index.html`: Shift dari NADA tidak lagi ikut jalur ketuk-ganda capslock (`shiftToggle(el, true)`); capslock tetap bisa
-  dengan ketuk-ganda sentuhan.
-Tuning: `TWELFTH_MIN_REL` (0.05), `TWELFTH_PEAK_RATIO` (3.0), `TWELFTH_MIN_HITS` (2). Tombol fungsi terasa lambat? Kembalikan
-`FUNCTIONAL_KEYS_STRICT=false` (tapi bug Q/Shift bisa muncul lagi). Verifikasi f/3 belum ada di jalur mic web (`yinDetect`
-di index.html); APK memakai jalur native.
