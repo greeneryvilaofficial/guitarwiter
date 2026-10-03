@@ -65,20 +65,11 @@ Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
 | `TOUCH_MUTE_MS` | sesudah tuts disentuh jari, onset mic dibungkam sebentar (getar/klik/ketukan jari tidak jadi huruf hantu) |
 | `ECHO_WINDOW_MS`, `ECHO_SAME_NOTE_PEAK`, `ECHO_OTHER_NOTE_PEAK` | gerbang anti-gema: petikan baru dalam jendela ini harus cukup keras dibanding petikan sebelumnya, kalau tidak dianggap dengungan & diabaikan |
 | `SAME_NOTE_WINDOW_MS`, `SAME_NOTE_VALLEY_RATIO` | nada SAMA dalam jendela panjang harus didahului lembah beneran (puncak >= 1.8x level terpelan sejak komit terakhir). Menangkap sisa ring senar tipis (nada tinggi x c v b n m) yang naik lagi belakangan |
-| `guitarLevel` (konstanta di `NativeMicPitchDetector.java`, dikunci 2 = ketat; ganti ke 1 = longgar & lebih cepat) | filter "Gitar saja", SELALU aktif tanpa tombol. Nada yang dibuang: terlalu pelan (`G_MIN_PEAK_*`), nadanya meliuk seperti vokal (`G_WOBBLE_*`), atau levelnya datar/terus naik tanpa meluruh seperti vokal & dengung (`G_SUSTAIN_*`, `G_RISING_AGE_MS`). Level 2 mematikan jalur cepat dan menunggu minimal 3 bacaan valid (±80 ms); nada yang bergeser lebih dari `G_SPREAD_L2` sen antar bacaan dibuang (suara orang jarang diam di satu nada). Hanya berlaku di mic native (APK). |
-| `G_ABRUPT_RATIO`, `G_FAST_MIN_PEAK`, `G_FAST_MIN_PROB`, `G_FAST_MAX_CENTS`, `G_MIN_READS_ABRUPT` | **jalur cepat bersyarat** (membaca HANYA hop terbaru ±800 sampel dengan satu pass YIN, bukan jendela 4096; terukur ±40 ms di simulasi) (respons mendekati ketikan Gboard): kalau awalan bunyi "tiba-tiba" (level hop kedua <= 1.12x hop pemicu, ciri petikan senar), keras (>= 0.05) dan nadanya bersih (prob >= 0.92, < 10 sen dari pusat), nada >= 300 Hz langsung diketik ±25 ms. Nada rendah dengan awalan tiba-tiba cukup 2 bacaan, sisanya 3 bacaan. Bunyi yang tidak memenuhi syarat tetap lewat jalur ketat (filter suara tidak longgar) |
-| `G_SHARP_RATIO` (6.0) | **(v1.3.2)** awalan "tiba-tiba" kini dinilai dari ketajaman lonjakan di hop pemicu (rms pemicu >= ratio x hop sebelumnya), bukan dari fase petikan terhadap batas hop (dulu hanya ~20% petikan lolos jalur cepat). Suara orang bocor? naikkan ke 8-10. Kurang responsif? turunkan ke 4 |
-| `G_ABRUPT_MAX_DECAY` (0.95) | jalur "2 bacaan" hanya untuk bunyi yang sudah meluruh dari puncak; bunyi datar (suara ditahan) harus 3 bacaan |
-| `LOW_ZONE_MIN_AGE_MS` (50) / `LOW_ZONE_FAST_AGE_MS` (33) | **(v1.3.2)** dulu 66 / 50. Kalau angka/huruf q-p tertukar oktaf, kembalikan ke 66 / 50 |
-| `REJECT_RELEASE_WAIT_MS` (250) | kunci singkat sesudah bunyi dibuang filter gitar (dulu 1,5 dtk) supaya petikan sungguhan sesudahnya tidak ikut terkunci. Petikan yang menimpa dengung nada lama tidak dinilai meliuk/datar (bacaannya memang bercampur) |
 | `RELEASE_RMS` (0.009) | sengaja di bawah `ONSET_RMS` (0.012): hysteresis supaya riak ring di sekitar ambang tidak melepas kunci lalu dibaca petikan baru |
 
 ## Masalah umum
 - **Satu petikan muncul dua kali** → naikkan `ECHO_SAME_NOTE_PEAK` (mis. 0.8) / `ECHO_WINDOW_MS`. Kalau petikan ulang cepat pada nada yang sama malah tidak muncul, turunkan (mis. 0.55).
 - **Nada tinggi (x c v b n m) masih dobel** → naikkan `SAME_NOTE_VALLEY_RATIO` (mis. 2.2) atau `SAME_NOTE_WINDOW_MS` (mis. 1800). Nyalakan "Info nada": muncul "↩ gema diabaikan" tiap kali gerbang membuang sesuatu. Kalau petikan ulang cepat di nada yang sama malah hilang, turunkan rasio ke 1.5.
-- **Petikan gitar ikut terbuang (terutama gitar listrik berdistorsi/sustain panjang)** → set `guitarLevel = 1`, atau naikkan `G_SPREAD_L2` (mis. 30) / turunkan `G_MIN_PEAK_L2`. Nyalakan "Info nada": "🎸 bukan gitar diabaikan (alasan)" memberi tahu kenapa.
-- **Terasa kurang responsif** → longgarkan jalur cepat: `G_ABRUPT_RATIO` 1.25, `G_FAST_MIN_PEAK` 0.035. Kalau suara mulai lolos lagi, kembalikan.
-- **Suara orang / TV masih lolos** → perkecil `G_SPREAD_L2` (mis. 15) atau naikkan `G_MIN_PEAK_L2` (mis. 0.03) supaya hanya bunyi yang dekat mic dan keras yang masuk.
 - **Huruf hantu saat mengetik dengan jari** → naikkan `TOUCH_MUTE_MS` (mis. 300).
 - **Huruf berulang (`eeee`) atau muncul sendiri** → sensitivitas terlalu tinggi / derau ruangan; naikkan `ONSET_RMS`.
 - **Nada tertukar huruf ↔ angka** → salah oktaf pada nada rendah; lihat `LOW_ZONE_*`.
@@ -87,10 +78,20 @@ Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
 
 Kebijakan privasi: [privacy-policy.md](privacy-policy.md)
 
-## Bunyi & getar tuts (v1.3.0)
-- Setiap sentuhan tuts memanggil SATU fungsi native `keyTap(kind, getar, bunyi, volume)`: bungkam mic + bunyi tuts + getar. Bunyi memakai efek bawaan Android (`AudioManager.playSoundEffect`) seperti Gboard: beda untuk huruf, spasi, hapus, enter, dan mengikuti pengaturan "Suara sentuh" sistem.
-- Teks selalu dikirim ke aplikasi lebih dulu, bunyi/getar menyusul.
-- Nyalakan di Setelan keyboard: "Suara klik" dan "Getaran keyboard". Kalau tetap senyap, cek Setelan Android > Suara > "Suara sentuh".
-
-## Responsivitas (v1.3.2)
-Terukur di simulasi petikan sintetis (waktu dari petikan sampai huruf, di dalam kode saja): rata-rata ~75 ms -> ~49 ms; nada tinggi ~63 -> ~28 ms; huruf a-l ~63 -> ~39 ms. Akurasi di simulasi sama. YIN dihitung bertahap (berhenti di nada pertama yang ketemu): hasil identik, biaya per bacaan ~2x lebih ringan. Belum diuji di gitar/HP asli; latensi `AudioRecord` Android tidak termasuk.
+## v1.1.4 — perbaikan tombol Q / Shift / ?123 yang salah picu
+**Gejala:** menekan/memetik Q kadang jadi capslock; F#5 (?123) atau G#5 (emoji) kadang pindah mode sendiri.
+**Penyebab (terukur):** harmonik ke-3 dari nada rendah jatuh tepat di nada tombol fungsi (+19 semitone):
+D3 (Q) -> 440 Hz = A4 (Shift), B3 (P) -> 740 Hz = F#5 (?123), C#4 (S) -> 831 Hz = G#5 (emoji). Di HP, fundamental nada
+rendah sering lemah sehingga YIN membaca harmonik ke-3. Selain itu dua deteksi A4 < 350 ms dihitung sebagai ketuk-ganda
+= capslock.
+**Perbaikan:**
+- `NativeMicPitchDetector.java`: verifikasi "dua belas" (`twelfthIsReal`, Langkah 5b) mencari sisir harmonik fundamental f/3
+  (puncak sempit di f/3, 2f/3, 4f/3, 5f/3; butuh >= 2 titik). Hanya aktif kalau jendela memuat >= 69 ms sinyal
+  (`TWELFTH_MIN_SAMPLES_MS`); di bawah itu A4 asli tak bisa dibedakan dari D3 lemah.
+- `FUNCTIONAL_KEYS_STRICT = true`: Shift, Hapus, ?123, emoji, Enter wajib 3 bacaan sepakat + sinyal cukup panjang
+  (~60 ms rata-rata, +-20 ms dari sebelumnya). **Huruf, angka, koma, spasi, titik tidak berubah** (jalur cepat tetap).
+- `index.html`: Shift dari NADA tidak lagi ikut jalur ketuk-ganda capslock (`shiftToggle(el, true)`); capslock tetap bisa
+  dengan ketuk-ganda sentuhan.
+Tuning: `TWELFTH_MIN_REL` (0.05), `TWELFTH_PEAK_RATIO` (3.0), `TWELFTH_MIN_HITS` (2). Tombol fungsi terasa lambat? Kembalikan
+`FUNCTIONAL_KEYS_STRICT=false` (tapi bug Q/Shift bisa muncul lagi). Verifikasi f/3 belum ada di jalur mic web (`yinDetect`
+di index.html); APK memakai jalur native.
