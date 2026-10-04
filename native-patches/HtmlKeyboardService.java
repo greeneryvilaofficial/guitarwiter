@@ -66,6 +66,20 @@ public class HtmlKeyboardService extends InputMethodService {
     private volatile long lastComposeAt = 0;
     private final ClipboardManager.OnPrimaryClipChangedListener clipListener = this::pushClipboardToJs;
 
+    // ---- ANTI-LAG KETIK: tunda IPC sinkron ke aplikasi tujuan selama sedang aktif mengetik ----
+    // getCursorCapsMode() dan getTextBeforeCursor() adalah panggilan BINDER SINKRON ke aplikasi tujuan
+    // (WhatsApp, Instagram, dst) yang dijalankan di MAIN THREAD keyboard -- thread yang sama yang
+    // mengetik huruf berikutnya dari deteksi nada. Dulu keduanya jalan 50 ms / 120 ms sesudah SETIAP
+    // huruf; kalau aplikasi tujuan sedang sibuk (render, scroll), main thread keyboard ikut tertahan
+    // puluhan-ratusan ms dan huruf berikutnya telat muncul. Sekarang selama mengetik aktif (ketikan
+    // terakhir < TYPING_ACTIVE_MS) keduanya baru dijalankan setelah berhenti mengetik sebentar
+    // (IDLE_SYNC_DELAY_MS); pelacak teks & auto-caps lokal di JS menjaga keadaan di antaranya.
+    private static final long TYPING_ACTIVE_MS = 700;
+    private static final long IDLE_SYNC_DELAY_MS = 300;
+    private volatile long lastTypeAt = 0;
+    private void markTyping() { lastTypeAt = android.os.SystemClock.uptimeMillis(); }
+    private boolean typingActive() { return android.os.SystemClock.uptimeMillis() - lastTypeAt < TYPING_ACTIVE_MS; }
+
     @Override
     public View onCreateInputView() {
         // Booster: WebView hanya dibuat & di-load SEKALI. Sebelumnya, setiap
@@ -267,11 +281,12 @@ public class HtmlKeyboardService extends InputMethodService {
                 webView.evaluateJavascript("window.onComposingLost && window.onComposingLost()", null);
             }
         }
+        final boolean typing = typingActive();
         capsHandler.removeCallbacks(syncRunnable);
-        capsHandler.postDelayed(syncRunnable, 120);   // didebounce: satu kali setelah rentetan ketikan/perubahan berhenti
+        capsHandler.postDelayed(syncRunnable, typing ? IDLE_SYNC_DELAY_MS : 120);   // didebounce: satu kali setelah rentetan ketikan/perubahan berhenti
         if (capsPolicy) {
             capsHandler.removeCallbacks(capsRunnable);
-            capsHandler.postDelayed(capsRunnable, 50);
+            capsHandler.postDelayed(capsRunnable, typing ? IDLE_SYNC_DELAY_MS : 50);
         }
         boolean has = newSelStart >= 0 && newSelEnd >= 0 && newSelStart != newSelEnd;
         if (has != selectionActive) {
@@ -524,6 +539,7 @@ public class HtmlKeyboardService extends InputMethodService {
         @JavascriptInterface
         public void keyTap(final int kind, final boolean vibrate, final boolean sound, final int volPercent) {
             if (nativeMic != null) nativeMic.muteForTouch();
+            markTyping();
             if (sound) {
                 try {
                     AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
@@ -627,6 +643,7 @@ public class HtmlKeyboardService extends InputMethodService {
                 }
                 @Override
                 public void onPitchIndex(int idx, double freq) {
+                    markTyping();
                     // JALUR LANGSUNG: ketik dulu di sini (UI thread, tanpa menunggu JS), lalu
                     // kabari JS. Kalau peta belum siap / tidak ada InputConnection -> jalur lama.
                     spaceDirectOk = false;   // teks berubah -> kelayakan spasi langsung basi sampai peta baru
@@ -662,6 +679,7 @@ public class HtmlKeyboardService extends InputMethodService {
                 }
                 @Override
                 public void onKick() {
+                    markTyping();
                     // JALUR LANGSUNG spasi: ketik dulu di sini, baru kabari JS.
                     if (spaceDirectOk) {
                         InputConnection kic = getCurrentInputConnection();
@@ -803,6 +821,7 @@ public class HtmlKeyboardService extends InputMethodService {
             // Sentuhan tuts: bungkam onset mic sebentar (getar/klik/ketukan jari bukan petikan).
             if ("touchMute".equals(msg.optString("cmd", ""))) {
                 if (nativeMic != null) nativeMic.muteForTouch();
+                markTyping();   // mengetik dengan jari juga: tunda IPC sinkron ke aplikasi
                 return;
             }
             // Peta nada->huruf tidak butuh InputConnection: proses dulu sebelum cek ic.
@@ -812,6 +831,7 @@ public class HtmlKeyboardService extends InputMethodService {
             }
             InputConnection ic = getCurrentInputConnection();
             if (ic == null) return;
+            markTyping();
             switch (msg.optString("cmd", "")) {
                 case "commitText": {
                     String text = msg.isNull("text") ? null : msg.optString("text", null);

@@ -300,9 +300,19 @@ public class NativeMicPitchDetector {
     private long lastCommitOnsetAt = 0;
     private double lastCommitPeak = 0;
 
+    /**
+     * Jam MONOTON (ms). Dulu memakai System.currentTimeMillis() -- jam dinding itu bisa melompat
+     * (sinkron waktu otomatis jaringan, ganti zona waktu/jam manual). Lompat mundur membuat
+     * cooldownUntil / touchMuteUntil "di masa depan" sehingga mic seolah mati (tidak ada huruf
+     * muncul) sampai jam menyusul. nanoTime tidak pernah mundur.
+     */
+    private static long nowMs() {
+        return System.nanoTime() / 1_000_000L;
+    }
+
     /** Dipanggil JS tiap tuts disentuh: abaikan onset baru sebentar (suara getar/klik/ketukan jari). */
     public void muteForTouch() {
-        touchMuteUntil = System.currentTimeMillis() + TOUCH_MUTE_MS;
+        touchMuteUntil = nowMs() + TOUCH_MUTE_MS;
     }
 
     private boolean isEcho(int idx, double peak, long onsetAt) {
@@ -637,7 +647,7 @@ public class NativeMicPitchDetector {
             // (~16.6ms), bukan tertunda karena dirata-rata sama ~93ms histori
             // lama di window yang sebagian besar masih diam.
             double rms = Math.sqrt(sumSq / read);
-            long now = System.currentTimeMillis();
+            long now = nowMs();
 
             if (state == STATE_IDLE) {
                 if (rms > ONSET_RMS && rms > smoothedRms * ONSET_RATIO && now > cooldownUntil && now > touchMuteUntil) {
@@ -676,7 +686,7 @@ public class NativeMicPitchDetector {
                             && fCents[0] < FAST_MAX_CENTS
                             && (!FUNCTIONAL_KEYS_STRICT || !"functional".equals(categoryOfIndex(fIdx[0])))   // tanda baca/spasi tetap cepat
                             && fIdx[0] >= 0 && fIdx[0] < NOTE_COUNT) {
-                        lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
+                        lastLatencyMs = nowMs() - lastOnsetAt;
                         emitNote(fIdx[0], fr.freq, onsetPeakRms, lastOnsetAt);
                         state = STATE_RELEASING;
                         cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
@@ -709,7 +719,7 @@ public class NativeMicPitchDetector {
                     boolean kickHit = kickEnabled && isKick(onsetLowE, onsetFullE, onsetPeakRms,
                             decayRatio, r != null ? r.probability : 0.0);
                     if (kickHit) {
-                        lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
+                        lastLatencyMs = nowMs() - lastOnsetAt;
                         postKick();
                         state = STATE_RELEASING;
                         cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
@@ -762,7 +772,7 @@ public class NativeMicPitchDetector {
                                 // Sudah dapat cukup bacaan berturut yang sepakat (paling
                                 // umum), ATAU jatah percobaan sudah habis -- pakai bacaan
                                 // TERAKHIR yang lolos ini (lebih baik daripada nyerah total).
-                                lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
+                                lastLatencyMs = nowMs() - lastOnsetAt;
                                 int commitIdx = idxOut[0];
                                 double commitFreq = r.freq;
                                 boolean dropIt = false;
@@ -1032,7 +1042,6 @@ public class NativeMicPitchDetector {
     // BARU: dua array kerja YIN dipakai ulang antar panggilan. Dulu tiap yinDetect() membuat
     // 2 array double baru (~11KB) sampai belasan kali per detik -> sampah memori -> jeda GC
     // sesekali di thread audio = ketikan tersendat acak. Hanya diakses dari recordLoop().
-    private double[] yinDiff = new double[0];
     private double[] yinCmnd = new double[0];
 
     // ---- LINTASAN KEDUA "HIGH-PASS" (fix tuts a-l: kadang tidak muncul / lambat) ----
@@ -1107,37 +1116,48 @@ public class NativeMicPitchDetector {
         int maxTau = Math.min(size / 2 - 1, (int) Math.ceil(sampleRate / MIN_VALID_FREQ));
         if (maxTau <= minTau) return null;
 
-        // Langkah 1: fungsi selisih d(tau), cuma dihitung untuk rentang tau yang relevan.
-        if (yinDiff.length < maxTau + 1) {
-            yinDiff = new double[maxTau + 1];
-            yinCmnd = new double[maxTau + 1];
+        // Langkah 1-3 (LAZY): fungsi selisih d(tau) + CMNDF dihitung BERTAHAP dari tau kecil ke besar dan
+        // pencarian berhenti begitu dip pertama di bawah YIN_THRESHOLD ketemu. Hasilnya IDENTIK bit-per-bit
+        // dengan versi lama (CMNDF di tau hanya bergantung pada d(minTau+1..tau)), tapi nada tinggi
+        // (tau ~70 dari maks ~620) cuma butuh ~10-15% hitungan. Dulu SEMUA tau dihitung dulu baru dicari ->
+        // satu bacaan 3-6 ms (di HP bisa >16 ms = lebih lama dari 1 hop) -> loop deteksi tertinggal dari
+        // audio dan ketikan terlambat/hilang saat main cepat.
+        if (yinCmnd.length < maxTau + 2) {
+            yinCmnd = new double[maxTau + 2];
         }
-        final double[] diff = yinDiff;
-        for (int tau = minTau; tau <= maxTau; tau++) {
-            double sum = 0;
-            for (int j = 0; j < size - maxTau; j++) {
-                double d = buf[j] - buf[j + tau];
-                sum += d * d;
-            }
-            diff[tau] = sum;
-        }
-
-        // Langkah 2: cumulative mean normalized difference function (CMNDF).
         final double[] cmnd = yinCmnd;
-        double runningSum = 0;
+        final int span = size - maxTau;      // lebar jendela pembanding (tetap, sama seperti versi lama)
         cmnd[minTau] = 1;
-        for (int tau = minTau + 1; tau <= maxTau; tau++) {
-            runningSum += diff[tau];
-            cmnd[tau] = diff[tau] * (tau - minTau) / (runningSum != 0 ? runningSum : 1e-9);
-        }
+        double runningSum = 0;
+        int computed = minTau;               // cmnd valid sampai indeks ini
 
-        // Langkah 3: cari tau TERKECIL (frekuensi tertinggi valid) yang CMNDF-nya
-        // sudah di bawah ambang -- ini yang bikin YIN menghindari salah pilih
-        // oktaf ke bawah (keliru mengunci ke 2x periode/setengah frekuensi asli).
         int tauEstimate = -1;
         for (int tau = minTau + 1; tau <= maxTau; tau++) {
+            while (computed < tau) {
+                computed++;
+                double sum = 0;
+                for (int j = 0; j < span; j++) {
+                    double d = buf[j] - buf[j + computed];
+                    sum += d * d;
+                }
+                runningSum += sum;
+                cmnd[computed] = sum * (computed - minTau) / (runningSum != 0 ? runningSum : 1e-9);
+            }
             if (cmnd[tau] < YIN_THRESHOLD) {
-                while (tau + 1 <= maxTau && cmnd[tau + 1] < cmnd[tau]) tau++;
+                // turun terus ke dasar lembah (tau+1 dihitung secukupnya)
+                while (tau + 1 <= maxTau) {
+                    while (computed < tau + 1) {
+                        computed++;
+                        double sum = 0;
+                        for (int j = 0; j < span; j++) {
+                            double d = buf[j] - buf[j + computed];
+                            sum += d * d;
+                        }
+                        runningSum += sum;
+                        cmnd[computed] = sum * (computed - minTau) / (runningSum != 0 ? runningSum : 1e-9);
+                    }
+                    if (cmnd[tau + 1] < cmnd[tau]) tau++; else break;
+                }
                 tauEstimate = tau;
                 break;
             }
