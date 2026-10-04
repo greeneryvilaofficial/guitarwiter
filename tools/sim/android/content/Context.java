@@ -1,0 +1,1 @@
+package android.content; public class Context { public static final String AUDIO_SERVICE="audio"; public android.os.Looper getMainLooper(){return null;} public Object getSystemService(String s){return new android.media.AudioManager();} }
