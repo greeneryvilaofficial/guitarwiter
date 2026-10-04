@@ -240,6 +240,30 @@ public class NativeMicPitchDetector {
     private static final double TAIL_ACCEPT_MIN_FREQ = 225.0;
     private static final int TAIL_MAX_SAMPLES = 2700;
     private float[] tailBuf = new float[0];
+    // ---- PETIKAN BERUNTUN DI ATAS DENGUNG (retrigger) ----
+    // Jendela analisis 4096 sampel (~85 ms) masih ~80% berisi nada LAMA di ~17-33 ms pertama sesudah petikan
+    // yang jatuh di atas dengung. Membaca jendela penuh (apalagi lewat jalur cepat) menghasilkan nada lama
+    // lagi = HURUF DOBEL, dan nada baru yang benar hilang. Untuk onset yang datang saat state RELEASING,
+    // pitch dibaca HANYA dari sampel sesudah onset (tail) sampai tail cukup panjang (RETRIG_FULL_TAIL),
+    // baru jendela penuh dipakai lagi. Jalur cepat tidak dipakai untuk retrigger.
+    private static final int RETRIG_FULL_TAIL = 3200;
+    // Pemicu onset tambahan berbasis TRANSIEN: RMS selisih sampel (high-emphasis). Dengung bernada meluruh
+    // mulus (selisihnya kecil & berubah pelan), sedangkan petikan baru memberi lonjakan selisih >2x sekalipun
+    // volume total hampir tidak naik (dengung beberapa nada menumpuk). Hanya aktif di state RELEASING.
+    private static final double FLUX_RATIO = 2.4;
+    private static final double FLUX_MIN = 0.006;
+    // ---- VERIFIKASI HARMONIK (anti nada hantu / melenceng) ----
+    // Campuran beberapa dengung yang sedang berbunyi bisa tampak berperiode PANJANG bagi YIN sehingga terbaca
+    // nada rendah yang tidak ada sama sekali (mis. 82 Hz = angka "1"). Nada sungguhan selalu punya deret harmonik:
+    // sebagian besar tenaga sinyal jatuh di f, 2f, 3f, 4f. Bacaan yang deret harmoniknya hanya menjelaskan
+    // < HARMONIC_EXPLAINED_MIN dari tenaga sinyal dibuang. Dicek untuk bacaan retrigger & bacaan < 200 Hz (angka).
+    private static final double HARMONIC_EXPLAINED_MIN = 0.12;
+    private static final double HARMONIC_CHECK_BELOW_HZ = 200.0;
+    // Nada SAMA dipetik lagi di atas dengungnya sendiri: volume hop bergantung FASE (konstruktif/destruktif), bisa
+    // turun jauh di bawah petikan sebelumnya walau petikannya sama keras. Kalau onset punya TRANSIEN (lonjakan
+    // serangan, tidak bergantung fase) syarat kerasnya dilonggarkan ke nilai ini ("ll", "oo" tetap keluar dua kali).
+    private static final double ECHO_SAME_NOTE_PEAK_TRANSIENT = 0.30;   // hanya untuk bacaan tail bersih >= 225 Hz (lihat cleanTransient)
+    private static final double NO_TRANSIENT_MIN_PEAK = 0.60;   // onset tanpa transien dalam SAME_NOTE_WINDOW_MS wajib >= 60% puncak petikan terakhir
     private static final double TAP_DECAY_RATIO = 0.30;
     private static final double STRONG_PROBABILITY = 0.80;
 
@@ -315,16 +339,16 @@ public class NativeMicPitchDetector {
         touchMuteUntil = nowMs() + TOUCH_MUTE_MS;
     }
 
-    private boolean isEcho(int idx, double peak, long onsetAt) {
+    private boolean isEcho(int idx, double peak, long onsetAt, boolean transientOnset) {
         if (lastCommitIdx < 0) return false;
         long dt = onsetAt - lastCommitOnsetAt;
         if (idx == lastCommitIdx) {
             if (dt > SAME_NOTE_WINDOW_MS) return false;
-            if (peak < lastCommitPeak * ECHO_SAME_NOTE_PEAK) return true;
+            if (peak < lastCommitPeak * (transientOnset ? ECHO_SAME_NOTE_PEAK_TRANSIENT : ECHO_SAME_NOTE_PEAK)) return true;
             // Lembah: dalam jendela panjang, level harus pernah turun dulu sebelum lonjakan ini.
             // Di bawah 380 ms jalur retrigger sudah menjaga lembah lewat recentMin, jadi
             // syarat ini baru berlaku sesudahnya (ring yang naik lagi belakangan).
-            if (dt > ECHO_WINDOW_MS && minRmsSinceCommit < Double.MAX_VALUE
+            if (dt > ECHO_WINDOW_MS && !transientOnset && minRmsSinceCommit < Double.MAX_VALUE
                     && peak < minRmsSinceCommit * SAME_NOTE_VALLEY_RATIO) return true;
             return false;
         }
@@ -414,8 +438,8 @@ public class NativeMicPitchDetector {
     }
 
     /** Kirim nada ke keyboard kecuali kalau ini gema dari petikan sebelumnya. true = terkirim. */
-    private boolean emitNote(int idx, double freq, double peak, long onsetAt) {
-        if (isEcho(idx, peak, onsetAt)) {
+    private boolean emitNote(int idx, double freq, double peak, long onsetAt, boolean transientOnset) {
+        if (isEcho(idx, peak, onsetAt, transientOnset)) {
             final boolean same = (idx == lastCommitIdx);
             postFast(() -> { if (listener != null) listener.onEchoBlocked(same); });
             return false;
@@ -601,6 +625,12 @@ public class NativeMicPitchDetector {
         java.util.Arrays.fill(recentHopRms, 0.001);
         int recentHopIdx = 0;
         long lastOnsetAt = 0; // kapan terakhir kali ada onset (normal ATAU retrigger) -- lihat MIN_RETRIGGER_GAP_MS
+        boolean onsetHadFlux = false;          // onset ini punya lonjakan transien (bukan sekadar naik volume)
+        boolean retrigOnset = false;           // onset terakhir datang saat nada sebelumnya masih berdengung (lihat RETRIG_FULL_TAIL)
+        float prevSample = 0;
+        final double[] recentFlux = new double[RETRIGGER_WINDOW_HOPS];
+        java.util.Arrays.fill(recentFlux, 0.001);
+        int recentFluxIdx = 0;
         int releaseBelowCount = 0; // berapa hop BERTURUT-TURUT rms sudah di bawah RELEASE_RMS -- lihat RELEASE_CONFIRM_HOPS
         double onsetPeakRms = 0.001; // puncak RMS sejak onset -- dipakai hitung seberapa cepat sinyal sudah meluruh (lihat TAP_DECAY_RATIO)
         // Filter low-pass 2 tahap (state kontinu antar hop) + akumulasi energi sejak
@@ -634,9 +664,13 @@ public class NativeMicPitchDetector {
             int writeOffset = BUFFER_SAMPLES - read;
             double sumSq = 0;
             double hopLowSq = 0;
+            double diffSq = 0;
             for (int i = 0; i < read; i++) {
                 float v = hopRaw[i] / 32768f;
                 window[writeOffset + i] = v;
+                float dv = v - prevSample;
+                prevSample = v;
+                diffSq += (double) dv * dv;
                 sumSq += (double) v * v;
                 lp1 += kickAlpha * (v - lp1);
                 lp2 += kickAlpha * (lp1 - lp2);
@@ -647,6 +681,7 @@ public class NativeMicPitchDetector {
             // (~16.6ms), bukan tertunda karena dirata-rata sama ~93ms histori
             // lama di window yang sebagian besar masih diam.
             double rms = Math.sqrt(sumSq / read);
+            double flux = Math.sqrt(diffSq / read);
             long now = nowMs();
 
             if (state == STATE_IDLE) {
@@ -660,6 +695,8 @@ public class NativeMicPitchDetector {
                     fastAt = now + FAST_READ_MS;
                     tailSamples = 0;
                     fastTried = false;
+                    retrigOnset = false;
+                    onsetHadFlux = false;   // dari IDLE: tidak ada dengung kuat yang perlu dibedakan, pakai aturan lama
                     lastOnsetAt = now;
                     onsetPeakRms = rms;
                     onsetLowE = hopLowSq;
@@ -677,7 +714,7 @@ public class NativeMicPitchDetector {
                 // mengukur), bukan cuma diambil dari satu hop pemicu onset saja.
                 if (rms > onsetPeakRms) onsetPeakRms = rms;
                 // JALUR CEPAT: satu bacaan awal di hop pertama sesudah onset (lihat FAST_*).
-                if (!fastTried && now >= fastAt && now < sampleAt) {
+                if (!retrigOnset && !fastTried && now >= fastAt && now < sampleAt) {
                     fastTried = true;
                     PitchReading fr = yinDetect(window, BUFFER_SAMPLES, sampleRate);
                     if (fr != null && fr.freq >= FAST_MIN_FREQ
@@ -687,22 +724,42 @@ public class NativeMicPitchDetector {
                             && (!FUNCTIONAL_KEYS_STRICT || !"functional".equals(categoryOfIndex(fIdx[0])))   // tanda baca/spasi tetap cepat
                             && fIdx[0] >= 0 && fIdx[0] < NOTE_COUNT) {
                         lastLatencyMs = nowMs() - lastOnsetAt;
-                        emitNote(fIdx[0], fr.freq, onsetPeakRms, lastOnsetAt);
+                        emitNote(fIdx[0], fr.freq, onsetPeakRms, lastOnsetAt, false);
                         state = STATE_RELEASING;
                         cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
                         releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
                     }
                 }
                 if (now >= sampleAt) {
-                    PitchReading r = yinDetect(window, BUFFER_SAMPLES, sampleRate);
-                    if (TAIL_READ && r == null && tailSamples >= TAIL_MIN_SAMPLES && tailSamples <= TAIL_MAX_SAMPLES) {
-                        if (tailBuf.length < tailSamples) tailBuf = new float[TAIL_MAX_SAMPLES];
+                    PitchReading r;
+                    float[] srcBuf = window;
+                    int srcSize = BUFFER_SAMPLES;
+                    if (retrigOnset && tailSamples < RETRIG_FULL_TAIL) {
+                        // Petikan di atas dengung: baca HANYA sampel sesudah onset (jendela penuh masih campuran nada lama).
+                        r = null;
+                        if (tailSamples >= TAIL_MIN_SAMPLES) {
+                            if (tailBuf.length < BUFFER_SAMPLES) tailBuf = new float[BUFFER_SAMPLES];
+                            System.arraycopy(window, BUFFER_SAMPLES - tailSamples, tailBuf, 0, tailSamples);
+                            r = yinDetect(tailBuf, tailSamples, sampleRate);
+                            if (r != null && (r.freq < TAIL_ACCEPT_MIN_FREQ || r.octaveCorrected)) r = null;
+                            srcBuf = tailBuf; srcSize = tailSamples;
+                        }
+                    } else {
+                        r = yinDetect(window, BUFFER_SAMPLES, sampleRate);
+                    }
+                    if (TAIL_READ && !retrigOnset && r == null && tailSamples >= TAIL_MIN_SAMPLES && tailSamples <= TAIL_MAX_SAMPLES) {
+                        if (tailBuf.length < TAIL_MAX_SAMPLES) tailBuf = new float[BUFFER_SAMPLES];
                         System.arraycopy(window, BUFFER_SAMPLES - tailSamples, tailBuf, 0, tailSamples);
                         r = yinDetect(tailBuf, tailSamples, sampleRate);
+                        srcBuf = tailBuf; srcSize = tailSamples;
                         // Bacaan potongan hanya dipercaya kalau jelas di atas zona angka/oktaf: hasil di bawah
                         // TAIL_ACCEPT_MIN_FREQ atau yang barusan dikoreksi oktaf dibuang (tunggu window penuh).
                         // Uji simulasi: tanpa batas ini q-p sering terbaca jadi angka (oktaf turun).
                         if (r != null && (r.freq < TAIL_ACCEPT_MIN_FREQ || r.octaveCorrected)) r = null;
+                    }
+                    if (r != null && (retrigOnset || r.freq < HARMONIC_CHECK_BELOW_HZ)
+                            && harmonicExplained(srcBuf, srcSize, r.freq, sampleRate) < HARMONIC_EXPLAINED_MIN) {
+                        r = null;   // bukan nada sungguhan (periodisitas semu dari campuran dengung)
                     }
                     sampleTries++;
                     // Seberapa besar sinyal sudah meluruh dari puncaknya -- lihat
@@ -785,7 +842,10 @@ public class NativeMicPitchDetector {
                                 if (dropIt) {
                                     postFast(() -> { if (listener != null) listener.onEchoBlocked(false); });
                                 } else {
-                                    emitNote(commitIdx, commitFreq, onsetPeakRms, lastOnsetAt);
+                                    // Gerbang nada-sama dilonggarkan HANYA kalau bukti bersih: onset bertransien DAN nada dibaca dari sampel sesudah
+                                    // onset saja (tail, >= 225 Hz). Bacaan jendela campuran / nada rendah (bisa cuma dengung lama) tetap ketat.
+                                    boolean cleanTransient = onsetHadFlux && srcBuf == tailBuf && commitFreq >= TAIL_ACCEPT_MIN_FREQ;
+                                    emitNote(commitIdx, commitFreq, onsetPeakRms, lastOnsetAt, cleanTransient);
                                 }
                                 state = STATE_RELEASING;
                                 cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
@@ -846,6 +906,11 @@ public class NativeMicPitchDetector {
                 for (int i = 1; i < recentHopRms.length; i++) {
                     if (recentHopRms[i] < recentMin) recentMin = recentHopRms[i];
                 }
+                double recentFluxMin = recentFlux[0];
+                for (int i = 1; i < recentFlux.length; i++) {
+                    if (recentFlux[i] < recentFluxMin) recentFluxMin = recentFlux[i];
+                }
+                boolean fluxOnset = flux > FLUX_MIN && flux > recentFluxMin * FLUX_RATIO;
 
                 // BARU: retrigger -- kalau ada lonjakan RMS baru yang jelas (nada
                 // baru menimpa ekor dengungan nada sebelumnya) DAN memang ada
@@ -859,12 +924,20 @@ public class NativeMicPitchDetector {
                 if (now - lastCommitOnsetAt < 90 && rms > lastCommitPeak) lastCommitPeak = rms;
                 boolean echoLoud = (now - lastCommitOnsetAt > ECHO_WINDOW_MS)
                         || rms >= lastCommitPeak * ECHO_OTHER_NOTE_PEAK;
+                // Onset TANPA lonjakan transien (hanya naik volume = beating dengung beberapa nada) harus hampir
+                // sekeras petikan sebelumnya; kalau tidak, itu huruf hantu dari dengung. Petikan sungguhan
+                // punya transien (fluxOnset) dan tidak kena syarat ini.
+                if (echoLoud && !fluxOnset && now - lastCommitOnsetAt <= SAME_NOTE_WINDOW_MS) {
+                    echoLoud = rms >= lastCommitPeak * NO_TRANSIENT_MIN_PEAK;
+                }
                 if (now > cooldownUntil && now > touchMuteUntil && echoLoud
                         && now - lastOnsetAt > (rms > recentMin * STRONG_RETRIGGER_RATIO
                                 ? STRONG_RETRIGGER_GAP_MS : MIN_RETRIGGER_GAP_MS)
                         && rms > RETRIGGER_MIN_RMS
-                        && rms > recentMin * RETRIGGER_RATIO) {
+                        && (rms > recentMin * RETRIGGER_RATIO || fluxOnset)) {
                     state = STATE_SAMPLING;
+                    retrigOnset = true;
+                    onsetHadFlux = fluxOnset;
                     sampleTries = 0;
                     System.arraycopy(window, 0, onsetWin, 0, BUFFER_SAMPLES); onsetWinValid = true;
                     candidateIdx = -1;
@@ -904,6 +977,8 @@ public class NativeMicPitchDetector {
             if (rms < minRmsSinceCommit) minRmsSinceCommit = rms;
             recentHopRms[recentHopIdx] = rms;
             recentHopIdx = (recentHopIdx + 1) % recentHopRms.length;
+            recentFlux[recentFluxIdx] = flux;
+            recentFluxIdx = (recentFluxIdx + 1) % recentFlux.length;
 
             smoothedRms = smoothedRms * 0.85 + rms * 0.15;
         }
@@ -1275,6 +1350,27 @@ public class NativeMicPitchDetector {
         }
         double real = q1 - q2 * cosine, imag = q2 * sine;
         return real * real + imag * imag;
+    }
+
+    /** Porsi tenaga sinyal (jendela Hann) yang dijelaskan deret harmonik f..4f (BUKAN lebih tinggi: 82 Hz x6 = 494 Hz ikut 'menjelaskan' B4). ~1 = nada murni, ~0 = bukan nada ber-f ini. */
+    private static double harmonicExplained(float[] buf, int size, double freq, int sampleRate) {
+        if (hannCache.length != size) goertzelWin(buf, size, freq, sampleRate);   // isi hannCache untuk ukuran ini
+        final float[] hann = hannCache;
+        double ew = 0;
+        for (int n = 0; n < size; n++) { double v = buf[n] * hann[n]; ew += v * v; }
+        if (!(ew > 0)) return 0;
+        double sum = 0;
+        for (int k = 1; k <= 4; k++) {
+            double fk = freq * k;
+            if (fk >= sampleRate / 2.0 - 100) break;
+            double best = 0;
+            for (int i = -2; i <= 2; i++) {
+                double m = goertzelWin(buf, size, fk * Math.pow(2, i * 10.0 / 1200), sampleRate);
+                if (m > best) best = m;
+            }
+            sum += best;
+        }
+        return sum * 3.0 / ((double) size * ew);
     }
 
     private static double goertzelRefine(float[] buf, int size, double freq, int sampleRate) {
