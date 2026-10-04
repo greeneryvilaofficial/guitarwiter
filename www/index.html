@@ -2377,7 +2377,14 @@
     if(fastBridge('touchMute')) return;
     try{ const a = window.AndroidKeyboard; if(a && a.touchMute) a.touchMute(); }catch(e){}
   }
-  function keyFeedback(){
+  // kind: 0 huruf/umum, 1 spasi, 2 hapus, 3 enter (bunyi tuts berbeda per jenis, seperti Gboard).
+  // Jalur utama: SATU panggilan native (bungkam mic + bunyi bawaan Android + getar). WebAudio hanya cadangan
+  // untuk mode browser.
+  function keyFeedback(kind){
+    try{
+      const a = window.AndroidKeyboard;
+      if(a && a.keyTap){ a.keyTap(kind|0, !!prefs.haptic, !!prefs.sound, prefs.soundVol|0); return; }
+    }catch(e){}
     micTouchMute();
     if(prefs.haptic){
       try{
@@ -2605,13 +2612,15 @@
   const keyboardEl2 = document.getElementById('keyboard');
   const emojiPanelEl = document.getElementById('emojiPanel');
 
-  function shiftToggle(el){
+  // viaNote = true: dipicu dari NADA. Nada tidak boleh mengunci CapsLock: dua deteksi A4 berdekatan (gema/dengung)
+  // dulu terbaca "ketuk dua kali" -> CapsLock menyala sendiri. CapsLock hanya lewat sentuhan (ketuk dua kali).
+  function shiftToggle(el, viaNote){
     flash(el);
     if(mode === 'symbols'){ symPage = (symPage === 1) ? 2 : 1; applySymbolMode(true); updateShiftLabel(); return; }   // di mode simbol: ganti halaman
     autoShift = false;   // pengguna sendiri yang menyentuh shift -> bukan otomatis lagi
     const now = performance.now();
-    const isDoubleTap = (now - lastShiftTap) < 350;
-    lastShiftTap = now;
+    const isDoubleTap = !viaNote && (now - lastShiftTap) < 350;
+    if(!viaNote) lastShiftTap = now;
     if(isDoubleTap){
       capsLock = !capsLock;
       shiftActive = capsLock;
@@ -3298,8 +3307,8 @@
     btn.addEventListener('pointerdown', (e)=>{
       startX = e.clientX; startY = e.clientY;
       clearTimer();
-      keyFeedback();
       manualPress(btn);                      // huruf langsung masuk, tanpa jeda
+      keyFeedback();                         // bunyi/getar SESUDAH teks terkirim
       timer = setTimeout(()=>{
         timer = null;
         btn.classList.add('key-longpress-num');
@@ -3388,7 +3397,7 @@
     if(type==='backspace'){ backspace(); lbl = '⌫'; }          // aksi DULU, getar/efek sesudahnya
     else if(type==='enter'){ pressEnter(); lbl = '↵'; }
     else if(type==='literal'){ const c = el.dataset.char; appendText(c); lbl = (c===' ' ? '␣' : c); }
-    keyFeedback();
+    keyFeedback(type==='backspace' ? 2 : type==='enter' ? 3 : (type==='literal' && el.dataset.char===' ') ? 1 : 0);
     flash(el);
     if(lbl) showBubble(el, lbl);
   }
@@ -3451,7 +3460,7 @@
       flash(el); showBubble(el,'↵'); pressEnter();
       return '\n';
     } else if(el.id==='shiftBtn'){
-      shiftToggle(el);
+      shiftToggle(el, true);
       showBubble(el, capsLock ? 'CAPS' : (shiftActive ? '⇧ ON' : '⇧'));
       return '⇧';
     } else if(el.id==='emojiBtn'){
