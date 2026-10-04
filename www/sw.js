@@ -3,7 +3,7 @@
 // dimuat walau tanpa koneksi internet (penting karena WebView keyboard
 // akan sering dibuka tanpa jaringan aktif).
 
-const CACHE_NAME = 'genjreng-ketik-cache-v21'; // v1.3.5: deaccent di-cache, retry mic, IPC sinkron ditunda saat mengetik
+const CACHE_NAME = 'genjreng-ketik-cache-v22'; // v1.3.7: turun oktaf butuh harmonik ganjil (p/a/s tidak lagi jadi angka)
 const CORE_ASSETS = [
   'index.html',
   'manifest.json',
