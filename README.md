@@ -69,6 +69,23 @@ Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
 | `SAME_NOTE_WINDOW_MS`, `SAME_NOTE_VALLEY_RATIO` | nada SAMA dalam jendela panjang harus didahului lembah beneran (puncak >= 1.8x level terpelan sejak komit terakhir) |
 | `RELEASE_RMS` (0.009) | sengaja di bawah `ONSET_RMS` (0.012): hysteresis supaya riak ring tidak melepas kunci lalu dibaca petikan baru |
 
+## Yang berubah di v1.3.6 (petikan beruntun: tanpa dobel, tidak ada yang hilang)
+Semua perubahan di `NativeMicPitchDetector.java`; `index.html` tidak berubah. Diuji dengan simulator deterministik `tools/vsim/` (lihat bagian Pengujian), dibandingkan dengan v1.3.5 pada skenario yang sama.
+- **Petikan di atas dengung dibaca dari sampel SESUDAH onset saja** (`RETRIG_FULL_TAIL`). Jendela 85 ms masih ~80% berisi nada lama di ~17-33 ms pertama; dulu jalur cepat/jendela penuh membacanya sebagai nada lama lagi = **huruf dobel** (nada 71 terketik dua kali, nada baru hilang). Jalur cepat tidak dipakai untuk retrigger.
+- **Pemicu onset kedua berbasis transien** (`FLUX_RATIO`, `FLUX_MIN`): lonjakan RMS selisih sampel. Dulu petikan beruntun hilang kalau dengung beberapa nada menumpuk dan volume total tidak naik cukup. Onset tanpa transien dalam `SAME_NOTE_WINDOW_MS` wajib >= `NO_TRANSIENT_MIN_PEAK` (60%) dari puncak terakhir, supaya beating dengung tidak jadi huruf hantu.
+- **Verifikasi harmonik** (`HARMONIC_EXPLAINED_MIN`): bacaan retrigger atau < 200 Hz harus punya tenaga di f..4f. Mencegah nada hantu dari campuran dengung (mis. 82,4 Hz x 6 = B4 terbaca angka "1").
+- **Petikan ulang nada SAMA (mis. "ll", "aa") tidak lagi sering hilang**: pada bacaan tail bersih >= 225 Hz dengan transien, syarat keras dilonggarkan ke `ECHO_SAME_NOTE_PEAK_TRANSIENT` (30%) dan gerbang lembah dilewati (volume hop bergantung fase saat nada sama bertumpuk dengan dengungnya). Nada < 225 Hz (angka, q-p) SENGAJA tetap memakai gerbang lama yang ketat, karena tidak ada pembeda volume/energi yang bersih antara petikan ulang sah dan hantu dari dengung (diukur; lihat skenario `echoh`).
+
+Hasil simulasi (asli v1.3.5 -> v1.3.6), tanpa dan dengan HP lambat (`cost=8`):
+| Skenario | v1.3.5 | v1.3.6 |
+|---|---|---|
+| `rapid` (7 nada tiap 220 ms) | 5/7 benar, 1 dobel | 7/7 benar, 0 dobel |
+| `repeat` (76 diulang tiap 250 ms) | 4 dari 6 terketik | 6 dari 6 |
+| `rep 0.3 76`, `rep 0.25 60`, `rep 0.3 64` | 3-5 dari 6 | 6 dari 6 |
+| Petikan tunggal, dengung panjang + AGC, tuts fungsi, gema harmonik (`echoh`), profil harmonik | benar | identik (tidak ada regresi) |
+
+**Batas yang masih ada** (jujur): (1) nada rendah < 225 Hz yang diulang cepat masih bisa hilang (`rep 0.4 45`: 4 dari 6); (2) lari nada cepat < ~300 ms saat 3+ senar sebelumnya masih berdengung (`seq 0.25`/`seq 0.3`): pelacak pitch monofonik tidak bisa memisahkan campuran itu, hasilnya nada hilang (bukan salah huruf). Redam senar sebelumnya (palm-mute) kalau mau lebih cepat; (3) suara orang masih bocor jadi huruf (`voice`), sama seperti v1.3.5. Semua angka di atas SIMULASI sinyal sintetis, bukan gitar/HP asli.
+
 ## Yang berubah di v1.3.5 (perbaikan lambat / telat)
 - **APK debug sekarang benar-benar non-debuggable.** `native-patches/insert_perf.py` sudah ada sejak lama tapi TIDAK pernah dipanggil workflow, jadi APK debug berjalan sebagai *debuggable*: ART mematikan optimasi dan loop YIN di thread audio jauh lebih lambat. Langkahnya kini ada di `android-build.yml`.
 - **`.github/workflows/` disamakan dengan `workflows/` (versi baru).** Salinan di `.github/` ternyata versi lama (tanpa `permissions: contents: write` sehingga Release bisa gagal 403, tanpa ikon/nama APK Guitarwiter, tanpa cek password keystore PKCS12).
@@ -107,4 +124,5 @@ Kebijakan privasi: [privacy-policy.md](privacy-policy.md)
 ## Pengujian (folder `tools/`)
 Dijalankan di sini sebelum rilis; tidak ikut ke APK.
 - `tools/flow-test.js` (Node + `npm i jsdom`): menjalankan `www/index.html` di browser tiruan; memeriksa label ↔ nada ↔ karakter yang diketik untuk SEMUA tuts di mode huruf/Shift/Caps/simbol 1/simbol 2, alur ketik dari Java, perilaku Shift/CapsLock dari nada vs sentuhan, dan pindah mode `?123`.
+- `tools/vsim/` (JDK 17): sama dengan `tools/sim/` tapi pakai **jam virtual**, jadi hasilnya identik tiap dijalankan dan jauh lebih cepat dari real-time. `cost=<ms>` meniru HP lambat; `DET=<file.java>` membandingkan detektor lain (mis. versi lama); skenario tambahan `rep <gap> <midi> <amp>` (nada sama diulang). Contoh: `tools/vsim/run.sh cost=8 rapid`.
 - `tools/sim/` (JDK 17): menjalankan `NativeMicPitchDetector.java` ASLI dengan stub Android dan audio sintetis real-time (petikan, urutan cepat, dengung, AGC, high-pass mic HP, tuts fungsi, gema harmonik, uji unit veto overtone). Lihat `tools/sim/README.txt`. Hasilnya simulasi, bukan gitar/HP asli.
