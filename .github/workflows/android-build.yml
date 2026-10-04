@@ -108,6 +108,11 @@ jobs:
       - name: Tambahkan dependency androidx.webkit (untuk WebViewAssetLoader/mikrofon)
         run: python3 native-patches/insert_webkit_dependency.py android/app/build.gradle
 
+      # Tanpa langkah ini APK debug tetap debuggable=true -> ART mematikan optimasi (inlining/JIT penuh)
+      # sehingga loop deteksi nada (YIN) di thread audio jalan jauh lebih lambat dan ketikan terasa telat.
+      - name: Jadikan build debug non-debuggable (secepat release)
+        run: python3 native-patches/insert_perf.py android/app/build.gradle
+
       - name: Decode keystore dari secret (kalau ada)
         if: env.KEYSTORE_BASE64 != ''
         run: |
