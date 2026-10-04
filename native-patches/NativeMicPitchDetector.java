@@ -222,7 +222,7 @@ public class NativeMicPitchDetector {
     // Untuk bacaan >= LOW_ZONE_FAST_AGE_MIN_FREQ (tuts a,s,d: C4-D4) cukup 50ms (1 hop lebih cepat). Di bawah itu
     // (angka, q-p, o,p) TETAP 66ms: di situlah kesalahan oktaf-turun terjadi kalau terlalu cepat (diuji simulasi).
     private static final long LOW_ZONE_FAST_AGE_MS = 50;
-    private static final double LOW_ZONE_FAST_AGE_MIN_FREQ = 255.0;
+    private static final double LOW_ZONE_FAST_AGE_MIN_FREQ = 240.0;   // v1.3.7: dulu 255 -> B3 (p) menunggu 66 ms, kini 50 ms seperti a, s
     private static final int LOW_ZONE_CONFIRM = 2;
     private static final int LOW_ZONE_CONFIRM_CORRECTED = 3;
     // ---- BACAAN POTONGAN-SESUDAH-PETIKAN ("tail read") ----
@@ -1131,7 +1131,7 @@ public class NativeMicPitchDetector {
     // ada resonansi kuat; 0/60 nada rendah salah. Nonaktifkan: HP_SECOND_PASS = false.
     private static final boolean HP_SECOND_PASS = true;
     private static final double HP_CUTOFF_HZ = 250.0;
-    private static final double HP_ACCEPT_MIN_FREQ = 255.0;
+    private static final double HP_ACCEPT_MIN_FREQ = 240.0;   // v1.3.7: dulu 255 -> B3 (p, 246.9 Hz) tidak pernah diselamatkan lintasan HP
     private static final double HP_MIN_PROB = 0.80;
     private static final double HP_MIN_RMS = 0.003;   // sesudah disaring energinya wajar lebih kecil
     private static final double[] HP_Q = {0.5176, 0.7071, 1.9319};  // Butterworth orde-6
@@ -1284,17 +1284,34 @@ public class NativeMicPitchDetector {
                 // sehingga angka kebaca satu oktaf lebih tinggi = HURUF. Selain uji
                 // lama, cek harmonik ganjil 1.5x & 2.5x rawFreq (nada huruf asli
                 // tidak punya energi di situ). HARUS sinkron dengan index.html.
+                //
+                // v1.3.7: energi di setengah frekuensi SAJA tidak cukup untuk turun oktaf. Resonansi badan
+                // gitar / dengung mic di 95-140 Hz bukan nada dan tidak punya harmonik ke-3 (= 1.5x rawFreq),
+                // sehingga tuts B3/C4/C#4 (p, a, s: senar B terbuka, fret 1, fret 2; setengahnya jatuh di
+                // 123-139 Hz) dan q-i sering "turun" jadi angka lalu dibuang di mode huruf = terasa tidak
+                // responsif. Nada rendah SUNGGUHAN selalu punya harmonik ke-3 (1.5x) atau ke-5 (2.5x).
                 double aR = ampWin(buf, size, rawFreq, sampleRate);
                 double aH = ampWin(buf, size, halfFreq, sampleRate);
-                boolean down = aH >= aR * 0.6;
-                if (!down && ampWin(buf, size, rawFreq * 1.5, sampleRate) >= aR * 0.25) {
+                double a15 = ampWin(buf, size, rawFreq * 1.5, sampleRate);
+                boolean odd = a15 >= aR * ODD_EVIDENCE_15
+                        || ampWin(buf, size, rawFreq * 2.5, sampleRate) >= aR * ODD_EVIDENCE_25;
+                boolean down = aH >= aR * 0.6 && (odd || !ODD_EVIDENCE_REQUIRED);
+                if (!down && a15 >= aR * 0.25) {
                     down = aH >= aR * 0.15 || ampWin(buf, size, rawFreq * 2.5, sampleRate) >= aR * 0.1;
                 }
                 if (down) finalFreq = halfFreq;
             } else {
                 double magAtFreq = goertzelMag(buf, size, rawFreq, sampleRate);
                 double magAtHalf = goertzelMag(buf, size, halfFreq, sampleRate);
-                if (magAtHalf >= magAtFreq * 0.6) finalFreq = halfFreq;
+                if (magAtHalf >= magAtFreq * 0.6) {
+                    // v1.3.7: sama seperti zona angka, turun oktaf hanya kalau ada harmonik ganjil dari nada setengahnya.
+                    if (!ODD_EVIDENCE_REQUIRED) finalFreq = halfFreq;
+                    else {
+                        double aR = ampWin(buf, size, rawFreq, sampleRate);
+                        if (ampWin(buf, size, rawFreq * 1.5, sampleRate) >= aR * ODD_EVIDENCE_15
+                                || ampWin(buf, size, rawFreq * 2.5, sampleRate) >= aR * ODD_EVIDENCE_25) finalFreq = halfFreq;
+                    }
+                }
             }
         }
         // Arah "naik" (kalau energi di rawFreq lemah dibanding di 2x-nya, berarti
@@ -1318,6 +1335,10 @@ public class NativeMicPitchDetector {
     }
 
 
+    // v1.3.7: bukti harmonik ganjil (1.5x / 2.5x dari frekuensi terbaca) wajib ada sebelum bacaan diturunkan satu oktaf.
+    private static final boolean ODD_EVIDENCE_REQUIRED = true;
+    private static final double ODD_EVIDENCE_15 = 0.12;
+    private static final double ODD_EVIDENCE_25 = 0.08;
     // Batas atas setengah-frekuensi yang masih zona angka (C#3 138.6Hz + 50 sen).
     private static final double DIGIT_HALF_MAX_FREQ = 143.0;
 
