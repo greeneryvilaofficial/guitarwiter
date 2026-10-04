@@ -3,7 +3,7 @@
 // dimuat walau tanpa koneksi internet (penting karena WebView keyboard
 // akan sering dibuka tanpa jaringan aktif).
 
-const CACHE_NAME = 'genjreng-ketik-cache-v20'; // v1.3.4: Shift via nada tak mengunci Caps, peta nada tidak basi, tuts fungsi diamankan
+const CACHE_NAME = 'genjreng-ketik-cache-v21'; // v1.3.5: deaccent di-cache, retry mic, IPC sinkron ditunda saat mengetik
 const CORE_ASSETS = [
   'index.html',
   'manifest.json',

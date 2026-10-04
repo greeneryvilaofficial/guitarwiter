@@ -1524,7 +1524,19 @@
   try{ const c = localStorage.getItem(LANG_KEY); if(c && LANGS[c] && enabledLangs.includes(c)) currentLang = c; }catch(e){}
 
   // ---- Pencocokan kata: tanpa aksen + toleran salah ketik (tuts bertetangga di QWERTY lebih murah) ----
-  function deaccent(s){ return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ß/g,'ss').replace(/ı/g,'i'); }
+  // Fungsi murni, tapi dipanggil untuk SETIAP kata kamus pribadi pada SETIAP huruf (computeWordSuggestions, 2x)
+  // -> normalize('NFD') + 3 regex ribuan kali per ketikan di thread JS yang sama yang menerima nada berikutnya.
+  // Di-cache (dibatasi supaya memori tidak membengkak): panggilan berulang jadi satu lookup Map.
+  const _deaccentCache = new Map();
+  function deaccent(s){
+    let r = _deaccentCache.get(s);
+    if(r === undefined){
+      r = s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ß/g,'ss').replace(/ı/g,'i');
+      if(_deaccentCache.size >= 8000) _deaccentCache.clear();
+      _deaccentCache.set(s, r);
+    }
+    return r;
+  }
   const _dictCache = {};
   function getDict(lang){
     if(!_dictCache[lang]){
@@ -3489,6 +3501,7 @@
 
   window.onNativeMicStatus = function(kind, ok){
     if(kind === 'permission' && !ok){
+      _micPermDenied = true;   // retry otomatis (lihat startMic) percuma tanpa izin
       showStatus('❌ Izin mikrofon belum aktif. Buka aplikasi Guitarwiter dari app drawer sekali, izinkan mikrofonnya, lalu coba lagi.');
       listening = false;
       micToolBtn.classList.remove('on');
@@ -4172,14 +4185,35 @@
     rafId = requestAnimationFrame(micLoop);
   }
 
+  // Start mic native bisa gagal SESAAT (AudioRecord sebelumnya belum dilepas sistem saat keyboard
+  // cepat disembunyikan lalu ditampilkan, atau mic dipakai aplikasi lain sebentar). Dulu kegagalan itu
+  // diam-diam: ikon mic mati dan tidak ada nada tertangkap sampai pengguna menyalakan ulang manual.
+  // Sekarang dicoba lagi beberapa kali (selama keyboard terlihat & tidak dijeda manual).
+  var _micPermDenied = false, _micRetryTimer = null, _micRetryN = 0, _kbVisible = true;
+  const MIC_RETRY_DELAYS = [250, 600, 1200, 2500];
+  function scheduleMicRetry(){
+    clearTimeout(_micRetryTimer);
+    if(_micRetryN >= MIC_RETRY_DELAYS.length){
+      if(!_micPermDenied) showStatus('❌ Mikrofon gagal dimulai (mungkin sedang dipakai aplikasi lain). Ketuk ikon mic untuk mencoba lagi.');
+      return;
+    }
+    _micRetryTimer = setTimeout(()=>{
+      _micRetryTimer = null;
+      if(!listening && !userPausedMic && !_micPermDenied && _kbVisible) startMic();
+    }, MIC_RETRY_DELAYS[_micRetryN++]);
+  }
   async function startMic(){
     if(hasNativeMicBridge()){
+      if(listening) return;
       const ok = window.AndroidKeyboard.startNativeMic();
       if(ok){
+        clearTimeout(_micRetryTimer); _micRetryTimer = null; _micRetryN = 0; _micPermDenied = false;
         syncKickToNative();
         sendNoteMap();
         listening = true;
         micToolBtn.classList.add('on');
+      } else if(!_micPermDenied){
+        scheduleMicRetry();
       }
       return;
     }
@@ -4238,13 +4272,20 @@
   let userPausedMic = false;
   micToolBtn.addEventListener('click', ()=>{
     if(listening){ userPausedMic = true;  stopMic(); }
-    else         { userPausedMic = false; startMic(); }
+    else         { userPausedMic = false; _micRetryN = 0; _micPermDenied = false; startMic(); }
   });
   // Dipanggil dari HtmlKeyboardService.onWindowHidden()/onWindowShown().
   // Mic HARUS mati saat keyboard tidak terlihat (privasi + baterai), dan
   // hidup lagi otomatis begitu keyboard muncul (kecuali dijeda manual).
-  window.onKeyboardHidden = function(){ if(listening) stopMic(); };
-  window.onKeyboardShown  = function(){ if(!listening && !userPausedMic) startMic(); };
+  window.onKeyboardHidden = function(){
+    _kbVisible = false;
+    clearTimeout(_micRetryTimer); _micRetryTimer = null; _micRetryN = 0;
+    if(listening) stopMic();
+  };
+  window.onKeyboardShown  = function(){
+    _kbVisible = true; _micRetryN = 0; _micPermDenied = false;
+    if(!listening && !userPausedMic) startMic();
+  };
 
   window.addEventListener('keydown', (e)=>{
     const key = keyMap[e.key.toLowerCase()];
