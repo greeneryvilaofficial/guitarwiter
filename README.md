@@ -69,6 +69,13 @@ Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
 | `SAME_NOTE_WINDOW_MS`, `SAME_NOTE_VALLEY_RATIO` | nada SAMA dalam jendela panjang harus didahului lembah beneran (puncak >= 1.8x level terpelan sejak komit terakhir) |
 | `RELEASE_RMS` (0.009) | sengaja di bawah `ONSET_RMS` (0.012): hysteresis supaya riak ring tidak melepas kunci lalu dibaca petikan baru |
 
+## Yang berubah di v1.3.7 (tuts p, a, s kurang responsif)
+- **Penyebab**: B3/C4/C#4 (p, a, s) setengah frekuensinya jatuh di 123-139 Hz, zona angka. Energi di sana dari resonansi badan gitar/dengung mic ikut dianggap bukti "nada ini sebenarnya satu oktaf lebih rendah", lalu bacaan diturunkan jadi angka dan dibuang di mode huruf (terasa tuts tidak merespons).
+- **Perbaikan** (`yinCore`, juga di `index.html`): turun oktaf sekarang WAJIB punya harmonik ganjil (1.5x atau 2.5x frekuensi terbaca; `ODD_EVIDENCE_*`). Nada rendah sungguhan punya, resonansi tidak.
+- `HP_ACCEPT_MIN_FREQ` dan `LOW_ZONE_FAST_AGE_MIN_FREQ` 255 -> 240 Hz supaya B3 (246,9 Hz) diperlakukan sama seperti a, s.
+- Simulasi (`tools/vsim`, skenario baru `hl` + `res=`): tuts p gagal 16/24 -> 0/24, total gagal 295 -> 243 dari 1056. Skenario lama (single, rapid, repeat, rep, harm, list, echoh) hasilnya identik dengan v1.3.6.
+- **Batas**: resonansi sangat kuat tepat di frekuensi angka (95-135 Hz) masih bisa membuat angka tidak terdeteksi, dan tuts fungsi (Shift/Hapus/?123/Emoji/Enter) masih sering gagal di kondisi itu. Semua angka adalah simulasi sinyal sintetis, bukan gitar/HP asli.
+
 ## Yang berubah di v1.3.6 (petikan beruntun: tanpa dobel, tidak ada yang hilang)
 Semua perubahan di `NativeMicPitchDetector.java`; `index.html` tidak berubah. Diuji dengan simulator deterministik `tools/vsim/` (lihat bagian Pengujian), dibandingkan dengan v1.3.5 pada skenario yang sama.
 - **Petikan di atas dengung dibaca dari sampel SESUDAH onset saja** (`RETRIG_FULL_TAIL`). Jendela 85 ms masih ~80% berisi nada lama di ~17-33 ms pertama; dulu jalur cepat/jendela penuh membacanya sebagai nada lama lagi = **huruf dobel** (nada 71 terketik dua kali, nada baru hilang). Jalur cepat tidak dipakai untuk retrigger.
@@ -124,5 +131,5 @@ Kebijakan privasi: [privacy-policy.md](privacy-policy.md)
 ## Pengujian (folder `tools/`)
 Dijalankan di sini sebelum rilis; tidak ikut ke APK.
 - `tools/flow-test.js` (Node + `npm i jsdom`): menjalankan `www/index.html` di browser tiruan; memeriksa label ↔ nada ↔ karakter yang diketik untuk SEMUA tuts di mode huruf/Shift/Caps/simbol 1/simbol 2, alur ketik dari Java, perilaku Shift/CapsLock dari nada vs sentuhan, dan pindah mode `?123`.
-- `tools/vsim/` (JDK 17): sama dengan `tools/sim/` tapi pakai **jam virtual**, jadi hasilnya identik tiap dijalankan dan jauh lebih cepat dari real-time. `cost=<ms>` meniru HP lambat; `DET=<file.java>` membandingkan detektor lain (mis. versi lama); skenario tambahan `rep <gap> <midi> <amp>` (nada sama diulang). Contoh: `tools/vsim/run.sh cost=8 rapid`.
+- `tools/vsim/` (JDK 17): sama dengan `tools/sim/` tapi pakai **jam virtual**, jadi hasilnya identik tiap dijalankan dan jauh lebih cepat dari real-time. `cost=<ms>` meniru HP lambat; `DET=<file.java>` membandingkan detektor lain (mis. versi lama); skenario tambahan `rep <gap> <midi> <amp>` (nada sama diulang). Skenario `hl <profil> <midi...> [res=<rasio>]` (v1.3.7): tiap nada dipetik sendiri dengan profil harmonik tertentu dan resonansi badan gitar sintetis (`-Dresf=<Hz>` mengatur frekuensinya, `PER=1` mencetak hasil per nada). Contoh: `tools/vsim/run.sh cost=8 rapid`.
 - `tools/sim/` (JDK 17): menjalankan `NativeMicPitchDetector.java` ASLI dengan stub Android dan audio sintetis real-time (petikan, urutan cepat, dengung, AGC, high-pass mic HP, tuts fungsi, gema harmonik, uji unit veto overtone). Lihat `tools/sim/README.txt`. Hasilnya simulasi, bukan gitar/HP asli.
