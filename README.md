@@ -69,6 +69,16 @@ Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
 | `SAME_NOTE_WINDOW_MS`, `SAME_NOTE_VALLEY_RATIO` | nada SAMA dalam jendela panjang harus didahului lembah beneran (puncak >= 1.8x level terpelan sejak komit terakhir) |
 | `RELEASE_RMS` (0.009) | sengaja di bawah `ONSET_RMS` (0.012): hysteresis supaya riak ring tidak melepas kunci lalu dibaca petikan baru |
 
+## Yang berubah di v1.3.5 (perbaikan lambat / telat)
+- **APK debug sekarang benar-benar non-debuggable.** `native-patches/insert_perf.py` sudah ada sejak lama tapi TIDAK pernah dipanggil workflow, jadi APK debug berjalan sebagai *debuggable*: ART mematikan optimasi dan loop YIN di thread audio jauh lebih lambat. Langkahnya kini ada di `android-build.yml`.
+- **`.github/workflows/` disamakan dengan `workflows/` (versi baru).** Salinan di `.github/` ternyata versi lama (tanpa `permissions: contents: write` sehingga Release bisa gagal 403, tanpa ikon/nama APK Guitarwiter, tanpa cek password keystore PKCS12).
+- **YIN dihitung lazy** (`yinCore`): CMNDF dihitung bertahap dan berhenti begitu lembah pertama ketemu. Hasil identik bit-per-bit dengan versi lama (diuji 600 sinyal), tapi nada tinggi ~6,8x lebih ringan (2,98 -> 0,44 ms/bacaan di mesin uji) dan nada rendah ~1,3-2x. Bacaan yang lebih singkat dari 1 hop (16,7 ms) mencegah loop deteksi tertinggal dari audio di HP lambat.
+- **Jam deteksi monoton** (`System.nanoTime`) menggantikan `currentTimeMillis`. Jam dinding yang melompat mundur (sinkron waktu otomatis) membuat `cooldownUntil`/`touchMuteUntil` "di masa depan" sehingga mic seolah mati sementara.
+- **IPC sinkron ke aplikasi tujuan ditunda saat mengetik** (`HtmlKeyboardService`): `getCursorCapsMode()` (50 ms) dan `getTextBeforeCursor()` (120 ms) dulu jalan sesudah SETIAP huruf di main thread yang sama yang mengetik huruf berikutnya; kalau WhatsApp/Instagram sedang sibuk, huruf berikutnya telat. Sekarang dijalankan sekali, 300 ms sesudah berhenti mengetik (`TYPING_ACTIVE_MS`, `IDLE_SYNC_DELAY_MS`).
+- **`deaccent()` di-cache** (`index.html`): dipanggil untuk setiap kata kamus pribadi pada setiap huruf (2x) di thread JS; kini satu lookup Map.
+- **Mic mencoba start lagi** (4x: 250/600/1200/2500 ms) kalau `startNativeMic()` gagal sesaat (mis. keyboard cepat disembunyikan lalu ditampilkan), dan menampilkan pesan kalau tetap gagal. Dulu gagal diam-diam sampai mic dinyalakan ulang manual.
+- `tools/sim/run.sh` jalan juga di JDK tanpa `javac` terpisah.
+
 ## Yang berubah di v1.3.4
 - **Deteksi dikembalikan ke mesin bersih v1.1.3**, tanpa filter "Gitar saja" berbasis ambang volume mutlak (`G_MIN_PEAK`, `G_FAST_MIN_PEAK`, `G_SUSTAIN`, dsb. dari v1.3.x). Ambang volume itu tebakan dan di HP dengan gain mic berbeda bisa membuang atau menunda petikan sungguhan. Konsekuensinya: **suara orang/TV tidak lagi disaring khusus**.
 - **Tuts fungsi diamankan** (lihat `FUNCTIONAL_KEYS_STRICT`, `OVERTONE_*`, `HARMONIC_ECHO_*`). Sebelumnya `FUNCTIONAL_KEYS_STRICT=false` sehingga satu bacaan salah sudah cukup untuk mengubah Shift/mode/hapus.
