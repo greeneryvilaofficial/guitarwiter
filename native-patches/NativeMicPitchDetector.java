@@ -318,8 +318,89 @@ public class NativeMicPitchDetector {
                     && peak < minRmsSinceCommit * SAME_NOTE_VALLEY_RATIO) return true;
             return false;
         }
+        // Tuts FUNGSI (Shift/Hapus/?123/Emoji/Enter) yang jatuh pas di overtone nada yang barusan diketik
+        // (mis. A4=Shift adalah 3x D3='q', F#5=?123 adalah 2x F#4='j') hampir pasti dengungan/overtone,
+        // bukan niat menekan tuts itu: butuh petikan yang hampir sekeras petikan sebelumnya.
+        if (dt <= HARMONIC_ECHO_WINDOW_MS && "functional".equals(categoryOfIndex(idx)) && isHarmonicOf(lastCommitIdx, idx)) {
+            return peak < lastCommitPeak * HARMONIC_ECHO_PEAK;
+        }
         if (dt > ECHO_WINDOW_MS) return false;
         return peak < lastCommitPeak * ECHO_OTHER_NOTE_PEAK;
+    }
+
+    private static final long HARMONIC_ECHO_WINDOW_MS = 700;
+    private static final double HARMONIC_ECHO_PEAK = 0.60;
+
+    private static double noteFreq(int idx) {
+        return 440.0 * Math.pow(2.0, (BASE_MIDI + idx - 69) / 12.0);
+    }
+
+    /** true kalau nada highIdx jatuh pada kelipatan bulat (2..6) frekuensi nada lowIdx, toleransi 35 sen. */
+    private static boolean isHarmonicOf(int lowIdx, int highIdx) {
+        if (lowIdx < 0 || highIdx <= lowIdx) return false;
+        double ratio = noteFreq(highIdx) / noteFreq(lowIdx);
+        for (int k = 2; k <= 6; k++) {
+            if (Math.abs(1200.0 * Math.log(ratio / k) / Math.log(2)) < 35.0) return true;
+        }
+        return false;
+    }
+
+    // ---- PENGAMAN TUTS FUNGSI: apakah bacaan ini cuma OVERTONE dari nada yang lebih rendah? ----
+    // YIN kadang mengunci ke overtone (terutama nada bass lewat mic HP yang meredam frekuensi rendah). Untuk
+    // huruf akibatnya cuma huruf tetangga, tapi untuk Shift/Hapus/?123/Emoji/Enter akibatnya fatal (huruf
+    // jadi kapital, teks terhapus, keyboard pindah ke angka). Cek langsung SPEKTRUM: kalau di f/2..f/6
+    // (yang jatuh dekat pusat sebuah nada tuts) ada tenaga berarti, nada dasar yang sebenarnya ada di sana.
+    // Nada tinggi sungguhan (mis. A4 dipetik) tidak punya tenaga di 147 Hz, jadi tidak terkena.
+    // Kalau YIN sampai terkunci di overtone, nada dasarnya biasanya SANGAT lemah (-15..-25 dB), jadi ambang
+    // rasio rendah (0.02 = -17 dB); supaya derau tidak ikut, tenaga di f/k juga harus MENONJOL (puncak)
+    // dibanding frekuensi di kiri-kanannya dan hanya tenaga BARU sejak onset yang dihitung.
+    private static final double OVERTONE_VETO_RATIO = 0.005;     // tenaga baru di f/k >= 0.5% tenaga f (-23 dB) -> buang
+    private static final double OVERTONE_REDIRECT_RATIO = 0.25;  // >= 25% -> arahkan ke nada dasar
+    private static final double OVERTONE_PEAK_FACTOR = 8.0;      // f/k harus >= 8x tetangganya (bukan derau datar)
+    private final float[] onsetWin = new float[BUFFER_SAMPLES];   // jendela audio persis saat onset = keadaan SEBELUM petikan (thread rekam saja)
+    private boolean onsetWinValid = false;
+    private static final float[] HANN = new float[BUFFER_SAMPLES];
+    static {
+        for (int i = 0; i < BUFFER_SAMPLES; i++) HANN[i] = (float) (0.5 - 0.5 * Math.cos(2.0 * Math.PI * i / (BUFFER_SAMPLES - 1)));
+    }
+
+    private static double goertzelPower(float[] w, int n, double f, int sr) {
+        double omega = 2.0 * Math.PI * f / sr, coeff = 2.0 * Math.cos(omega), s1 = 0, s2 = 0;
+        for (int i = 0; i < n; i++) {
+            double s0 = w[i] * HANN[i] + coeff * s1 - s2;
+            s2 = s1; s1 = s0;
+        }
+        return s1 * s1 + s2 * s2 - coeff * s1 * s2;
+    }
+
+    /** 0 = aman, 1 = arahkan ke nada dasar (idxOut[0]), 2 = buang (kemungkinan overtone, nada dasar ambigu). */
+    private int overtoneVerdict(float[] w, int n, double freq, int[] idxOut) {
+        double pf = goertzelPower(w, n, freq, sampleRate);
+        if (!(pf > 0)) return 0;
+        double bestRatio = 0;
+        for (int k = 2; k <= 6; k++) {
+            double fk = freq / k;
+            if (fk < MIN_VALID_FREQ) break;
+            double midi = 69.0 + 12.0 * Math.log(fk / 440.0) / Math.log(2);
+            long rm = Math.round(midi);
+            int ni = (int) rm - BASE_MIDI;
+            if (ni < 0 || ni >= NOTE_COUNT || Math.abs((midi - rm) * 100.0) > 35.0) continue;
+            // Hanya tenaga BARU sejak onset yang dihitung: dengung nada sebelumnya yang masih berbunyi (mis. D3
+            // masih bergetar saat A4=Shift sengaja dipetik) sudah ada di jendela onset dan dikurangkan.
+            double added = goertzelPower(w, n, fk, sampleRate);
+            if (onsetWinValid) added -= goertzelPower(onsetWin, n, fk, sampleRate);
+            if (added <= 0) continue;
+            // Pembanding di luar lebar puncak jendela Hann (±7 bin ≈ ±82 Hz): di dalamnya nada dasar sendiri bocor.
+            double off = 7.0 * sampleRate / n;
+            double neighbor = goertzelPower(w, n, fk + off, sampleRate);
+            if (fk - off > 45.0) neighbor = Math.max(neighbor, goertzelPower(w, n, fk - off, sampleRate));
+            if (added < OVERTONE_PEAK_FACTOR * neighbor) continue;   // tidak menonjol = derau/hum, bukan nada dasar
+            double ratio = added / pf;
+            if (ratio > bestRatio) { bestRatio = ratio; idxOut[0] = ni; }
+        }
+        if (bestRatio >= OVERTONE_REDIRECT_RATIO) return 1;
+        if (bestRatio >= OVERTONE_VETO_RATIO) return 2;
+        return 0;
     }
 
     /** Kirim nada ke keyboard kecuali kalau ini gema dari petikan sebelumnya. true = terkirim. */
@@ -562,6 +643,7 @@ public class NativeMicPitchDetector {
                 if (rms > ONSET_RMS && rms > smoothedRms * ONSET_RATIO && now > cooldownUntil && now > touchMuteUntil) {
                     state = STATE_SAMPLING;
                     sampleTries = 0;
+                    System.arraycopy(window, 0, onsetWin, 0, BUFFER_SAMPLES); onsetWinValid = true;
                     candidateIdx = -1;
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;
@@ -592,7 +674,7 @@ public class NativeMicPitchDetector {
                             && fr.probability >= (fr.freq < FAST_MID_MAX_FREQ ? FAST_MIN_PROB_MID : FAST_MIN_PROB)
                             && isCategorySafe(fr.freq, fr.probability, fIdx, fCents)
                             && fCents[0] < FAST_MAX_CENTS
-                            && (!FUNCTIONAL_KEYS_STRICT || "letterOrSymbol".equals(categoryOfIndex(fIdx[0])))
+                            && (!FUNCTIONAL_KEYS_STRICT || !"functional".equals(categoryOfIndex(fIdx[0])))   // tanda baca/spasi tetap cepat
                             && fIdx[0] >= 0 && fIdx[0] < NOTE_COUNT) {
                         lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
                         emitNote(fIdx[0], fr.freq, onsetPeakRms, lastOnsetAt);
@@ -681,7 +763,20 @@ public class NativeMicPitchDetector {
                                 // umum), ATAU jatah percobaan sudah habis -- pakai bacaan
                                 // TERAKHIR yang lolos ini (lebih baik daripada nyerah total).
                                 lastLatencyMs = System.currentTimeMillis() - lastOnsetAt;
-                                emitNote(idxOut[0], r.freq, onsetPeakRms, lastOnsetAt);
+                                int commitIdx = idxOut[0];
+                                double commitFreq = r.freq;
+                                boolean dropIt = false;
+                                if ("functional".equals(categoryOfIndex(commitIdx))) {
+                                    int[] redir = new int[1];
+                                    int ov = overtoneVerdict(window, BUFFER_SAMPLES, commitFreq, redir);
+                                    if (ov == 1) { commitIdx = redir[0]; commitFreq = noteFreq(commitIdx); }
+                                    else if (ov == 2) dropIt = true;
+                                }
+                                if (dropIt) {
+                                    postFast(() -> { if (listener != null) listener.onEchoBlocked(false); });
+                                } else {
+                                    emitNote(commitIdx, commitFreq, onsetPeakRms, lastOnsetAt);
+                                }
                                 state = STATE_RELEASING;
                                 cooldownUntil = Math.max(now + COOLDOWN_MS, lastOnsetAt + MIN_COOLDOWN_FROM_ONSET_MS);
                                 releaseWaitUntil = now + MAX_RELEASE_WAIT_MS;
@@ -761,6 +856,7 @@ public class NativeMicPitchDetector {
                         && rms > recentMin * RETRIGGER_RATIO) {
                     state = STATE_SAMPLING;
                     sampleTries = 0;
+                    System.arraycopy(window, 0, onsetWin, 0, BUFFER_SAMPLES); onsetWinValid = true;
                     candidateIdx = -1;
                     candidateCount = 0;
                     sampleAt = now + SETTLE_MS;
@@ -899,7 +995,7 @@ public class NativeMicPitchDetector {
     // false = SEMUA tuts (shift, backspace, emoji, ?123, enter, tanda baca) diperlakukan sama
     // seperti nada biasa: langsung terdeteksi, termasuk lewat jalur cepat. true = tuts fungsi
     // dipersulit (3 bacaan sepakat, tidak dipaksa komit) untuk mencegah salah-picu.
-    private static final boolean FUNCTIONAL_KEYS_STRICT = false;
+    private static final boolean FUNCTIONAL_KEYS_STRICT = true;
 
     private void commit(int idx, double freq) {
         if (!PITCH_MODE_TOGGLE_KEYS && (idx == 38 || idx == 40)) return;

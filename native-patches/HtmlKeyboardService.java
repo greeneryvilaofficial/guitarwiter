@@ -11,6 +11,7 @@ import android.os.PersistableBundle;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.HapticFeedbackConstants;
+import android.media.AudioManager;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -514,6 +515,35 @@ public class HtmlKeyboardService extends InputMethodService {
             if (nativeMic != null) nativeMic.muteForTouch();   // hanya menulis field volatile -> aman di thread mana pun
         }
 
+        /**
+         * Satu panggilan per sentuhan tuts (cepat, 1x lompat JNI): bungkam mic + bunyi tuts + getar,
+         * persis cara Gboard -- bunyi memakai efek bawaan Android (AudioManager.playSoundEffect), yang
+         * langsung dimainkan sistem tanpa jeda WebAudio dan otomatis mengikuti "Suara sentuh" sistem.
+         * kind: 0 huruf/umum, 1 spasi, 2 hapus, 3 enter.
+         */
+        @JavascriptInterface
+        public void keyTap(final int kind, final boolean vibrate, final boolean sound, final int volPercent) {
+            if (nativeMic != null) nativeMic.muteForTouch();
+            if (sound) {
+                try {
+                    AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+                    if (am != null) {
+                        int fx = kind == 1 ? AudioManager.FX_KEYPRESS_SPACEBAR
+                               : kind == 2 ? AudioManager.FX_KEYPRESS_DELETE
+                               : kind == 3 ? AudioManager.FX_KEYPRESS_RETURN
+                               : AudioManager.FX_KEYPRESS_STANDARD;
+                        if (volPercent > 0) am.playSoundEffect(fx, Math.min(1f, volPercent / 100f));
+                        else am.playSoundEffect(fx);
+                    }
+                } catch (Throwable ignored) { }
+            }
+            if (vibrate) {
+                runOnUiThreadSafe(() -> {
+                    if (webView != null) webView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+                });
+            }
+        }
+
         /** Getaran halus saat tombol disentuh (Setelan: "Getaran keyboard"). Tidak butuh izin tambahan; mengikuti pengaturan getar sistem. */
         @JavascriptInterface
         public void haptic() {
@@ -612,6 +642,11 @@ public class HtmlKeyboardService extends InputMethodService {
                             return;
                         }
                     }
+                    // Nada ini diproses di JS (tuts fungsi / tanda baca / peta belum siap) dan bisa mengubah mode
+                    // (?123, Shift, emoji): peta lama di Java JANGAN dipakai untuk nada berikutnya sampai JS
+                    // mengirim peta baru, kalau tidak huruf berikutnya diketik dengan peta mode lama lalu
+                    // dihapus-ketik-ulang (berkedip / bisa salah huruf).
+                    noteMapReady = false;
                     webView.evaluateJavascript(
                             "window.onNativePitchIndex && window.onNativePitchIndex(" + idx + "," + freq + ")", null);
                 }
@@ -647,8 +682,19 @@ public class HtmlKeyboardService extends InputMethodService {
                     // Sengaja kosong: bunyi non-nada (kick/tap) diabaikan diam-diam, tanpa pesan status.
                 }
 
+                // Pesan diagnostik (hanya terlihat kalau "Info nada" aktif) dibatasi 1 per 400 ms supaya bunyi latar
+                // yang terus memicu onset tidak membanjiri thread JS -- thread yang sama dipakai untuk ketikan.
+                private long lastDiagAt = 0;
+                private boolean diagAllowed() {
+                    long t = android.os.SystemClock.uptimeMillis();
+                    if (t - lastDiagAt < 400) return false;
+                    lastDiagAt = t;
+                    return true;
+                }
+
                 @Override
                 public void onEchoBlocked(boolean sameNote) {
+                    if (!diagAllowed()) return;
                     runOnUiThreadSafe(() -> webView.evaluateJavascript(
                             "window.onNativeEchoBlocked && window.onNativeEchoBlocked(" + sameNote + ")", null));
                 }
