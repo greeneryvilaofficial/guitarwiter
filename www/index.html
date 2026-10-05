@@ -3837,21 +3837,24 @@
         // fundamental hipotetis: 1.5x dan 2.5x rawFreq. Nada huruf asli
         // TIDAK punya energi di situ; nada angka dengan fundamental lemah punya.
         // HARUS sinkron dengan yinDetect() di NativeMicPitchDetector.java.
-        const aR = ampWin(buf, rawFreq, sampleRate);
+        // [LABEL v1.3.8 / ZONA ANGKA] pembanding = harmonik terkuat (rawFreq atau 2x-nya), bukan fundamental saja
+        const aR = Math.max(ampWin(buf, rawFreq, sampleRate), ampWin(buf, rawFreq*2, sampleRate));
         const aH = ampWin(buf, halfFreq, sampleRate);
         // v1.3.7: turun oktaf butuh bukti harmonik ganjil (1.5x / 2.5x); resonansi badan gitar tidak punya.
         const a15 = ampWin(buf, rawFreq*1.5, sampleRate);
-        const odd = a15 >= aR*0.12 || ampWin(buf, rawFreq*2.5, sampleRate) >= aR*0.08;
+        const a25 = ampWin(buf, rawFreq*2.5, sampleRate);
+        const odd = a15 >= aR*0.12 || a25 >= aR*0.08;
         let down = aH >= aR*0.6 && odd;
         if(!down && a15 >= aR*0.25){
-          down = aH >= aR*0.15 || ampWin(buf, rawFreq*2.5, sampleRate) >= aR*0.1;
+          down = aH >= aR*0.15 || a25 >= aR*0.1;
         }
         if(down) finalFreq = halfFreq;
       } else {
         const magAtFreq = goertzelMag(buf, rawFreq, sampleRate);
         const magAtHalf = goertzelMag(buf, halfFreq, sampleRate);
         if(magAtHalf >= magAtFreq*0.6){
-          const aR2 = ampWin(buf, rawFreq, sampleRate);
+          // [LABEL v1.3.8 / ZONA q-p] pembanding = harmonik terkuat
+          const aR2 = Math.max(ampWin(buf, rawFreq, sampleRate), ampWin(buf, rawFreq*2, sampleRate));
           if(ampWin(buf, rawFreq*1.5, sampleRate) >= aR2*0.12 || ampWin(buf, rawFreq*2.5, sampleRate) >= aR2*0.08) finalFreq = halfFreq;
         }
       }

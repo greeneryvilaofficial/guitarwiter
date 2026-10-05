@@ -3,7 +3,7 @@
 // dimuat walau tanpa koneksi internet (penting karena WebView keyboard
 // akan sering dibuka tanpa jaringan aktif).
 
-const CACHE_NAME = 'genjreng-ketik-cache-v22'; // v1.3.7: turun oktaf butuh harmonik ganjil (p/a/s tidak lagi jadi angka)
+const CACHE_NAME = 'genjreng-ketik-cache-v23'; // v1.3.8: pembanding harmonik terkuat, zona rendah lebih cepat; v1.3.7: turun oktaf butuh harmonik ganjil (p/a/s tidak lagi jadi angka)
 const CORE_ASSETS = [
   'index.html',
   'manifest.json',
