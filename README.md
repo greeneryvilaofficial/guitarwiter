@@ -69,6 +69,12 @@ Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
 | `SAME_NOTE_WINDOW_MS`, `SAME_NOTE_VALLEY_RATIO` | nada SAMA dalam jendela panjang harus didahului lembah beneran (puncak >= 1.8x level terpelan sejak komit terakhir) |
 | `RELEASE_RMS` (0.009) | sengaja di bawah `ONSET_RMS` (0.012): hysteresis supaya riak ring tidak melepas kunci lalu dibaca petikan baru |
 
+## Yang berubah di v1.3.8 (baris angka & respons nada rendah)
+- **Peta zona tuts** ditambahkan di atas `BASE_MIDI` di `NativeMicPitchDetector.java` (ZONA ANGKA idx 0-9, q-p idx 10-19, a-d idx 20-22, TENGAH, FUNGSI) dan blok kode penting diberi label `[LABEL ...]`.
+- **Bug turun-oktaf**: pembanding energi sekarang harmonik terkuat (nada terbaca atau 2x-nya), bukan fundamental saja. Dulu fundamental ~0 membuat huruf e-p salah turun jadi angka (profil fundamental nol: 31 dari 240 gagal -> 0 dari 240). Diterapkan di Java dan `index.html`.
+- **Lebih responsif**: `LOW_ZONE_MIN_AGE_MS` 66 -> 50 ms dan `LOW_ZONE_CONFIRM_CORRECTED` 3 -> 2. Latensi angka & q-o di simulasi bersih turun sekitar 87 -> 71 ms (satu hop).
+- Skenario regresi lama identik dengan v1.3.7. Semua angka dari simulasi sintetis, bukan gitar/HP asli.
+
 ## Yang berubah di v1.3.7 (tuts p, a, s kurang responsif)
 - **Penyebab**: B3/C4/C#4 (p, a, s) setengah frekuensinya jatuh di 123-139 Hz, zona angka. Energi di sana dari resonansi badan gitar/dengung mic ikut dianggap bukti "nada ini sebenarnya satu oktaf lebih rendah", lalu bacaan diturunkan jadi angka dan dibuang di mode huruf (terasa tuts tidak merespons).
 - **Perbaikan** (`yinCore`, juga di `index.html`): turun oktaf sekarang WAJIB punya harmonik ganjil (1.5x atau 2.5x frekuensi terbaca; `ODD_EVIDENCE_*`). Nada rendah sungguhan punya, resonansi tidak.
