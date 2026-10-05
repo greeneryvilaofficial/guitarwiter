@@ -79,6 +79,16 @@ public class NativeMicPitchDetector {
     // diperbarui tiap ~16.6ms, bukan tiap ~93ms. Lebar jendela YIN (jadi tetap
     // akurat buat nada rendah) tidak berubah sama sekali -- yang berubah cuma
     // SESERING APA jendela itu "digeser dan dibaca ulang".
+    // =====================================================================================
+    // [PETA ZONA TUTS] -- indeks tuts (0..43) = MIDI - BASE_MIDI, nada & frekuensi sama dengan label di keyboard.
+    // Tiap blok kode di bawah diberi label zona ini supaya mudah dilacak per tempat nadanya.
+    //   ZONA ANGKA   idx  0- 9  tuts 1 2 3 4 5 6 7 8 9 0     E2 ..C#3  82.4-138.6 Hz  (fundamental lemah -> sering terbaca 1 oktaf di atas)
+    //   ZONA q-p     idx 10-19  tuts q w e r t y u i o p     D3 ..B3  146.8-246.9 Hz  (rawan salah turun-oktaf jadi angka)
+    //   ZONA a-d     idx 20-22  tuts a s d                   C4 ..D4  261.6-293.7 Hz  (masih zona rendah < 300 Hz)
+    //   ZONA TENGAH  idx 23-28  tuts f g h j k l             D#4..G#4 311-415 Hz     (jalur cepat)
+    //   FUNGSI       idx 29 Shift, 37 Hapus, 38 ?123, 40 Emoji, 43 Enter  (ketat, 3 bacaan sepakat)
+    //   z-m idx 30-36, koma idx 39, spasi idx 41, titik idx 42  (tinggi, jalur cepat)
+    // =====================================================================================
     private static final int BASE_MIDI = 40; // E2 -- HARUS sama persis dengan BASE_MIDI di index.html
     private static final int NOTE_COUNT = 44; // HARUS sama persis dengan NOTE_COUNT di index.html
     // Diturunkan lagi dari 140 -> 70: sesudah RETRIGGER ditambahkan (lihat di
@@ -218,13 +228,13 @@ public class NativeMicPitchDetector {
     // data lebih banyak (umur minimum sejak onset) dan minta bacaan yang sepakat lebih banyak;
     // bacaan yang barusan dikoreksi oktaf oleh Goertzel dituntut paling banyak.
     private static final double LOW_ZONE_MAX_FREQ = 300.0;
-    private static final long LOW_ZONE_MIN_AGE_MS = 66;
+    private static final long LOW_ZONE_MIN_AGE_MS = 50;   // v1.3.8: dulu 66. Angka E2-C#3 (tuts 1-0) & q-o: bacaan pertama boleh dipakai 1 hop lebih awal (simulasi: akurasi tetap 0 gagal/240)
     // Untuk bacaan >= LOW_ZONE_FAST_AGE_MIN_FREQ (tuts a,s,d: C4-D4) cukup 50ms (1 hop lebih cepat). Di bawah itu
     // (angka, q-p, o,p) TETAP 66ms: di situlah kesalahan oktaf-turun terjadi kalau terlalu cepat (diuji simulasi).
     private static final long LOW_ZONE_FAST_AGE_MS = 50;
     private static final double LOW_ZONE_FAST_AGE_MIN_FREQ = 240.0;   // v1.3.7: dulu 255 -> B3 (p) menunggu 66 ms, kini 50 ms seperti a, s
     private static final int LOW_ZONE_CONFIRM = 2;
-    private static final int LOW_ZONE_CONFIRM_CORRECTED = 3;
+    private static final int LOW_ZONE_CONFIRM_CORRECTED = 2;   // v1.3.8: dulu 3. Bacaan turun-oktaf kini sudah dijaga bukti harmonik ganjil, jadi 2 bacaan sepakat cukup
     // ---- BACAAN POTONGAN-SESUDAH-PETIKAN ("tail read") ----
     // Masalah: window = 4096 sampel TERBARU (~85ms). Di 17-50ms pertama sesudah petikan, 60-80% isinya
     // masih sunyi/derau SEBELUM nada, sehingga CMNDF YIN tidak turun di bawah YIN_THRESHOLD (keyakinan
@@ -713,7 +723,7 @@ public class NativeMicPitchDetector {
                 // fase SAMPLING (baik pas nunggu SETTLE_MS maupun pas benar-benar
                 // mengukur), bukan cuma diambil dari satu hop pemicu onset saja.
                 if (rms > onsetPeakRms) onsetPeakRms = rms;
-                // JALUR CEPAT: satu bacaan awal di hop pertama sesudah onset (lihat FAST_*).
+                // [LABEL JALUR CEPAT / ZONA TENGAH & atas, >= 300 Hz] satu bacaan awal di hop pertama sesudah onset (lihat FAST_*).
                 if (!retrigOnset && !fastTried && now >= fastAt && now < sampleAt) {
                     fastTried = true;
                     PitchReading fr = yinDetect(window, BUFFER_SAMPLES, sampleRate);
@@ -810,6 +820,7 @@ public class NativeMicPitchDetector {
                             // yang paling ambigu butuh 3 -- lihat catatan requiredConfirm di
                             // deklarasi candidateIdx/candidateCount di atas.
                             int requiredConfirm = centsOffOut[0] < 12 ? 1 : (centsOffOut[0] < 22 ? 2 : 3);
+                            // [LABEL ZONA ANGKA, q-p, a-d] < 300 Hz = zona rendah: butuh bacaan sepakat + umur minimum (LOW_ZONE_*)
                             boolean lowZone = r.freq < LOW_ZONE_MAX_FREQ;
                             if (lowZone) {
                                 requiredConfirm = Math.max(requiredConfirm,
@@ -818,6 +829,7 @@ public class NativeMicPitchDetector {
                             boolean ageOk = !lowZone || (now - lastOnsetAt) >= (r.freq >= LOW_ZONE_FAST_AGE_MIN_FREQ ? LOW_ZONE_FAST_AGE_MS : LOW_ZONE_MIN_AGE_MS);
                             // Tuts fungsi (shift/backspace/enter) mengubah/menghapus teks: minta 3 bacaan
                             // sepakat + umur minimum, dan JANGAN dipaksa komit saat jatah percobaan habis.
+                            // [LABEL FUNGSI] Shift/Hapus/?123/Emoji/Enter
                             boolean functionalKey = FUNCTIONAL_KEYS_STRICT && "functional".equals(categoryOfIndex(idxOut[0]));
                             if (functionalKey) {
                                 requiredConfirm = Math.max(requiredConfirm, 3);
@@ -1290,14 +1302,18 @@ public class NativeMicPitchDetector {
                 // sehingga tuts B3/C4/C#4 (p, a, s: senar B terbuka, fret 1, fret 2; setengahnya jatuh di
                 // 123-139 Hz) dan q-i sering "turun" jadi angka lalu dibuang di mode huruf = terasa tidak
                 // responsif. Nada rendah SUNGGUHAN selalu punya harmonik ke-3 (1.5x) atau ke-5 (2.5x).
-                double aR = ampWin(buf, size, rawFreq, sampleRate);
+                // [LABEL v1.3.8 / ZONA ANGKA] Pembanding = harmonik terkuat dari nada terbaca (bukan fundamental
+                // saja). Di mic HP fundamental huruf e-p sering hampir nol; kalau dipakai sebagai pembanding,
+                // aH >= aR*0.6 selalu lolos dan huruf salah turun jadi angka.
+                double aR0 = ampWin(buf, size, rawFreq, sampleRate);
+                double aR = Math.max(aR0, ampWin(buf, size, rawFreq * 2, sampleRate));
                 double aH = ampWin(buf, size, halfFreq, sampleRate);
                 double a15 = ampWin(buf, size, rawFreq * 1.5, sampleRate);
-                boolean odd = a15 >= aR * ODD_EVIDENCE_15
-                        || ampWin(buf, size, rawFreq * 2.5, sampleRate) >= aR * ODD_EVIDENCE_25;
+                double a25 = ampWin(buf, size, rawFreq * 2.5, sampleRate);
+                boolean odd = a15 >= aR * ODD_EVIDENCE_15 || a25 >= aR * ODD_EVIDENCE_25;
                 boolean down = aH >= aR * 0.6 && (odd || !ODD_EVIDENCE_REQUIRED);
                 if (!down && a15 >= aR * 0.25) {
-                    down = aH >= aR * 0.15 || ampWin(buf, size, rawFreq * 2.5, sampleRate) >= aR * 0.1;
+                    down = aH >= aR * 0.15 || a25 >= aR * 0.1;
                 }
                 if (down) finalFreq = halfFreq;
             } else {
@@ -1307,7 +1323,8 @@ public class NativeMicPitchDetector {
                     // v1.3.7: sama seperti zona angka, turun oktaf hanya kalau ada harmonik ganjil dari nada setengahnya.
                     if (!ODD_EVIDENCE_REQUIRED) finalFreq = halfFreq;
                     else {
-                        double aR = ampWin(buf, size, rawFreq, sampleRate);
+                        // [LABEL v1.3.8 / ZONA q-p] pembanding = harmonik terkuat (lihat zona angka)
+                        double aR = Math.max(ampWin(buf, size, rawFreq, sampleRate), ampWin(buf, size, rawFreq * 2, sampleRate));
                         if (ampWin(buf, size, rawFreq * 1.5, sampleRate) >= aR * ODD_EVIDENCE_15
                                 || ampWin(buf, size, rawFreq * 2.5, sampleRate) >= aR * ODD_EVIDENCE_25) finalFreq = halfFreq;
                     }
