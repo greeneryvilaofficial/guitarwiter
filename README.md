@@ -73,6 +73,7 @@ Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
 - **Peta zona tuts** ditambahkan di atas `BASE_MIDI` di `NativeMicPitchDetector.java` (ZONA ANGKA idx 0-9, q-p idx 10-19, a-d idx 20-22, TENGAH, FUNGSI) dan blok kode penting diberi label `[LABEL ...]`.
 - **Bug turun-oktaf**: pembanding energi sekarang harmonik terkuat (nada terbaca atau 2x-nya), bukan fundamental saja. Dulu fundamental ~0 membuat huruf e-p salah turun jadi angka (profil fundamental nol: 31 dari 240 gagal -> 0 dari 240). Diterapkan di Java dan `index.html`.
 - **Lebih responsif**: `LOW_ZONE_MIN_AGE_MS` 66 -> 50 ms dan `LOW_ZONE_CONFIRM_CORRECTED` 3 -> 2. Latensi angka & q-o di simulasi bersih turun sekitar 87 -> 71 ms (satu hop).
+- **Versi Info Aplikasi**: langkah baru di workflow menjalankan `native-patches/insert_version.py`, yang menimpa `versionName`/`versionCode` di `android/app/build.gradle` dengan versi `package.json` (1.3.8 -> versionCode 10308), jadi Info Aplikasi tidak lagi menampilkan 1.0 bawaan Capacitor. Tiap rilis cukup ubah `version` di `package.json`.
 - Skenario regresi lama identik dengan v1.3.7. Semua angka dari simulasi sintetis, bukan gitar/HP asli.
 
 ## Yang berubah di v1.3.7 (tuts p, a, s kurang responsif)
