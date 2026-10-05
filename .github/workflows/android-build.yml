@@ -113,6 +113,9 @@ jobs:
       - name: Jadikan build debug non-debuggable (secepat release)
         run: python3 native-patches/insert_perf.py android/app/build.gradle
 
+      - name: Samakan versi Info Aplikasi dengan package.json (bukan 1.0 bawaan Capacitor)
+        run: python3 native-patches/insert_version.py android/app/build.gradle package.json
+
       - name: Decode keystore dari secret (kalau ada)
         if: env.KEYSTORE_BASE64 != ''
         run: |
