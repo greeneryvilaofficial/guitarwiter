@@ -501,6 +501,16 @@ public class NativeMicPitchDetector {
     private volatile long lastLatencyMs = 0;
     public long getLastLatencyMs() { return lastLatencyMs; }
 
+    // ===== [LABEL MUSE WONDER / HUMMING 30 DETIK] dipakai KeyboardBridge (getLast30SecAudio) =====
+    private final HumRecorder hum = new HumRecorder();
+    /** Mulai merekam 30 dtk terakhir. false kalau mic native belum jalan (tidak ada audio untuk direkam). */
+    public boolean startHumCapture() { if (!running.get()) return false; hum.start(sampleRate); return true; }
+    public void stopHumCapture() { hum.stop(); }
+    public boolean isHumCapturing() { return hum.isOn(); }
+    public int humSeconds() { return hum.seconds(); }
+    /** WAV mono 16-bit ~16 kHz, maksimum 30 dtk terakhir. */
+    public byte[] getLastHumWav() { return hum.wav(); }
+
     private volatile int kickLevel = 1;
 
     public void setKickLevel(int level) {
@@ -578,6 +588,7 @@ public class NativeMicPitchDetector {
     }
 
     public synchronized void stop() {
+        hum.stop();   // [LABEL MUSE WONDER] mic berhenti -> berhenti merekam humming
         running.set(false);
         if (audioRecord != null) {
             try {
@@ -666,6 +677,7 @@ public class NativeMicPitchDetector {
             int read = rec.read(hopRaw, 0, hop);
             if (read < 0) break;       // ERROR_INVALID_OPERATION / ERROR_DEAD_OBJECT dst
             if (read == 0) continue;
+            hum.feed(hopRaw, read);    // [LABEL MUSE WONDER] rekam 30 dtk terakhir; no-op kalau tidak sedang merekam
 
             // Geser isi window ke kiri sejauh "read" sampel, lalu tempel sampel
             // baru di ujung -- window sesudah ini berisi BUFFER_SAMPLES sampel

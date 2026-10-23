@@ -4,6 +4,7 @@ import android.inputmethodservice.InputMethodService;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
+import android.util.Base64;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -420,8 +421,60 @@ public class HtmlKeyboardService extends InputMethodService {
         wv.post(() -> wv.evaluateJavascript(js, null));
     }
 
+    // ===== [LABEL SAM 3.1 / WAVEFORM] kabari komponen waveform di index.html tiap nada valid =====
+    // Bawaan MATI (waveformHook=false) supaya jalur ketik tidak kena biaya tambahan; JS menyalakannya lewat
+    // AndroidKeyboard.setWaveformHook(true) hanya saat fitur AI aktif. Nada sudah lolos semua saringan detektor
+    // (onPitchIndex hanya dipanggil untuk nada valid), jadi tidak perlu ambang amplitudo lagi.
+    private volatile boolean waveformHook = false;
+    private void notifyWaveform(int idx, double freq) {
+        if (!waveformHook || webView == null) return;
+        webView.evaluateJavascript("window.onWaveformClick && window.onWaveformClick(" + freq + "," + idx + ")", null);
+    }
+
+    // ===== [LABEL MUSE SPARK / INTENT] buka aplikasi (MainActivity) dan suruh Spark mengubah tab =====
+    /** true = picu Spark lewat Intent ke MainActivity; false = jalankan di WebView keyboard ini (tidak menarik pengguna keluar dari aplikasi yang sedang diketik). */
+    private static final boolean SPARK_USE_INTENT = true;
+    private static final String EXTRA_TRIGGER_SPARK = "trigger_spark";   // HARUS sama dengan MainActivity
+    private void launchSpark(String preset) {
+        if (preset == null || preset.length() > 40) return;
+        if (SPARK_USE_INTENT) {
+            Intent intent = new Intent(this, MainActivity.class);
+            // Dari Service WAJIB NEW_TASK (tanpa ini startActivity melempar AndroidRuntimeException); SINGLE_TOP + CLEAR_TOP
+            // supaya MainActivity yang sudah hidup menerima onNewIntent, bukan dibuat ulang.
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            intent.putExtra(EXTRA_TRIGGER_SPARK, preset);
+            try { startActivity(intent); } catch (Throwable ignored) { }
+        } else if (webView != null) {
+            webView.evaluateJavascript("window.onSparkTrigger && window.onSparkTrigger(" + JSONObject.quote(preset) + ")", null);
+        }
+    }
+
     /** Objek yang diekspos ke JavaScript lewat window.AndroidKeyboard.* */
     private class KeyboardBridge {
+
+        // ===== [LABEL MUSE SPARK / INTENT] JS -> native =====
+        /** preset: "bluesy" dst. Dipanggil JS saat perintah/ chord khusus dikenali. */
+        @JavascriptInterface
+        public void triggerSpark(final String preset) { runOnUiThreadSafe(() -> launchSpark(preset)); }
+
+        // ===== [LABEL SAM 3.1 / WAVEFORM] =====
+        @JavascriptInterface
+        public void setWaveformHook(boolean on) { waveformHook = on; }
+
+        // ===== [LABEL MUSE WONDER / HUMMING 30 DETIK] =====
+        /** Mulai merekam 30 dtk terakhir dari mic native. false = mic native belum jalan / tidak ada izin. */
+        @JavascriptInterface
+        public boolean startHumCapture() { return nativeMic != null && nativeMic.startHumCapture(); }
+        @JavascriptInterface
+        public void stopHumCapture() { if (nativeMic != null) nativeMic.stopHumCapture(); }
+        @JavascriptInterface
+        public int humSeconds() { return nativeMic == null ? 0 : nativeMic.humSeconds(); }
+        /** WAV (mono 16-bit ~16 kHz, <= 30 dtk) sebagai base64 tanpa pembungkus baris; "" bila belum ada rekaman. */
+        @JavascriptInterface
+        public String getLast30SecAudio() {
+            if (nativeMic == null || nativeMic.humSeconds() <= 0) return "";
+            return Base64.encodeToString(nativeMic.getLastHumWav(), Base64.NO_WRAP);
+        }
 
         @JavascriptInterface
         public void commitText(final String text) {
@@ -656,6 +709,7 @@ public class HtmlKeyboardService extends InputMethodService {
                             webView.evaluateJavascript(
                                     "window.onNativePitchCommitted && window.onNativePitchCommitted("
                                             + idx + "," + freq + "," + JSONObject.quote(direct) + "," + nativeMic.getLastLatencyMs() + ")", null);
+                            notifyWaveform(idx, freq);   // [LABEL SAM 3.1 / WAVEFORM] sesudah huruf terketik, bukan sebelum
                             return;
                         }
                     }
@@ -666,6 +720,7 @@ public class HtmlKeyboardService extends InputMethodService {
                     noteMapReady = false;
                     webView.evaluateJavascript(
                             "window.onNativePitchIndex && window.onNativePitchIndex(" + idx + "," + freq + ")", null);
+                    notifyWaveform(idx, freq);       // [LABEL SAM 3.1 / WAVEFORM]
                 }
                 @Override
                 public void onOutOfRange(double freq) {
