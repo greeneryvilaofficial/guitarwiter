@@ -69,6 +69,31 @@ Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
 | `SAME_NOTE_WINDOW_MS`, `SAME_NOTE_VALLEY_RATIO` | nada SAMA dalam jendela panjang harus didahului lembah beneran (puncak >= 1.8x level terpelan sejak komit terakhir) |
 | `RELEASE_RMS` (0.009) | sengaja di bawah `ONSET_RMS` (0.012): hysteresis supaya riak ring tidak melepas kunci lalu dibaca petikan baru |
 
+## Yang berubah di v1.4.0 (suara petikan dihapus + modul AI Muse)
+- **Suara petikan gitar saat mengetik dihapus** (v1.3.9): kode, setelan "Suara petikan gitar" dan "Volume petikan" sudah tidak ada. Suara klik lama tetap seperti semula.
+- **Modul AI**, semuanya **bawaan MATI** (`prefs.ai=false`, Setelan → Eksperimental → "Fitur AI (Muse)"); selama mati tidak ada skrip AI dimuat dan tidak ada panggilan jaringan. Panel dibuka dari Setelan → "Panel AI (Muse)".
+
+| Fitur | Lokasi kode | Isi |
+|---|---|---|
+| Inti bersama | `www/ai/ai-core.js` | konfigurasi, pemanggil HTTP aman (timeout, tanpa throw), model tab + validasi, undo, tab ASCII |
+| Muse Spark | `www/ai/editor.js`, blok `[LABEL MUSE SPARK]` di `index.html`, `[LABEL MUSE SPARK / INTENT]` di `HtmlKeyboardService.java` + `MainActivity.java` | perintah ("bikin lebih bluesy") -> tab aktif langsung diubah; `window.makeItBluesy()` |
+| Muse Wonder | `www/ai/generate-full.js`, `[LABEL MUSE WONDER]` di `index.html`, `NativeMicPitchDetector.java` + `HumRecorder.java` + bridge `getLast30SecAudio()` | humming 30 dtk -> tab lagu ~3 menit; `window.generateFullSong()` |
+| SAM 3.1 | `www/ai/waveform.js`, `[LABEL SAM 3.1 / WAVEFORM]` di `HtmlKeyboardService.java` | segmentasi di atas waveform; native memanggil `window.onWaveformClick(freq, idx)` |
+| Muse Image | `www/ai/waveform.js` | sampul dari deskripsi (hanya `https://` atau PNG base64) |
+
+- **Endpoint**: alamat `https://api.meta.ai/v1/chat` (Spark) dan `https://api.meta.ai/muse/wonder` (Wonder) berasal dari spesifikasi pemilik aplikasi dan **belum diverifikasi**. SAM dan Image belum punya endpoint (kosong = tidak aktif). Ganti lewat `GWAI.setConfig({services:{...}})`. Format request/respons di modul adalah **kontrak adaptor**, bukan spesifikasi resmi vendor; sesuaikan lewat `GWAI.hooks.<layanan>.mapRequest/mapResponse`.
+- **Kunci API** dibaca dari `localStorage['meta_key']`. Kunci di aplikasi klien bisa diekstrak; untuk rilis publik pakai proxy server sendiri.
+- Jawaban AI selalu **divalidasi** (senar 1-6, fret 0-24, MIDI 40..83); jawaban rusak -> tab TIDAK diubah. Keluaran ke layar lewat `textContent`.
+- **Intent Spark**: `AndroidKeyboard.triggerSpark('bluesy')` membuka `MainActivity` (flag `NEW_TASK|SINGLE_TOP|CLEAR_TOP`) dan menjalankan `window.onSparkTrigger('bluesy')`. Ubah `SPARK_USE_INTENT=false` agar Spark jalan di WebView keyboard tanpa membuka aplikasi. **Trigger "chord khusus" belum ada**: detektor ini monofonik (satu nada), tidak bisa mengenali chord.
+- `HumRecorder.java` baru (disalin oleh langkah workflow baru). Rekaman 30 dtk mono 16-bit ~14,7-16 kHz (~0,9 MB) hanya di memori dan hanya selama rekaman aktif.
+- Uji: `node tools/ai-test.js` (30 pemeriksaan, fetch dan native ditiru). `privacy-policy.md` ditambah bagian 6.
+
+## Yang berubah di v1.3.9 (suara petikan gitar per tuts)
+- Tiap tuts yang disentuh JARI berbunyi petikan gitar pada nada persis label di bawah tuts (E2..B5, 44 tuts, frekuensi = `dataset.freq`). Satu pendengar `pointerdown` untuk semua tuts, di blok `[LABEL v1.3.9 / SUARA PETIKAN GITAR PER TUTS]` dalam `index.html`.
+- Sintesis aditif di WebAudio (harmonik 1-12, harmonik tinggi meluruh lebih cepat, ketukan pick), buffer di-cache per nada dan disiapkan di waktu senggang. Diuji dari kode sumber: 44 dari 44 nada tepat dalam +-6 sen.
+- Setelan baru di "Pengetikan tombol": **Suara petikan gitar** (bawaan nyala) dan **Volume petikan**. Suara klik lama tetap terpisah (bawaan mati).
+- Nada dari mic (gitar asli) sengaja TIDAK dibunyikan ulang. Selama petikan terdengar, mic dibungkam sekitar 600 ms lewat `touchMute` agar speaker tidak terdengar mic dan jadi huruf hantu.
+
 ## Yang berubah di v1.3.8 (baris angka & respons nada rendah)
 - **Peta zona tuts** ditambahkan di atas `BASE_MIDI` di `NativeMicPitchDetector.java` (ZONA ANGKA idx 0-9, q-p idx 10-19, a-d idx 20-22, TENGAH, FUNGSI) dan blok kode penting diberi label `[LABEL ...]`.
 - **Bug turun-oktaf**: pembanding energi sekarang harmonik terkuat (nada terbaca atau 2x-nya), bukan fundamental saja. Dulu fundamental ~0 membuat huruf e-p salah turun jadi angka (profil fundamental nol: 31 dari 240 gagal -> 0 dari 240). Diterapkan di Java dan `index.html`.
