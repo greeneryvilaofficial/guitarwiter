@@ -84,6 +84,11 @@ jobs:
           mkdir -p android/app/src/main/java/com/keyboardkustom/app
           cp native-patches/NativeMicPitchDetector.java android/app/src/main/java/com/keyboardkustom/app/NativeMicPitchDetector.java
 
+      - name: Tempel HumRecorder.java (rekam humming 30 detik untuk Muse Wonder)
+        run: |
+          set -e
+          cp native-patches/HumRecorder.java android/app/src/main/java/com/keyboardkustom/app/HumRecorder.java
+
       - name: Tempel MainActivity.java (versi yang minta izin mikrofon)
         run: |
           set -e
