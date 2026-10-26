@@ -47,7 +47,7 @@ Guitarwiter processes everything on your device. The microphone (RECORD_AUDIO) i
 
 ## 6. Fitur AI opsional (Setelan → Eksperimental → "Fitur AI (Muse)")
 Bawaannya **mati**. Selama mati, tidak ada kode AI yang dimuat dan tidak ada data yang dikirim. Setelah Anda menyalakannya dan mengisi layanan yang Anda pilih:
-- **Ubah tab dengan perintah**: teks perintah (mis. "bikin lebih bluesy"), chord yang Anda ketik, dan tab yang sedang aktif dikirim ke layanan teks yang Anda atur.
+- **Ubah tab dengan perintah**: teks perintah (mis. "bikin lebih bluesy") dan tab yang sedang aktif dikirim ke layanan teks yang Anda atur.
 - **Humming jadi lagu**: setelah Anda menekan tombolnya, aplikasi merekam **30 detik terakhir** dari mikrofon (hanya di memori, tidak disimpan ke penyimpanan) dan mengirimnya ke layanan lagu yang Anda atur. Rekaman dibuang dari memori saat selesai atau dibatalkan.
 - **Segmentasi dan sampul**: rekaman humming atau deskripsi sampul dikirim ke layanan segmentasi/gambar yang Anda atur, hanya saat Anda menekan tombolnya.
 - Kunci API dibaca dari penyimpanan lokal perangkat (`meta_key`). Data yang dikirim tunduk pada kebijakan penyedia layanan yang Anda pilih. Hapus kunci dan matikan fitur ini kapan saja.
