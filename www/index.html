@@ -4731,13 +4731,14 @@
   var loaded = false, loading = null, panel = null, wf = null, wfCanvas = null;
   function aiOn(){ try{ return JSON.parse(localStorage.getItem(PREFS_KEY) || '{}').ai === true; }catch(e){ return false; } }
   function G(){ return window.GWAI; }
+  function load_ok(){ if(!G()){ var k = document.getElementById('gwai-keystat'); if(k) k.textContent = 'Modul AI belum dimuat; tunggu sebentar lalu coba lagi.'; return false; } return true; }
   function nat(){ try{ return window.AndroidKeyboard || null; }catch(e){ return null; } }
   function $(id){ return document.getElementById(id); }
   var MSG = { 'not-configured':'Belum diatur: isi endpoint & kunci (kunci dibaca dari localStorage "meta_key").',
     'no-active-tab':'Belum ada tab aktif.', 'busy':'Masih memproses perintah sebelumnya.', 'timeout':'Waktu habis.', 'network':'Gagal terhubung ke layanan.',
     'no-native-mic':'Fitur ini butuh keyboard Android (mic native).', 'mic-not-running':'Mic native belum menyala / izin mikrofon belum diberikan.',
     'no-audio':'Belum ada rekaman humming.', 'tab-not-json':'Jawaban AI bukan tab yang valid; tab tidak diubah.', 'tab-shape':'Jawaban AI bukan tab yang valid; tab tidak diubah.',
-    'tab-empty':'Jawaban AI tidak berisi nada yang valid; tab tidak diubah.', 'job-failed':'Layanan gagal membuat lagu.', 'bad-wav':'Rekaman tidak terbaca.', 'bad-image':'Gambar dari layanan tidak valid.' };
+    'tab-empty':'Jawaban AI tidak berisi nada yang valid; tab tidak diubah.', 'job-failed':'Layanan gagal membuat lagu.', 'bad-chord':'Chord hanya boleh huruf, angka, # / + - , . dan spasi (maks 80 karakter).', 'bad-answer':'Jawaban AI tidak bisa dibaca; tidak ada yang diubah.', 'bad-key':'Kunci tidak valid (8-512 karakter, tanpa spasi/kutip).', 'bad-url':'Alamat harus diawali https:// dan tanpa spasi.', 'bad-path':'Path hanya boleh huruf, angka, / . _ ~ -', 'bad-model':'Nama model tidak valid.', 'storage':'Penyimpanan perangkat menolak.', 'bad-wav':'Rekaman tidak terbaca.', 'bad-image':'Gambar dari layanan tidak valid.' };
   function msg(r){ var e = r && r.error || 'unexpected'; return MSG[e] || (/^http-/.test(e) ? 'Layanan menolak permintaan (' + e.slice(5) + ').' : 'Gagal: ' + e); }
 
   /* ---------- [LABEL AI / PEMUAT] muat modul berurutan; gagal satu -> berhenti, aplikasi tetap jalan ---------- */
@@ -4755,12 +4756,16 @@
   /* ---------- [LABEL AI / BAWAAN] endpoint dari spesifikasi pemilik aplikasi (BELUM terverifikasi; Spark disebut aktif 27 Okt) ---------- */
   function setup(){
     G().setDefaults({ services: {
-      spark:  { baseUrl:'https://api.meta.ai', path:'/v1/chat',    model:'Muse Spark', keyStorage:'meta_key' },
+      spark:  { baseUrl:'https://api.dev.meta.ai', path:'/v1/chat/completions', model:'muse-spark', keyStorage:'meta_key' },   // dari spesifikasi pemilik (belum terverifikasi)
       wonder: { baseUrl:'https://api.meta.ai', path:'/muse/wonder',                     keyStorage:'meta_key' } } });
+    // Migrasi: alamat lama (v1.4.0/1.4.1) yang mungkin sudah tersimpan -> alamat baru. Alamat buatan pengguna sendiri tidak disentuh.
+    var sp = G().getConfig().services.spark;
+    if(sp.baseUrl === 'https://api.meta.ai' && sp.path === '/v1/chat') G().saveService('spark', { baseUrl:'https://api.dev.meta.ai', path:'/v1/chat/completions', model:'muse-spark' });
     // Spark memakai format chat: tab dikirim sebagai JSON, jawaban harus JSON tab saja.
     var SYS = 'Kamu mengedit tab gitar. Balas HANYA dengan JSON tab: {"v":1,"title":"","tempo":90,"key":"E","timeSig":[4,4],"notes":[{"t":0,"d":0.5,"s":6,"f":0}]} ' +
               '(t=ketukan mulai, d=durasi ketukan, s=senar 1..6 dengan 1=e tinggi, f=fret 0..24, nada E2..B5). Tanpa penjelasan dan tanpa markdown.';
-    G().hooks.spark.mapRequest = function(p){ return { model: p.model || 'Muse Spark', messages: [
+    G().hooks.spark.mapRequest = function(p){ if(p.messages) return { model: p.model || 'muse-spark', messages: p.messages };   // chord -> lirik: pesan sudah disusun editor.js
+      return { model: p.model || 'muse-spark', messages: [
       { role:'system', content: SYS }, { role:'user', content: 'Instruksi: ' + p.instruction + '\nTab saat ini: ' + JSON.stringify(p.tab) } ] }; };
     G().hooks.spark.mapResponse = function(j){ var c = j && j.choices && j.choices[0] && j.choices[0].message; return { text: c ? c.content : '' }; };
     document.addEventListener('gw:tab-changed', function(e){ showTab(e.detail && e.detail.tab, e.detail && e.detail.why); });
@@ -4784,6 +4789,21 @@
   }
   window.makeItBluesy = function(){ return runSpark('bikin lebih bluesy'); };
   window.onSparkTrigger = function(preset){ var t = PRESETS[preset]; if(!t || !aiOn()) return; window.gwaiOpen(); runSpark(t); };
+
+  /* ---------- [LABEL MUSE SPARK / CHORD -> LIRIK + TAB] setara metaGenerate(chord) di potongan pemilik ---------- */
+  // Mengembalikan Promise<string> berisi lirik (+ catatan band); tab gitar langsung mengganti tab aktif. Tidak pernah melempar error.
+  window.metaGenerate = function(chord){
+    var out = $('gwai-lirik');
+    function show(t){ if(out) out.textContent = t; return t; }
+    return load().then(function(ok){
+      if(!ok) return show('Modul AI gagal dimuat.');
+      show('Spark berpikir…');
+      return G().editor.fromChord(chord).then(function(r){
+        if(!r.ok) return show(msg(r));
+        var d = r.data; return show((d.lirik || '') + (d.band ? '\n\n— Band —\n' + d.band : '') + (d.tabApplied ? '\n\n(tab gitar diperbarui)' : ''));
+      });
+    });
+  };
 
   /* ---------- [LABEL MUSE WONDER] humming 30 dtk -> lagu penuh ---------- */
   var humming = false;
@@ -4826,10 +4846,31 @@
     document.head.appendChild(st);
     panel = document.createElement('div'); panel.id = 'gwaiPanel'; panel.style.display = 'none';
     var wrap = $('kbWrap') || document.body; wrap.appendChild(panel);
+    function fld2(ph){ var i = document.createElement('input'); i.type = 'text'; i.placeholder = ph; i.maxLength = 80; i.autocomplete = 'off'; i.spellcheck = false;
+      i.style.cssText = 'display:block;width:100%;box-sizing:border-box;margin:3px 0;padding:7px;border-radius:6px;border:1px solid #8886;background:transparent;color:inherit;font:inherit'; panel.appendChild(i); return i; }
     function btn(id, label, fn){ var b = document.createElement('button'); if(id) b.id = id; b.textContent = label; b.addEventListener('click', fn); panel.appendChild(b); return b; }
     function pre(id, txt){ var p = document.createElement('pre'); p.id = id; p.textContent = txt; panel.appendChild(p); return p; }
     btn('', '✕ Tutup', function(){ window.gwaiClose(); });
+    /* [LABEL AI / API: KUNCI & ENDPOINT] tanpa DevTools: isi kunci dan alamat layanan langsung dari HP */
+    var det = document.createElement('details'); var sm = document.createElement('summary'); sm.textContent = '⚙ API: kunci & alamat layanan'; det.appendChild(sm);
+    function fld(ph, type){ var i = document.createElement('input'); i.type = type || 'text'; i.placeholder = ph; i.autocomplete = 'off'; i.spellcheck = false;
+      i.style.cssText = 'display:block;width:100%;box-sizing:border-box;margin:3px 0;padding:7px;border-radius:6px;border:1px solid #8886;background:transparent;color:inherit;font:inherit'; det.appendChild(i); return i; }
+    function dbtn(label, fn){ var b = document.createElement('button'); b.textContent = label; b.addEventListener('click', fn); det.appendChild(b); return b; }
+    var kin = fld('Tempel kunci API di sini', 'password'), kst = document.createElement('div'); kst.id = 'gwai-keystat';
+    dbtn('Simpan kunci', function(){ if(!load_ok()) return; var r = G().saveKey(kin.value); if(r.ok){ kin.value = ''; } kst.textContent = r.ok ? 'Kunci tersimpan di perangkat ini.' : msg(r); });
+    dbtn('Hapus kunci', function(){ if(!load_ok()) return; G().clearKey(); kin.value = ''; kst.textContent = 'Kunci dihapus.'; });
+    det.appendChild(kst);
+    var sel = document.createElement('select'); sel.style.cssText = 'display:block;margin:6px 0 3px;padding:6px;background:transparent;color:inherit;border:1px solid #8886;border-radius:6px';
+    [['spark','Muse Spark'],['wonder','Muse Wonder'],['sam','SAM 3.1'],['image','Muse Image']].forEach(function(o){ var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; op.style.color = '#000'; sel.appendChild(op); }); det.appendChild(sel);
+    var ub = fld('Alamat dasar, mis. https://...'), up = fld('Path, mis. /v1/chat'), um = fld('Nama model (opsional)');
+    function fill(){ if(!G()) return; var c = G().getConfig().services[sel.value] || {}; ub.value = c.baseUrl || ''; up.value = c.path || ''; um.value = c.model || ''; kst.textContent = G().hasKey() ? 'Kunci tersimpan di perangkat ini.' : 'Belum ada kunci.'; }
+    sel.addEventListener('change', fill); panel.addEventListener('gwai-fill', fill);
+    dbtn('Simpan alamat', function(){ if(!load_ok()) return; var r = G().saveService(sel.value, { baseUrl: ub.value, path: up.value, model: um.value }); kst.textContent = r.ok ? 'Alamat disimpan.' : msg(r); });
+    var warn = document.createElement('div'); warn.style.cssText = 'font-size:11px;opacity:.7;margin-top:4px'; warn.textContent = 'Kunci dikirim ke alamat layanan yang Anda isi. Pastikan alamatnya benar dan https.'; det.appendChild(warn);
+    panel.appendChild(det);
     btn('gwai-spark', 'Bikin Lebih Bluesy 🎸 [Muse Spark]', function(){ window.makeItBluesy(); });
+    var ci = fld2('Chord, mis. Em A D G'); btn('gwai-chordbtn', 'Chord → Lirik + Tab [Muse Spark]', function(){ window.metaGenerate(ci.value); });
+    pre('gwai-lirik', 'Lirik & catatan band akan tampil di sini.');
     btn('', '↶ Batalkan', function(){ var r = G() && G().tab.undo(); if(r && !r.ok) $('tab-output').textContent = 'Tidak ada yang dibatalkan.'; });
     pre('tab-output', 'Tab aktif akan tampil di sini.');
     btn('gwai-wonder', 'Humming → Lagu Full [Muse Wonder]', function(){ window.generateFullSong(); });
@@ -4844,7 +4885,7 @@
     if(!panel) build();
     panel.style.display = 'block';
     load().then(function(ok){ if(!ok) return; if(!wf && G().waveform) wf = G().waveform.create(wfCanvas);
-      var t = G().tab.get(); if(t) showTab(t, 'open'); });
+      var t = G().tab.get(); if(t) showTab(t, 'open'); panel.dispatchEvent(new Event('gwai-fill')); });
     var a = nat(); try{ a && a.setWaveformHook && a.setWaveformHook(true); }catch(e){}
   };
   window.gwaiClose = function(){
