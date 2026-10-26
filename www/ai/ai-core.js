@@ -16,7 +16,7 @@
   'use strict';
   if (root.GWAI) return;                                     // sudah dimuat -> jangan timpa
 
-  var CFG_KEY = 'gwai_cfg_v1';
+  var CFG_KEY = 'gwai_cfg_v1', KEY_NAME = 'meta_key';
   var SERVICES = ['spark', 'wonder', 'sam', 'image'];        // Muse Spark, Muse Wonder, SAM 3.1, Muse Image
   var DEFAULT_SERVICE = { baseUrl: '', path: '', apiKey: '', keyStorage: '', model: '', headers: {}, timeoutMs: 30000 };
 
@@ -163,6 +163,25 @@
     version: '1.4.0',
     SERVICES: SERVICES, hooks: hooks, enabled: enabled, call: call,
     setConfig: function (p) { mergeCfg(p); persist(); },
+    /* [LABEL AI-CORE / KUNCI API] disimpan di localStorage['meta_key'] (dibaca saat tiap panggilan; tidak masuk cfg). */
+    hasKey: function () { try { return !!root.localStorage.getItem(KEY_NAME); } catch (e) { return false; } },
+    saveKey: function (v) {
+      v = String(v == null ? '' : v).trim();
+      if (v.length < 8 || v.length > 512 || /[\s\u0000-\u001f"'\\]/.test(v)) return { ok: false, error: 'bad-key' };   // tanpa spasi/kutip/kontrol
+      try { root.localStorage.setItem(KEY_NAME, v); } catch (e) { return { ok: false, error: 'storage' }; }
+      return { ok: true };
+    },
+    clearKey: function () { try { root.localStorage.removeItem(KEY_NAME); } catch (e) {} return { ok: true }; },
+    /* [LABEL AI-CORE / ENDPOINT] ubah alamat per layanan. HANYA https:// (kunci tidak boleh terkirim lewat http polos). */
+    saveService: function (name, f) {
+      if (SERVICES.indexOf(name) < 0 || !f) return { ok: false, error: 'unknown-service' };
+      var base = String(f.baseUrl || '').trim().replace(/\/+$/, ''), path = String(f.path || '').trim(), model = String(f.model || '').trim();
+      if (base && !/^https:\/\/[^\s"'<>\\]+$/i.test(base)) return { ok: false, error: 'bad-url' };
+      if (path && !/^\/?[A-Za-z0-9._~\/-]*$/.test(path)) return { ok: false, error: 'bad-path' };
+      if (model.length > 80 || /[\u0000-\u001f]/.test(model)) return { ok: false, error: 'bad-model' };
+      var upd = { services: {} }; upd.services[name] = { baseUrl: base, path: path ? (path.charAt(0) === '/' ? path : '/' + path) : '', model: model };
+      mergeCfg(upd); persist(); return { ok: true };
+    },
     // Nilai bawaan dari aplikasi: hanya mengisi field yang masih KOSONG, tidak menimpa pilihan pengguna, tidak disimpan.
     setDefaults: function (p) {
       if (!p || !p.services) return;
