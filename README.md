@@ -1,167 +1,176 @@
 # 🎸 GuitarWiter — Guitar-to-Keyboard
 
-Keyboard Android kustom yang mengubah **nada gitar jadi ketikan**. Petik satu nada → satu huruf/tombol keluar di kolom teks mana pun (WhatsApp, Instagram, dll.). Deteksi nada berjalan native (AudioRecord + YIN) di dalam aplikasi, sedangkan tampilan keyboard adalah halaman web (`www/`) di dalam WebView `InputMethodService`.
+A custom Android keyboard that turns **guitar notes into typing**. Pluck one note → one letter/key appears in any text field (WhatsApp, Instagram, etc.). Pitch detection runs natively (AudioRecord + YIN) inside the app, while the keyboard UI is a web page (`www/`) inside an `InputMethodService` WebView.
 
-## Cara pakai
-1. Pasang APK dari tab **Releases** (pakai `Guitarwiter.apk` kalau ada — itu build release yang paling ringan).
-2. **Buka aplikasinya sekali** dari app drawer dan izinkan **mikrofon** (keyboard tidak bisa memunculkan pop-up izin sendiri).
-3. Aktifkan di **Pengaturan → Bahasa & input → Papan ketik** lalu pilih **Guitarwiter** saat mengetik.
-4. Nyalakan ikon mikrofon di keyboard, lalu petik **satu nada per satu** (bukan kunci penuh).
+## How to use
+1. Install the APK from the **Releases** tab (use `Guitarwiter.apk` if present — it is the lightest release build).
+2. **Open the app once** from the app drawer and grant the **microphone** permission (a keyboard cannot show a permission pop-up by itself).
+3. Enable it in **Settings → Language & input → On-screen keyboard**, then select **Guitarwiter** while typing.
+4. Turn on the microphone icon on the keyboard, then pluck **one note at a time** (not full chords).
 
-## Peta nada → tuts
-Nada disusun kromatis (per setengah nada) dari **E2** (MIDI 40), 44 tuts. Label nada tampil di tiap tuts.
+## Note → key map
+Notes are chromatic (semitone steps) starting from **E2** (MIDI 40), 44 keys. The note label is shown on every key.
 
-| Tuts | Nada |
+| Key | Note |
 |---|---|
-| `1 2 3 4 5 6 7 8 9 0` (baris angka) | E2 – C#3 — **hanya aktif di mode simbol `?123`** |
+| `1 2 3 4 5 6 7 8 9 0` (number row) | E2 – C#3 — **only active in symbol mode `?123`** |
 | `q w e r t y u i o p` | D3 – B3 |
 | `a s d f g h j k l` | C4 – G#4 |
 | Shift | A4 |
 | `z x c v b n m` | A#4 – E5 |
-| Hapus ⌫ | F5 |
+| Delete ⌫ | F5 |
 | `?123` | F#5 |
 | `,` | G5 |
 | Emoji | G#5 |
-| Spasi | A5 |
+| Space | A5 |
 | `.` | A#5 |
 | Enter | B5 |
 
-Di **mode huruf** nada rendah (E2–C#3) sengaja diabaikan karena baris angka tersembunyi. Di **mode emoji** 44 emoji bernada ada di bagian paling atas panel, dan nada mengetik emoji yang terlihat di situ.
+In **letter mode**, the low notes (E2–C#3) are deliberately ignored because the number row is hidden. In **emoji mode**, the 44 pitched emoji are at the very top of the panel, and notes type the emoji that are visible there.
 
-## Struktur repo
+## Repository layout
 ```
 .github/workflows/
-  android-build.yml        # build APK debug (+ release kalau keystore tersedia) & buat GitHub Release
-  generate-keystore.yml    # jalankan SEKALI untuk membuat keystore rilis
-native-patches/            # ditempel ke proyek android/ yang dibuat otomatis oleh Capacitor
-  HtmlKeyboardService.java     # InputMethodService + WebView + jembatan JS
-  NativeMicPitchDetector.java  # rekam mic & deteksi nada (YIN) — inti kecepatan
-  MainActivity.java            # minta izin mikrofon
-  method.xml                   # deklarasi IME
-  insert_*.py                  # skrip penyisip manifest/gradle/ikon/signing/performa
-  app-icon/                    # ikon launcher (mipmap-*)
+  android-build.yml        # builds the debug APK (+ release if a keystore exists) and creates a GitHub Release
+  generate-keystore.yml    # run ONCE to create the release keystore
+native-patches/            # pasted into the android/ project that Capacitor generates automatically
+  HtmlKeyboardService.java     # InputMethodService + WebView + JS bridge
+  NativeMicPitchDetector.java  # mic recording & pitch detection (YIN) — the speed core
+  HumRecorder.java             # in-memory ring buffer of the last 30 s of mic audio (Muse Wonder)
+  MainActivity.java            # asks for the microphone permission, receives the Spark intent
+  method.xml                   # IME declaration
+  insert_*.py                  # scripts that patch manifest/gradle/icons/signing/performance/version
+  app-icon/                    # launcher icons (mipmap-*)
 www/
   index.html  sw.js  manifest.json  (+ icon-192.png, icon-512.png)
+  ai/  ai-core.js  editor.js  generate-full.js  waveform.js   # Meta/Muse modules (off by default)
+tools/                     # tests and simulators (not shipped in the APK)
 capacitor.config.json
 package.json
+privacy-policy.md
 ```
 
 ## Build (GitHub Actions)
-Setiap push ke `main` membuat APK dan Release baru (`build-<nomor>`).
-- **Debug**: selalu ada, tidak butuh keystore (`Guitarwiter-debug.apk`; dibuat non-debuggable supaya tetap cepat).
-- **Release (bertanda tangan)**: isi dulu secret `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` (password keystore dan key **harus sama**), jalankan **Generate Release Keystore** sekali, salin hasil base64-nya ke secret `KEYSTORE_BASE64`, lalu hapus artifact keystore-nya.
-- Setelah mengubah `www/index.html`, naikkan nomor versi `CACHE_NAME` di `www/sw.js` supaya cache lama tidak nyangkut.
+Every push to `main` builds an APK and a new Release (`build-<number>`).
+- **Debug:** always built, needs no keystore (`Guitarwiter-debug.apk`; built non-debuggable so it stays fast).
+- **Release (signed):** first set the secrets `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` (the keystore and key passwords **must be identical**), run **Generate Release Keystore** once, copy its base64 output into the `KEYSTORE_BASE64` secret, then delete the keystore artifact.
+- After changing `www/index.html` or anything in `www/ai/`, bump the `CACHE_NAME` version in `www/sw.js` so stale caches do not stick.
+- The version shown in Android's App info comes from `package.json` (`native-patches/insert_version.py` writes `versionName` / `versionCode` into `build.gradle`).
 
-## Setelan yang bisa disetel (di kode)
+## Tunable settings (in code)
 `NativeMicPitchDetector.java`:
-| Konstanta | Fungsi |
+| Constant | Purpose |
 |---|---|
-| `KICK_FEATURE` | `false` = drum/kick tidak pernah jadi spasi (bunyi non-nada diabaikan) |
-| `PITCH_MODE_TOGGLE_KEYS` | `true` = `?123`/emoji bisa dipicu dari nada; `false` = hanya lewat sentuhan |
-| `FUNCTIONAL_KEYS_STRICT` | **`true` (v1.3.4)**: Shift/Hapus/`?123`/Emoji/Enter butuh 3 bacaan sepakat, umur minimum, tidak dipaksa komit, dan tidak lewat jalur cepat. Spasi/koma/titik tetap cepat |
-| `OVERTONE_*` | **(v1.3.4)** pengaman tuts fungsi: sebelum Shift/Hapus/`?123`/Emoji/Enter diketik, spektrum dicek apakah bacaan itu cuma overtone nada yang lebih rendah (A4 = 3x D3 `q`, F#5 = 2x F#4 `j`, F5 = 2x F4 `h`, B5 = 3x E4 `g`). Hanya tenaga BARU sejak onset yang dihitung, jadi nada lama yang masih berdengung tidak mengganggu. Overtone dibuang (atau diarahkan ke nada dasar kalau jelas ada). Salah buang tombol fungsi sungguhan? naikkan `OVERTONE_VETO_RATIO` (mis. 0.02) |
-| `HARMONIC_ECHO_*` | **(v1.3.4)** tuts fungsi yang jatuh di overtone nada yang barusan diketik (dalam 700 ms) hanya diterima kalau petikannya >= 60% sekeras petikan sebelumnya |
-| `FAST_*` | jalur cepat nada pertama (hanya >= 300 Hz, syarat ketat) |
-| `LOW_ZONE_*` (66 / 50 ms) | nada < 300 Hz menunggu data lebih banyak (mencegah salah oktaf angka↔huruf). Dikembalikan ke nilai bersih v1.1.3 (v1.3.2 memakai 50 / 33 dan lebih sering salah tempat) |
-| `ONSET_RMS`, `RETRIGGER_*`, `COOLDOWN_MS` | sensitivitas petikan; terlalu sensitif = huruf berulang/acak |
-| `TOUCH_MUTE_MS` | sesudah tuts disentuh jari, onset mic dibungkam sebentar (getar/klik/ketukan jari tidak jadi huruf hantu) |
-| `ECHO_WINDOW_MS`, `ECHO_SAME_NOTE_PEAK`, `ECHO_OTHER_NOTE_PEAK` | gerbang anti-gema: petikan baru dalam jendela ini harus cukup keras dibanding petikan sebelumnya, kalau tidak dianggap dengungan & diabaikan |
-| `SAME_NOTE_WINDOW_MS`, `SAME_NOTE_VALLEY_RATIO` | nada SAMA dalam jendela panjang harus didahului lembah beneran (puncak >= 1.8x level terpelan sejak komit terakhir) |
-| `RELEASE_RMS` (0.009) | sengaja di bawah `ONSET_RMS` (0.012): hysteresis supaya riak ring tidak melepas kunci lalu dibaca petikan baru |
+| `KICK_FEATURE` | `false` = drum/kick sounds never become a space (non-note sounds are ignored) |
+| `PITCH_MODE_TOGGLE_KEYS` | `true` = `?123`/emoji can be triggered by pitch; `false` = touch only |
+| `FUNCTIONAL_KEYS_STRICT` | **`true` (v1.3.4):** Shift/Delete/`?123`/Emoji/Enter need 3 agreeing readings and a minimum age, are never force-committed, and skip the fast path. Space/comma/period stay fast |
+| `OVERTONE_*` | **(v1.3.4)** guard for function keys: before Shift/Delete/`?123`/Emoji/Enter is typed, the spectrum is checked for whether the reading is just an overtone of a lower note (A4 = 3× D3 `q`, F#5 = 2× F#4 `j`, F5 = 2× F4 `h`, B5 = 3× E4 `g`). Only NEW energy since the onset is counted, so a ringing old note does not interfere. Overtones are discarded (or redirected to the fundamental when it is clearly present). If a real function key is wrongly discarded, raise `OVERTONE_VETO_RATIO` (e.g. 0.02) |
+| `HARMONIC_ECHO_*` | **(v1.3.4)** a function key that lands on an overtone of the note just typed (within 700 ms) is accepted only if the pluck is at least 60% as loud as the previous one |
+| `FAST_*` | fast path for the first note (only ≥ 300 Hz, strict conditions) |
+| `LOW_ZONE_*` (50 ms / 2 readings since v1.3.8; previously 66 / 3) | notes < 300 Hz wait for more data (prevents octave errors between numbers and letters) |
+| `ODD_EVIDENCE_*` | **(v1.3.7)** an octave-down correction requires odd-harmonic evidence (1.5× or 2.5× the read frequency) |
+| `ONSET_RMS`, `RETRIGGER_*`, `COOLDOWN_MS` | pluck sensitivity; too sensitive = repeated/random letters |
+| `TOUCH_MUTE_MS` | after a key is touched by a finger, mic onsets are muted briefly (vibration/click/finger tap must not become ghost letters) |
+| `ECHO_WINDOW_MS`, `ECHO_SAME_NOTE_PEAK`, `ECHO_OTHER_NOTE_PEAK` | anti-echo gate: a new pluck inside this window must be loud enough relative to the previous one, otherwise it is treated as ringing and ignored |
+| `SAME_NOTE_WINDOW_MS`, `SAME_NOTE_VALLEY_RATIO` | the SAME note within the long window must be preceded by a real valley (peak ≥ 1.8× the quietest level since the last commit) |
+| `RELEASE_RMS` (0.009) | deliberately below `ONSET_RMS` (0.012): hysteresis so ring ripples do not release the lock and get read as a new pluck |
 
-## Yang berubah di v1.4.0 (suara petikan dihapus + modul AI Muse)
-- **Suara petikan gitar saat mengetik dihapus** (v1.3.9): kode, setelan "Suara petikan gitar" dan "Volume petikan" sudah tidak ada. Suara klik lama tetap seperti semula.
-- **Modul AI**, semuanya **bawaan MATI** (`prefs.ai=false`, Setelan → Eksperimental → "Fitur AI (Muse)"); selama mati tidak ada skrip AI dimuat dan tidak ada panggilan jaringan. Panel dibuka dari Setelan → "Panel AI (Muse)".
+## Changelog
 
-| Fitur | Lokasi kode | Isi |
+### v1.4.0 — pluck sound removed + Muse AI modules
+- **The guitar-pluck sound when typing (v1.3.9) was removed:** code, the "Guitar pluck sound" and "Pluck volume" settings are gone. The old click sound is unchanged.
+- **AI modules**, all **OFF by default** (`prefs.ai=false`, Settings → Experimental → "AI features (Muse)"). While off, no AI script is loaded and no network call is made. The panel opens from Settings → "AI Panel (Muse)". (The app UI itself is in Indonesian: *Setelan → Eksperimental → "Fitur AI (Muse)"* and *Setelan → "Panel AI (Muse)"*.)
+
+| Feature | Code location | What it does |
 |---|---|---|
-| Inti bersama | `www/ai/ai-core.js` | konfigurasi, pemanggil HTTP aman (timeout, tanpa throw), model tab + validasi, undo, tab ASCII |
-| Muse Spark | `www/ai/editor.js`, blok `[LABEL MUSE SPARK]` di `index.html`, `[LABEL MUSE SPARK / INTENT]` di `HtmlKeyboardService.java` + `MainActivity.java` | perintah ("bikin lebih bluesy") -> tab aktif langsung diubah; `window.makeItBluesy()` |
-| Muse Wonder | `www/ai/generate-full.js`, `[LABEL MUSE WONDER]` di `index.html`, `NativeMicPitchDetector.java` + `HumRecorder.java` + bridge `getLast30SecAudio()` | humming 30 dtk -> tab lagu ~3 menit; `window.generateFullSong()` |
-| SAM 3.1 | `www/ai/waveform.js`, `[LABEL SAM 3.1 / WAVEFORM]` di `HtmlKeyboardService.java` | segmentasi di atas waveform; native memanggil `window.onWaveformClick(freq, idx)` |
-| Muse Image | `www/ai/waveform.js` | sampul dari deskripsi (hanya `https://` atau PNG base64) |
+| Shared core | `www/ai/ai-core.js` | configuration, safe HTTP caller (timeout, never throws), tab model + validation, undo, ASCII tab |
+| Muse Spark | `www/ai/editor.js`, `[LABEL MUSE SPARK]` in `index.html`, `[LABEL MUSE SPARK / INTENT]` in `HtmlKeyboardService.java` + `MainActivity.java` | command ("make it bluesy") → active tab changed immediately; `window.makeItBluesy()` |
+| Muse Wonder | `www/ai/generate-full.js`, `[LABEL MUSE WONDER]` in `index.html`, `NativeMicPitchDetector.java` + `HumRecorder.java` + bridge `getLast30SecAudio()` | 30 s of humming → ~3 minute song tab; `window.generateFullSong()` |
+| SAM 3.1 | `www/ai/waveform.js`, `[LABEL SAM 3.1 / WAVEFORM]` in `HtmlKeyboardService.java` | segmentation over the waveform; native calls `window.onWaveformClick(freq, idx)` |
+| Muse Image | `www/ai/waveform.js` | cover art from a description (only `https://` or PNG base64 is accepted) |
 
-- **Endpoint**: alamat `https://api.meta.ai/v1/chat` (Spark) dan `https://api.meta.ai/muse/wonder` (Wonder) berasal dari spesifikasi pemilik aplikasi dan **belum diverifikasi**. SAM dan Image belum punya endpoint (kosong = tidak aktif). Ganti lewat `GWAI.setConfig({services:{...}})`. Format request/respons di modul adalah **kontrak adaptor**, bukan spesifikasi resmi vendor; sesuaikan lewat `GWAI.hooks.<layanan>.mapRequest/mapResponse`.
-- **Kunci API** dibaca dari `localStorage['meta_key']`. Kunci di aplikasi klien bisa diekstrak; untuk rilis publik pakai proxy server sendiri.
-- Jawaban AI selalu **divalidasi** (senar 1-6, fret 0-24, MIDI 40..83); jawaban rusak -> tab TIDAK diubah. Keluaran ke layar lewat `textContent`.
-- **Intent Spark**: `AndroidKeyboard.triggerSpark('bluesy')` membuka `MainActivity` (flag `NEW_TASK|SINGLE_TOP|CLEAR_TOP`) dan menjalankan `window.onSparkTrigger('bluesy')`. Ubah `SPARK_USE_INTENT=false` agar Spark jalan di WebView keyboard tanpa membuka aplikasi. **Trigger "chord khusus" belum ada**: detektor ini monofonik (satu nada), tidak bisa mengenali chord.
-- `HumRecorder.java` baru (disalin oleh langkah workflow baru). Rekaman 30 dtk mono 16-bit ~14,7-16 kHz (~0,9 MB) hanya di memori dan hanya selama rekaman aktif.
-- Uji: `node tools/ai-test.js` (30 pemeriksaan, fetch dan native ditiru). `privacy-policy.md` ditambah bagian 6.
+- **Endpoints:** `https://api.meta.ai/v1/chat` (Spark) and `https://api.meta.ai/muse/wonder` (Wonder) come from the app owner's notes and are **not verified**. SAM and Image have no endpoint yet (empty = inactive). Change them with `GWAI.setConfig({services:{...}})`. The request/response formats in the modules are an **adapter contract**, not an official vendor specification; adapt them with `GWAI.hooks.<service>.mapRequest/mapResponse`.
+- **The API key** is read from `localStorage['meta_key']`. A key inside a client app can be extracted; for a public release use your own server-side proxy.
+- AI answers are always **validated** (strings 1–6, frets 0–24, MIDI 40..83); a broken answer leaves the tab **unchanged**. Output is written with `textContent`, never `innerHTML`.
+- **Spark intent:** `AndroidKeyboard.triggerSpark('bluesy')` opens `MainActivity` (flags `NEW_TASK|SINGLE_TOP|CLEAR_TOP`) and runs `window.onSparkTrigger('bluesy')`. Set `SPARK_USE_INTENT=false` to run Spark inside the keyboard WebView without opening the app. **A "special chord" trigger does not exist:** the detector is monophonic.
+- `HumRecorder.java` is new (copied by a new workflow step). The 30 s recording (mono 16-bit, ~14.7–16 kHz, ~0.9 MB) lives only in memory and only while recording is active.
+- Tests: `node tools/ai-test.js` (30 checks, `fetch` and the native bridge mocked). `privacy-policy.md` gained section 6 (optional AI features).
 
-## Yang berubah di v1.3.9 (suara petikan gitar per tuts)
-- Tiap tuts yang disentuh JARI berbunyi petikan gitar pada nada persis label di bawah tuts (E2..B5, 44 tuts, frekuensi = `dataset.freq`). Satu pendengar `pointerdown` untuk semua tuts, di blok `[LABEL v1.3.9 / SUARA PETIKAN GITAR PER TUTS]` dalam `index.html`.
-- Sintesis aditif di WebAudio (harmonik 1-12, harmonik tinggi meluruh lebih cepat, ketukan pick), buffer di-cache per nada dan disiapkan di waktu senggang. Diuji dari kode sumber: 44 dari 44 nada tepat dalam +-6 sen.
-- Setelan baru di "Pengetikan tombol": **Suara petikan gitar** (bawaan nyala) dan **Volume petikan**. Suara klik lama tetap terpisah (bawaan mati).
-- Nada dari mic (gitar asli) sengaja TIDAK dibunyikan ulang. Selama petikan terdengar, mic dibungkam sekitar 600 ms lewat `touchMute` agar speaker tidak terdengar mic dan jadi huruf hantu.
+### v1.3.9 — guitar-pluck sound per key (removed again in v1.4.0)
+- Every key touched by a FINGER played a guitar pluck at exactly the note shown under the key (E2..B5, 44 keys, frequency = `dataset.freq`). One `pointerdown` listener for all keys, in the block `[LABEL v1.3.9 / SUARA PETIKAN GITAR PER TUTS]` of `index.html`.
+- Additive synthesis in WebAudio (harmonics 1–12, higher harmonics decay faster, pick transient), buffers cached per note and prepared during idle time. Verified from source: 44 of 44 notes within ±6 cents.
+- New settings under "Key typing": **Guitar pluck sound** (on by default) and **Pluck volume**. The old click sound stayed separate (off by default).
+- Notes from the mic (the real guitar) were deliberately NOT replayed. While the pluck was audible, the mic was muted for about 600 ms through `touchMute` so the speaker would not be heard by the mic and turn into ghost letters.
 
-## Yang berubah di v1.3.8 (baris angka & respons nada rendah)
-- **Peta zona tuts** ditambahkan di atas `BASE_MIDI` di `NativeMicPitchDetector.java` (ZONA ANGKA idx 0-9, q-p idx 10-19, a-d idx 20-22, TENGAH, FUNGSI) dan blok kode penting diberi label `[LABEL ...]`.
-- **Bug turun-oktaf**: pembanding energi sekarang harmonik terkuat (nada terbaca atau 2x-nya), bukan fundamental saja. Dulu fundamental ~0 membuat huruf e-p salah turun jadi angka (profil fundamental nol: 31 dari 240 gagal -> 0 dari 240). Diterapkan di Java dan `index.html`.
-- **Lebih responsif**: `LOW_ZONE_MIN_AGE_MS` 66 -> 50 ms dan `LOW_ZONE_CONFIRM_CORRECTED` 3 -> 2. Latensi angka & q-o di simulasi bersih turun sekitar 87 -> 71 ms (satu hop).
-- **Versi Info Aplikasi**: langkah baru di workflow menjalankan `native-patches/insert_version.py`, yang menimpa `versionName`/`versionCode` di `android/app/build.gradle` dengan versi `package.json` (1.3.8 -> versionCode 10308), jadi Info Aplikasi tidak lagi menampilkan 1.0 bawaan Capacitor. Tiap rilis cukup ubah `version` di `package.json`.
-- Skenario regresi lama identik dengan v1.3.7. Semua angka dari simulasi sintetis, bukan gitar/HP asli.
+### v1.3.8 — number row & low-note responsiveness
+- **Key-zone map** added above `BASE_MIDI` in `NativeMicPitchDetector.java` (NUMBER zone idx 0–9, q–p idx 10–19, a–d idx 20–22, MIDDLE, FUNCTION) and key code blocks are tagged `[LABEL ...]`.
+- **Octave-down bug:** the energy comparison now uses the strongest harmonic (the read note or its 2×), not just the fundamental. Previously a near-zero fundamental made letters e–p wrongly drop to numbers (zero-fundamental profile: 31 of 240 failed → 0 of 240). Applied in Java and `index.html`.
+- **More responsive:** `LOW_ZONE_MIN_AGE_MS` 66 → 50 ms and `LOW_ZONE_CONFIRM_CORRECTED` 3 → 2. Clean-simulation latency for numbers and q–o dropped from about 87 → 71 ms (one hop).
+- **App-info version:** a new workflow step runs `native-patches/insert_version.py`, overwriting `versionName`/`versionCode` in `android/app/build.gradle` with the `package.json` version (1.3.8 → versionCode 10308), so App info no longer shows Capacitor's default 1.0.
+- Older regression scenarios are identical to v1.3.7. All numbers come from synthetic-signal simulation, not a real guitar/phone.
 
-## Yang berubah di v1.3.7 (tuts p, a, s kurang responsif)
-- **Penyebab**: B3/C4/C#4 (p, a, s) setengah frekuensinya jatuh di 123-139 Hz, zona angka. Energi di sana dari resonansi badan gitar/dengung mic ikut dianggap bukti "nada ini sebenarnya satu oktaf lebih rendah", lalu bacaan diturunkan jadi angka dan dibuang di mode huruf (terasa tuts tidak merespons).
-- **Perbaikan** (`yinCore`, juga di `index.html`): turun oktaf sekarang WAJIB punya harmonik ganjil (1.5x atau 2.5x frekuensi terbaca; `ODD_EVIDENCE_*`). Nada rendah sungguhan punya, resonansi tidak.
-- `HP_ACCEPT_MIN_FREQ` dan `LOW_ZONE_FAST_AGE_MIN_FREQ` 255 -> 240 Hz supaya B3 (246,9 Hz) diperlakukan sama seperti a, s.
-- Simulasi (`tools/vsim`, skenario baru `hl` + `res=`): tuts p gagal 16/24 -> 0/24, total gagal 295 -> 243 dari 1056. Skenario lama (single, rapid, repeat, rep, harm, list, echoh) hasilnya identik dengan v1.3.6.
-- **Batas**: resonansi sangat kuat tepat di frekuensi angka (95-135 Hz) masih bisa membuat angka tidak terdeteksi, dan tuts fungsi (Shift/Hapus/?123/Emoji/Enter) masih sering gagal di kondisi itu. Semua angka adalah simulasi sinyal sintetis, bukan gitar/HP asli.
+### v1.3.7 — keys p, a, s not responsive enough
+- **Cause:** B3/C4/C#4 (p, a, s) have a half-frequency that falls at 123–139 Hz, the number zone. Energy there from guitar-body resonance/mic hum was taken as evidence that "this note is really one octave lower"; the reading was dropped to a number and discarded in letter mode (so the key felt dead).
+- **Fix** (`yinCore`, also in `index.html`): an octave-down correction now REQUIRES odd-harmonic evidence (1.5× or 2.5× the read frequency; `ODD_EVIDENCE_*`). Real low notes have it, resonance does not.
+- `HP_ACCEPT_MIN_FREQ` and `LOW_ZONE_FAST_AGE_MIN_FREQ` 255 → 240 Hz so B3 (246.9 Hz) is treated like a and s.
+- Simulation (`tools/vsim`, new `hl` scenario + `res=`): key p failures 16/24 → 0/24, total failures 295 → 243 of 1056. Older scenarios (single, rapid, repeat, rep, harm, list, echoh) are identical to v1.3.6.
+- **Limit:** very strong resonance exactly at the number frequencies (95–135 Hz) can still make numbers go undetected, and function keys (Shift/Delete/?123/Emoji/Enter) still often fail in that condition. All numbers are synthetic-signal simulations.
 
-## Yang berubah di v1.3.6 (petikan beruntun: tanpa dobel, tidak ada yang hilang)
-Semua perubahan di `NativeMicPitchDetector.java`; `index.html` tidak berubah. Diuji dengan simulator deterministik `tools/vsim/` (lihat bagian Pengujian), dibandingkan dengan v1.3.5 pada skenario yang sama.
-- **Petikan di atas dengung dibaca dari sampel SESUDAH onset saja** (`RETRIG_FULL_TAIL`). Jendela 85 ms masih ~80% berisi nada lama di ~17-33 ms pertama; dulu jalur cepat/jendela penuh membacanya sebagai nada lama lagi = **huruf dobel** (nada 71 terketik dua kali, nada baru hilang). Jalur cepat tidak dipakai untuk retrigger.
-- **Pemicu onset kedua berbasis transien** (`FLUX_RATIO`, `FLUX_MIN`): lonjakan RMS selisih sampel. Dulu petikan beruntun hilang kalau dengung beberapa nada menumpuk dan volume total tidak naik cukup. Onset tanpa transien dalam `SAME_NOTE_WINDOW_MS` wajib >= `NO_TRANSIENT_MIN_PEAK` (60%) dari puncak terakhir, supaya beating dengung tidak jadi huruf hantu.
-- **Verifikasi harmonik** (`HARMONIC_EXPLAINED_MIN`): bacaan retrigger atau < 200 Hz harus punya tenaga di f..4f. Mencegah nada hantu dari campuran dengung (mis. 82,4 Hz x 6 = B4 terbaca angka "1").
-- **Petikan ulang nada SAMA (mis. "ll", "aa") tidak lagi sering hilang**: pada bacaan tail bersih >= 225 Hz dengan transien, syarat keras dilonggarkan ke `ECHO_SAME_NOTE_PEAK_TRANSIENT` (30%) dan gerbang lembah dilewati (volume hop bergantung fase saat nada sama bertumpuk dengan dengungnya). Nada < 225 Hz (angka, q-p) SENGAJA tetap memakai gerbang lama yang ketat, karena tidak ada pembeda volume/energi yang bersih antara petikan ulang sah dan hantu dari dengung (diukur; lihat skenario `echoh`).
+### v1.3.6 — rapid plucking: no doubles, none lost
+All changes are in `NativeMicPitchDetector.java`; `index.html` is unchanged. Tested with the deterministic simulator `tools/vsim/` (see Testing) against v1.3.5 on the same scenarios.
+- **A pluck over ringing is read only from samples AFTER the onset** (`RETRIG_FULL_TAIL`). The 85 ms window is still ~80% old note in the first ~17–33 ms; previously the fast/full-window path read the old note again = **doubled letters** (note 71 typed twice, the new note lost). The fast path is not used for retriggers.
+- **Second onset trigger based on transients** (`FLUX_RATIO`, `FLUX_MIN`): spikes in the sample-to-sample RMS difference. Previously rapid plucks were lost when the ringing of several notes piled up and total volume did not rise enough. An onset without a transient inside `SAME_NOTE_WINDOW_MS` must be ≥ `NO_TRANSIENT_MIN_PEAK` (60%) of the last peak, so ring beating does not become ghost letters.
+- **Harmonic verification** (`HARMONIC_EXPLAINED_MIN`): a retrigger reading or one < 200 Hz must have energy at f..4f. This prevents ghost notes from ring mixtures (e.g. 82.4 Hz × 6 = B4 read as number "1").
+- **Re-plucking the SAME note (e.g. "ll", "aa") is no longer often lost:** on a clean tail reading ≥ 225 Hz with a transient, the hard condition is relaxed to `ECHO_SAME_NOTE_PEAK_TRANSIENT` (30%) and the valley gate is skipped. Notes < 225 Hz (numbers, q–p) DELIBERATELY keep the old strict gate, since no clean volume/energy discriminator separates a legitimate re-pluck from a ghost of ringing (measured; see the `echoh` scenario).
 
-Hasil simulasi (asli v1.3.5 -> v1.3.6), tanpa dan dengan HP lambat (`cost=8`):
-| Skenario | v1.3.5 | v1.3.6 |
+Simulation results (original v1.3.5 → v1.3.6), without and with a slow phone (`cost=8`):
+| Scenario | v1.3.5 | v1.3.6 |
 |---|---|---|
-| `rapid` (7 nada tiap 220 ms) | 5/7 benar, 1 dobel | 7/7 benar, 0 dobel |
-| `repeat` (76 diulang tiap 250 ms) | 4 dari 6 terketik | 6 dari 6 |
-| `rep 0.3 76`, `rep 0.25 60`, `rep 0.3 64` | 3-5 dari 6 | 6 dari 6 |
-| Petikan tunggal, dengung panjang + AGC, tuts fungsi, gema harmonik (`echoh`), profil harmonik | benar | identik (tidak ada regresi) |
+| `rapid` (7 notes every 220 ms) | 5/7 correct, 1 double | 7/7 correct, 0 doubles |
+| `repeat` (76 repeated every 250 ms) | 4 of 6 typed | 6 of 6 |
+| `rep 0.3 76`, `rep 0.25 60`, `rep 0.3 64` | 3–5 of 6 | 6 of 6 |
+| Single pluck, long ringing + AGC, function keys, harmonic echo (`echoh`), harmonic profiles | correct | identical (no regression) |
 
-**Batas yang masih ada** (jujur): (1) nada rendah < 225 Hz yang diulang cepat masih bisa hilang (`rep 0.4 45`: 4 dari 6); (2) lari nada cepat < ~300 ms saat 3+ senar sebelumnya masih berdengung (`seq 0.25`/`seq 0.3`): pelacak pitch monofonik tidak bisa memisahkan campuran itu, hasilnya nada hilang (bukan salah huruf). Redam senar sebelumnya (palm-mute) kalau mau lebih cepat; (3) suara orang masih bocor jadi huruf (`voice`), sama seperti v1.3.5. Semua angka di atas SIMULASI sinyal sintetis, bukan gitar/HP asli.
+**Remaining limits** (honestly): (1) low notes < 225 Hz repeated quickly can still be lost (`rep 0.4 45`: 4 of 6); (2) fast runs < ~300 ms while 3+ previous strings still ring (`seq 0.25`/`seq 0.3`): a monophonic pitch tracker cannot separate that mixture, so notes are lost (not mistyped). Mute the previous strings (palm-mute) for more speed; (3) human voice still leaks into letters (`voice`), same as v1.3.5. All numbers above are SIMULATIONS of synthetic signals, not a real guitar/phone.
 
-## Yang berubah di v1.3.5 (perbaikan lambat / telat)
-- **APK debug sekarang benar-benar non-debuggable.** `native-patches/insert_perf.py` sudah ada sejak lama tapi TIDAK pernah dipanggil workflow, jadi APK debug berjalan sebagai *debuggable*: ART mematikan optimasi dan loop YIN di thread audio jauh lebih lambat. Langkahnya kini ada di `android-build.yml`.
-- **`.github/workflows/` disamakan dengan `workflows/` (versi baru).** Salinan di `.github/` ternyata versi lama (tanpa `permissions: contents: write` sehingga Release bisa gagal 403, tanpa ikon/nama APK Guitarwiter, tanpa cek password keystore PKCS12).
-- **YIN dihitung lazy** (`yinCore`): CMNDF dihitung bertahap dan berhenti begitu lembah pertama ketemu. Hasil identik bit-per-bit dengan versi lama (diuji 600 sinyal), tapi nada tinggi ~6,8x lebih ringan (2,98 -> 0,44 ms/bacaan di mesin uji) dan nada rendah ~1,3-2x. Bacaan yang lebih singkat dari 1 hop (16,7 ms) mencegah loop deteksi tertinggal dari audio di HP lambat.
-- **Jam deteksi monoton** (`System.nanoTime`) menggantikan `currentTimeMillis`. Jam dinding yang melompat mundur (sinkron waktu otomatis) membuat `cooldownUntil`/`touchMuteUntil` "di masa depan" sehingga mic seolah mati sementara.
-- **IPC sinkron ke aplikasi tujuan ditunda saat mengetik** (`HtmlKeyboardService`): `getCursorCapsMode()` (50 ms) dan `getTextBeforeCursor()` (120 ms) dulu jalan sesudah SETIAP huruf di main thread yang sama yang mengetik huruf berikutnya; kalau WhatsApp/Instagram sedang sibuk, huruf berikutnya telat. Sekarang dijalankan sekali, 300 ms sesudah berhenti mengetik (`TYPING_ACTIVE_MS`, `IDLE_SYNC_DELAY_MS`).
-- **`deaccent()` di-cache** (`index.html`): dipanggil untuk setiap kata kamus pribadi pada setiap huruf (2x) di thread JS; kini satu lookup Map.
-- **Mic mencoba start lagi** (4x: 250/600/1200/2500 ms) kalau `startNativeMic()` gagal sesaat (mis. keyboard cepat disembunyikan lalu ditampilkan), dan menampilkan pesan kalau tetap gagal. Dulu gagal diam-diam sampai mic dinyalakan ulang manual.
-- `tools/sim/run.sh` jalan juga di JDK tanpa `javac` terpisah.
+### v1.3.5 — fixes for slow / late response
+- **The debug APK is now genuinely non-debuggable.** `native-patches/insert_perf.py` had existed for a long time but was NEVER called by the workflow, so the debug APK ran as *debuggable*: ART disables optimisations and the YIN loop on the audio thread was much slower. The step is now in `android-build.yml`.
+- **`.github/workflows/` synchronised with `workflows/` (the new version).** The copy in `.github/` was an old version (no `permissions: contents: write`, so Releases could fail with 403; no Guitarwiter icon/APK name; no PKCS12 keystore password check).
+- **YIN is computed lazily** (`yinCore`): the CMNDF is computed incrementally and stops at the first valley. The result is bit-for-bit identical to the old version (600 signals tested), but high notes are ~6.8× lighter (2.98 → 0.44 ms/reading on the test machine) and low notes ~1.3–2×. A reading shorter than one hop (16.7 ms) keeps the detection loop from lagging behind audio on a slow phone.
+- **Monotonic detection clock** (`System.nanoTime`) replaces `currentTimeMillis`. A wall clock jumping backwards (automatic time sync) put `cooldownUntil`/`touchMuteUntil` "in the future", making the mic seem briefly dead.
+- **Synchronous IPC to the target app is deferred while typing** (`HtmlKeyboardService`): `getCursorCapsMode()` (50 ms) and `getTextBeforeCursor()` (120 ms) used to run after EVERY letter on the same main thread that types the next letter; if WhatsApp/Instagram was busy, the next letter was late. They now run once, 300 ms after typing stops (`TYPING_ACTIVE_MS`, `IDLE_SYNC_DELAY_MS`).
+- **`deaccent()` is cached** (`index.html`): it was called for every personal-dictionary word on every letter (2×) on the JS thread; now a single Map lookup.
+- **The mic retries starting** (4×: 250/600/1200/2500 ms) if `startNativeMic()` fails briefly (e.g. the keyboard is hidden then shown quickly) and shows a message if it still fails. Previously it failed silently until the mic was turned on again manually.
+- `tools/sim/run.sh` also works on a JDK without a separate `javac`.
 
-## Yang berubah di v1.3.4
-- **Deteksi dikembalikan ke mesin bersih v1.1.3**, tanpa filter "Gitar saja" berbasis ambang volume mutlak (`G_MIN_PEAK`, `G_FAST_MIN_PEAK`, `G_SUSTAIN`, dsb. dari v1.3.x). Ambang volume itu tebakan dan di HP dengan gain mic berbeda bisa membuang atau menunda petikan sungguhan. Konsekuensinya: **suara orang/TV tidak lagi disaring khusus**.
-- **Tuts fungsi diamankan** (lihat `FUNCTIONAL_KEYS_STRICT`, `OVERTONE_*`, `HARMONIC_ECHO_*`). Sebelumnya `FUNCTIONAL_KEYS_STRICT=false` sehingga satu bacaan salah sudah cukup untuk mengubah Shift/mode/hapus.
-- **Shift lewat nada tidak pernah mengunci CapsLock.** Dua deteksi A4 berdekatan (gema/dengung) dulu terbaca "ketuk dua kali" sehingga CapsLock menyala sendiri dan huruf jadi kapital. CapsLock sekarang hanya lewat sentuhan (ketuk Shift dua kali).
-- **Peta nada Java tidak dipakai saat basi.** Sesudah nada yang diproses JS (mis. `?123` pindah ke simbol), Java menunggu peta baru dulu, jadi huruf berikutnya tidak diketik dengan peta mode lama lalu dihapus-ketik-ulang.
-- Dipertahankan dari v1.3.x: bunyi & getar tuts native (`keyTap`), bungkam mic saat sentuhan, gerbang anti-gema, urutan ketik-dulu.
+### v1.3.4
+- **Detection restored to the clean v1.1.3 engine**, without the "Guitar only" filter based on absolute volume thresholds (`G_MIN_PEAK`, `G_FAST_MIN_PEAK`, `G_SUSTAIN`, etc. from v1.3.x). Those volume thresholds were guesses and, on phones with different mic gain, could drop or delay real plucks. Consequence: **human voice/TV is no longer specially filtered**.
+- **Function keys secured** (see `FUNCTIONAL_KEYS_STRICT`, `OVERTONE_*`, `HARMONIC_ECHO_*`). Previously `FUNCTIONAL_KEYS_STRICT=false`, so a single wrong reading was enough to change Shift/mode/delete.
+- **Shift via pitch never locks CapsLock.** Two nearby A4 detections (echo/ringing) used to read as a "double tap", so CapsLock turned itself on and letters became capitals. CapsLock is now touch-only (tap Shift twice).
+- **The Java note map is not used when stale.** After a note handled by JS (e.g. `?123` switching to symbols), Java waits for the new map first, so the next letter is not typed with the old mode's map and then deleted and retyped.
+- Kept from v1.3.x: native key sound & vibration (`keyTap`), mic muting on touch, the anti-echo gate, type-first ordering.
 
-## Masalah umum
-- **Satu petikan muncul dua kali** → naikkan `ECHO_SAME_NOTE_PEAK` (mis. 0.8) / `ECHO_WINDOW_MS`. Kalau petikan ulang cepat pada nada yang sama malah tidak muncul, turunkan (mis. 0.55).
-- **Nada tinggi (x c v b n m) masih dobel** → naikkan `SAME_NOTE_VALLEY_RATIO` (mis. 2.2) atau `SAME_NOTE_WINDOW_MS` (mis. 1800). Nyalakan "Info nada": muncul "↩ gema diabaikan" tiap kali gerbang membuang sesuatu.
-- **Shift/Hapus/`?123`/Enter terasa lambat atau susah keluar** → memang butuh 3 bacaan (±90-100 ms). Longgarkan: `FUNCTIONAL_KEYS_STRICT = false` (kembali ke perilaku lama, lebih mudah salah picu).
-- **Tuts fungsi sengaja dipetik tapi ditolak** → cek "Info nada" ("↩ gema diabaikan"); kalau itu overtone-veto yang terlalu galak, naikkan `OVERTONE_VETO_RATIO`.
-- **Huruf hantu saat mengetik dengan jari** → naikkan `TOUCH_MUTE_MS` (mis. 300).
-- **Huruf berulang (`eeee`) atau muncul sendiri** → sensitivitas terlalu tinggi / derau ruangan; naikkan `ONSET_RMS`.
-- **Nada tertukar huruf ↔ angka** → salah oktaf pada nada rendah; lihat `LOW_ZONE_*`.
-- **Terasa delay** → lihat angka `· xx ms` di status keyboard (waktu di dalam kode). Sisanya adalah latensi audio masuk Android (`AudioRecord`) yang tidak bisa dipangkas dari Java.
-- **Mode tiba-tiba pindah ke simbol/emoji** → set `PITCH_MODE_TOGGLE_KEYS = false`.
+## Common problems
+- **One pluck appears twice** → raise `ECHO_SAME_NOTE_PEAK` (e.g. 0.8) / `ECHO_WINDOW_MS`. If a fast re-pluck of the same note fails to appear, lower it (e.g. 0.55).
+- **High notes (x c v b n m) still double** → raise `SAME_NOTE_VALLEY_RATIO` (e.g. 2.2) or `SAME_NOTE_WINDOW_MS` (e.g. 1800). Turn on "Note info": "↩ echo ignored" appears every time the gate discards something.
+- **Shift/Delete/`?123`/Enter feel slow or hard to trigger** → they do need 3 readings (±90–100 ms). To loosen: `FUNCTIONAL_KEYS_STRICT = false` (back to the old behaviour, easier to mis-trigger).
+- **A function key deliberately plucked but rejected** → check "Note info" ("↩ echo ignored"); if it is the overtone veto being too strict, raise `OVERTONE_VETO_RATIO`.
+- **Ghost letters when typing with a finger** → raise `TOUCH_MUTE_MS` (e.g. 300).
+- **Repeated letters (`eeee`) or letters appearing by themselves** → sensitivity too high / room noise; raise `ONSET_RMS`.
+- **Notes swapped between letters ↔ numbers** → octave error on a low note; see `LOW_ZONE_*` and `ODD_EVIDENCE_*`.
+- **Feels delayed** → look at the `· xx ms` figure in the keyboard status (time inside the code). The rest is Android's input audio latency (`AudioRecord`), which cannot be trimmed from Java.
+- **Mode suddenly switches to symbols/emoji** → set `PITCH_MODE_TOGGLE_KEYS = false`.
 
-Kebijakan privasi: [privacy-policy.md](privacy-policy.md)
+Privacy policy: [privacy-policy.md](privacy-policy.md)
 
-## Bunyi & getar tuts
-- Setiap sentuhan tuts memanggil SATU fungsi native `keyTap(kind, getar, bunyi, volume)`: bungkam mic + bunyi tuts + getar. Bunyi memakai efek bawaan Android (`AudioManager.playSoundEffect`) seperti Gboard: beda untuk huruf, spasi, hapus, enter, dan mengikuti pengaturan "Suara sentuh" sistem.
-- Teks selalu dikirim ke aplikasi lebih dulu, bunyi/getar menyusul.
-- Nyalakan di Setelan keyboard: "Suara klik" dan "Getaran keyboard". Kalau tetap senyap, cek Setelan Android > Suara > "Suara sentuh".
+## Key sound & vibration
+- Every key touch calls ONE native function `keyTap(kind, vibrate, sound, volume)`: mute the mic + key sound + vibration. The sound uses Android's built-in effects (`AudioManager.playSoundEffect`) like Gboard: different for letters, space, delete and enter, and it follows the system "Touch sounds" setting.
+- Text is always sent to the app first; sound/vibration follow.
+- Turn them on in the keyboard settings: "Click sound" and "Keyboard vibration". If it stays silent, check Android Settings > Sound > "Touch sounds".
 
-## Pengujian (folder `tools/`)
-Dijalankan di sini sebelum rilis; tidak ikut ke APK.
-- `tools/flow-test.js` (Node + `npm i jsdom`): menjalankan `www/index.html` di browser tiruan; memeriksa label ↔ nada ↔ karakter yang diketik untuk SEMUA tuts di mode huruf/Shift/Caps/simbol 1/simbol 2, alur ketik dari Java, perilaku Shift/CapsLock dari nada vs sentuhan, dan pindah mode `?123`.
-- `tools/vsim/` (JDK 17): sama dengan `tools/sim/` tapi pakai **jam virtual**, jadi hasilnya identik tiap dijalankan dan jauh lebih cepat dari real-time. `cost=<ms>` meniru HP lambat; `DET=<file.java>` membandingkan detektor lain (mis. versi lama); skenario tambahan `rep <gap> <midi> <amp>` (nada sama diulang). Skenario `hl <profil> <midi...> [res=<rasio>]` (v1.3.7): tiap nada dipetik sendiri dengan profil harmonik tertentu dan resonansi badan gitar sintetis (`-Dresf=<Hz>` mengatur frekuensinya, `PER=1` mencetak hasil per nada). Contoh: `tools/vsim/run.sh cost=8 rapid`.
-- `tools/sim/` (JDK 17): menjalankan `NativeMicPitchDetector.java` ASLI dengan stub Android dan audio sintetis real-time (petikan, urutan cepat, dengung, AGC, high-pass mic HP, tuts fungsi, gema harmonik, uji unit veto overtone). Lihat `tools/sim/README.txt`. Hasilnya simulasi, bukan gitar/HP asli.
+## Testing (`tools/` folder)
+Run here before a release; not shipped in the APK.
+- `tools/ai-test.js` (plain Node, no dependencies): 30 checks of the AI modules with `fetch` and the native bridge mocked — request format, key from `localStorage`, broken answers rejected, job polling, SAM segment validation, image URL validation.
+- `tools/flow-test.js` (Node + `npm i jsdom`): runs `www/index.html` in a fake browser; checks label ↔ note ↔ typed character for ALL keys in letter/Shift/Caps/symbol-1/symbol-2 modes, the typing flow from Java, Shift/CapsLock behaviour from pitch vs touch, and the `?123` mode switch.
+- `tools/vsim/` (JDK 17): like `tools/sim/` but with a **virtual clock**, so results are identical on every run and much faster than real time. `cost=<ms>` imitates a slow phone; `DET=<file.java>` compares another detector (e.g. an old version); extra scenario `rep <gap> <midi> <amp>` (same note repeated). Scenario `hl <profile> <midi...> [res=<ratio>]` (v1.3.7): each note plucked on its own with a given harmonic profile and synthetic guitar-body resonance (`-Dresf=<Hz>` sets its frequency, `PER=1` prints per-note results). Example: `tools/vsim/run.sh cost=8 rapid`.
+- `tools/sim/` (JDK 17): runs the REAL `NativeMicPitchDetector.java` with Android stubs and real-time synthetic audio (plucks, fast sequences, ringing, AGC, phone-mic high-pass, function keys, harmonic echo, overtone-veto unit test). See `tools/sim/README.txt`. Results are simulations, not a real guitar/phone.
