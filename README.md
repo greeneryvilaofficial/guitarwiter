@@ -1,5 +1,7 @@
 # 🎸 GuitarWiter — Guitar-to-Keyboard
 
+> **v1.4.4 "lean" build:** identical to v1.4.3 but WITHOUT the AI modules (`www/ai/`, the AI panel and its settings entries). Use it to compare typing performance. The Meta integration described below is in the full v1.4.3 build.
+
 A custom Android keyboard that turns **guitar notes into typing**. Pluck one note → one letter/key appears in any text field (WhatsApp, Instagram, etc.). Pitch detection runs natively (AudioRecord + YIN) inside the app, while the keyboard UI is a web page (`www/`) inside an `InputMethodService` WebView.
 
 ## GuitarWiter + Meta Integration
