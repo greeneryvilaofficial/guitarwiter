@@ -3,7 +3,7 @@
 // dimuat walau tanpa koneksi internet (penting karena WebView keyboard
 // akan sering dibuka tanpa jaringan aktif).
 
-const CACHE_NAME = 'genjreng-ketik-cache-v25'; // v1.4.0: modul AI (Muse); (v1.3.9 petikan gitar dihapus); v1.3.8: pembanding harmonik terkuat, zona rendah lebih cepat; v1.3.7: turun oktaf butuh harmonik ganjil (p/a/s tidak lagi jadi angka)
+const CACHE_NAME = 'genjreng-ketik-cache-v27'; // v1.4.6: Wonder hemat (melodi lokal, jatah 1x, saklar mati); v1.4.5: kolom API Key/Endpoint/Test Connection; v1.4.0: modul AI (Muse); (v1.3.9 petikan gitar dihapus); v1.3.8: pembanding harmonik terkuat, zona rendah lebih cepat; v1.3.7: turun oktaf butuh harmonik ganjil (p/a/s tidak lagi jadi angka)
 const CORE_ASSETS = [
   'index.html',
   'ai/ai-core.js',
