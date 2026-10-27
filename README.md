@@ -77,6 +77,29 @@ Every push to `main` builds an APK and a new Release (`build-<number>`).
 
 ## Changelog
 
+### v1.4.6 — cost guard for Muse Wonder (it billed far too much)
+Built on v1.4.5. Native Java is byte-identical to v1.4.0; changes are in `www/ai/generate-full.js`, `www/ai/ai-core.js`, the AI block of `www/index.html`, `sw.js`, the test, `privacy-policy.md` and this README.
+- **Likely cost driver, fixed:** the old Wonder flow sent the whole 30 s recording as base64 (~1.3 MB of text). If an endpoint counts that as text tokens, ONE call can mean hundreds of thousands of tokens. (This is a hypothesis; the real billing rules are not known to this project — check the provider's dashboard.) Now the recording is analysed **on the device** (NSDF pitch tracking) into a list of notes `{t, d, m}`; only that list is sent — 30 s of humming ≈ 30 notes ≈ 0.8 KB ≈ 280 tokens. **The audio is never sent.**
+- **Wonder is OFF by default** (`GWAI.setServiceEnabled('wonder', true)`; in the panel: "Aktifkan Wonder (berbayar)", two-tap confirm). While off, `call()` refuses without any network request. (Emptying the endpoint is NOT a reliable off switch: defaults refill empty fields on load.)
+- **Quota: 1 paid call**, stored permanently (`localStorage['gwai_wonder_quota']`, `GWAI.wonder.quota()/resetQuota()/setMaxCalls(1..5)`). When it is used up, `generateFull` returns `limit-reached` with **no request**. "Reset jatah Wonder" needs a two-tap confirm.
+- The quota is spent **before** sending, so a timeout, a dropped connection or a lost response still counts (it may have been billed); it is refunded only when the server rejects the request (400/401/403/404/422). **No automatic retry.** Job polling (GET) is capped at 100 polls / 5 minutes.
+- **No auto-send:** after the 30 s hum the app only reads the melody and shows a summary (notes, ≈tokens, KB, remaining quota). You must tap **"Kirim ke Wonder (berbayar)"**; **"Batal"** sends nothing. Double taps while a call is running return `busy`.
+- **Output is capped:** `max_tokens` (default 4000; `GWAI.setConfig({services:{wonder:{maxTokens:0}}})` omits it) and `expand_to` (180 s). An unknown extra field may be rejected by a real API; Test/detail messages show why.
+- **"Hapus key dari HP ini"** button in the API section removes `meta_key` from the device. **This does not revoke the key at the provider** — revoke/rotate it in the provider's dashboard yourself, especially if an APK containing a saved key was ever shared.
+- Request body is now `{model, format:'melody-v1', melody:{notes}, expand_to, schema, max_tokens}`; if the real Wonder API needs audio instead, that contract and its price must be checked first (send the audio only through a server-side proxy with its own limits).
+- Tests: `node tools/ai-test.js` now runs 77 checks (melody extraction for three timbres incl. weak fundamental, silence/one-note rejection, off-by-default, quota, refund rules, no retry, no `audio` in the body, busy, UI has no auto-send).
+
+### v1.4.5 — manual API setup: API Key, Endpoint, Test Connection
+Built on top of v1.4.0 (native Java files are byte-identical to v1.4.0; this release changes only `www/ai/ai-core.js`, the AI block of `www/index.html`, `sw.js`, the test and this README).
+- Turning **"AI features (Muse)"** ON (Settings → Experimental) now opens the AI panel straight away, with these fields at the top:
+  1. **API Key (Llama / Meta)** — password field. Saved on the device only (`localStorage['meta_key']`, never inside the config object); the panel shows just its length and last 4 characters.
+  2. **Endpoint (optional)** — ONE full address, e.g. `https://api.dev.meta.ai/v1/chat/completions` (split internally into base URL + path). Empty = built-in default. Only `https://` is accepted; addresses with `user:pass@`, `?query`, `#hash` or spaces are rejected, so the key can never be sent over plain http or leak through a query string.
+  3. **Test Connection** — saves the fields, then sends one tiny chat request (`ping`) and explains the result: connected (with milliseconds), key rejected (401/403), endpoint not found (404), bad request / probably wrong model (400/422), rate limited (429), server error (5xx), timeout / no network. The first 200 characters of the server's error message are shown too. It refuses to send anything if no key is set.
+  - **Model (optional)** is an extra small field next to them, because a Llama key may need a different model name than the default `muse-spark`.
+- Fields save automatically on change; Test Connection also saves them first. The endpoint field applies to **Spark** (text/chat); Wonder, SAM and Image keep their own addresses (`GWAI.setConfig` / `GWAI.saveEndpoint(name, url, model)`).
+- Spark's built-in default is now `https://api.dev.meta.ai/v1/chat/completions`, model `muse-spark` (from the app owner's notes; **not verified**). The old v1.4.0 default is migrated automatically; addresses you typed yourself are never touched.
+- Tests: `node tools/ai-test.js` now runs 54 checks (key/endpoint validation, `no-key` makes no request, Bearer + model + `ping` in the request, 401/404/400/network handling, detail truncated to 200 characters, reset to default).
+
 ### v1.4.0 — pluck sound removed + Muse AI modules
 - **The guitar-pluck sound when typing (v1.3.9) was removed:** code, the "Guitar pluck sound" and "Pluck volume" settings are gone. The old click sound is unchanged.
 - **AI modules**, all **OFF by default** (`prefs.ai=false`, Settings → Experimental → "AI features (Muse)"). While off, no AI script is loaded and no network call is made. The panel opens from Settings → "AI Panel (Muse)". (The app UI itself is in Indonesian: *Setelan → Eksperimental → "Fitur AI (Muse)"* and *Setelan → "Panel AI (Muse)"*.)
@@ -170,7 +193,7 @@ Privacy policy: [privacy-policy.md](privacy-policy.md)
 
 ## Testing (`tools/` folder)
 Run here before a release; not shipped in the APK.
-- `tools/ai-test.js` (plain Node, no dependencies): 30 checks of the AI modules with `fetch` and the native bridge mocked — request format, key from `localStorage`, broken answers rejected, job polling, SAM segment validation, image URL validation.
+- `tools/ai-test.js` (plain Node, no dependencies): 77 checks of the AI modules with `fetch` and the native bridge mocked — request format, key from `localStorage`, broken answers rejected, job polling, SAM segment validation, image URL validation, key/endpoint validation and Test Connection.
 - `tools/flow-test.js` (Node + `npm i jsdom`): runs `www/index.html` in a fake browser; checks label ↔ note ↔ typed character for ALL keys in letter/Shift/Caps/symbol-1/symbol-2 modes, the typing flow from Java, Shift/CapsLock behaviour from pitch vs touch, and the `?123` mode switch.
 - `tools/vsim/` (JDK 17): like `tools/sim/` but with a **virtual clock**, so results are identical on every run and much faster than real time. `cost=<ms>` imitates a slow phone; `DET=<file.java>` compares another detector (e.g. an old version); extra scenario `rep <gap> <midi> <amp>` (same note repeated). Scenario `hl <profile> <midi...> [res=<ratio>]` (v1.3.7): each note plucked on its own with a given harmonic profile and synthetic guitar-body resonance (`-Dresf=<Hz>` sets its frequency, `PER=1` prints per-note results). Example: `tools/vsim/run.sh cost=8 rapid`.
 - `tools/sim/` (JDK 17): runs the REAL `NativeMicPitchDetector.java` with Android stubs and real-time synthetic audio (plucks, fast sequences, ringing, AGC, phone-mic high-pass, function keys, harmonic echo, overtone-veto unit test). See `tools/sim/README.txt`. Results are simulations, not a real guitar/phone.
