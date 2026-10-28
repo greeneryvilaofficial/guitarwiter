@@ -1758,7 +1758,7 @@
     numRowAlways:false, numRowPass:true, showEmojiKey:true, showComma:true, showPeriod:true,
     glide:true, glideTrail:true, swipeDel:true, spaceCursor:true,
     nextWord:true, emojiHint:true, noOffensive:true,
-    ai:false,   // v1.4.0: fitur AI (Muse Spark / Wonder / SAM 3.1 / Image) -- bawaan MATI
+    ai:false,   // v1.5.0: fitur cerdas OFFLINE (Spark / Wonder / SAM / Image lokal) -- bawaan MATI
     kickEnabled:false, kickLevel:1 };   // kick: true = Senar + Kick (kick -> spasi), false = Nada saja; level 0 ketat / 1 normal / 2 peka
   try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')); }catch(e){}
   function savePrefs(){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }catch(e){} scheduleNoteMapSync(); }
@@ -2283,7 +2283,7 @@
       { k:'haptic', t:'Getaran keyboard', s:'Getar saat tombol ditekan' },
       { k:'popup', t:'Pop-up tombol', s:'Tampilkan pratinjau huruf saat tombol ditekan' } ] },
     { title:'Eksperimental', items:[
-      { k:'ai', t:'Fitur AI (Muse)', s:'Ubah tab dengan perintah, humming jadi lagu. Teks tab & rekaman dikirim ke layanan yang Anda atur' } ] },
+      { k:'ai', t:'Fitur cerdas (offline)', s:'Ubah tab dengan perintah, chord jadi lagu + lirik, humming jadi lagu, perpustakaan tab. Semua di HP: tanpa internet, tanpa API' } ] },
     { title:'Koreksi & saran', items:[
       { k:'autocorrect', t:'Koreksi otomatis', s:'Perbaiki salah ketik saat spasi atau tanda baca' },
       { k:'autocaps', t:'Huruf besar otomatis', s:'Huruf besar di awal kalimat' },
@@ -2304,7 +2304,7 @@
     { id:'dict',  icon:'spell',     t:'Kamus', s:() => 'Kelola kata pribadi' },
     { id:'clip',  icon:'clipboard', t:'Papan klip', s:() => 'Riwayat salinan' },
     { id:'share', icon:'share',     t:'Bagikan Guitarwiter', s:() => 'Ajak teman mencoba' },
-    { id:'ai',    icon:'palette',   t:'Panel AI (Muse)', s:() => prefs.ai ? 'Spark, Wonder, waveform' : 'Nyalakan dulu di Eksperimental' },
+    { id:'ai',    icon:'palette',   t:'Panel cerdas (offline)', s:() => prefs.ai ? 'Ubah tab, chord→lagu, humming→lagu, tab lagu' : 'Nyalakan dulu di Eksperimental' },
   ];
   // Menerapkan pilihan yang punya efek langsung ke tampilan.
   function updateNumRow(){
@@ -4720,221 +4720,219 @@
 </script>
 
 <!-- ============================================================================================
-     [LABEL AI / v1.4.0] Pemuat + panel Muse Spark, Muse Wonder, SAM 3.1, Muse Image.
-     Bawaan MATI (prefs.ai=false): tidak ada skrip AI yang dimuat dan tidak ada panggilan jaringan.
-     Isi modul: ai/ai-core.js, ai/editor.js (Spark), ai/generate-full.js (Wonder), ai/waveform.js (SAM + Image).
-     Semua keluaran ke layar lewat textContent (bukan innerHTML) -> jawaban API tidak bisa menyisipkan HTML/skrip.
+     [LABEL AI / v1.5.0 / OFFLINE] Pemuat + panel "Fitur cerdas": Spark, Wonder, SAM, Image versi LOKAL.
+     TANPA API, TANPA kunci, TANPA jaringan. Bawaan MATI (prefs.ai=false): tidak ada skrip yang dimuat sampai saklar dinyalakan.
+     Modul: ai/ai-core.js (tab) music.js (teori) lyrics.js (lirik) songgen.js (pembangun lagu) songs.js (perpustakaan tab lagu)
+            editor.js (Spark) generate-full.js (Wonder) waveform.js (SAM + sampul). Keluaran ke layar selalu lewat textContent.
      ============================================================================================ -->
 <script>
 (function(){
   'use strict';
-  var PREFS_KEY = 'genjreng_prefs_v1', MODS = ['ai/ai-core.js','ai/editor.js','ai/generate-full.js','ai/waveform.js'];
-  var loaded = false, loading = null, panel = null, wf = null, wfCanvas = null;
+  var PREFS_KEY = 'genjreng_prefs_v1';
+  var MODS = ['ai/ai-core.js','ai/music.js','ai/lyrics.js','ai/songgen.js','ai/songs.js','ai/editor.js','ai/generate-full.js','ai/waveform.js'];
+  var loaded = false, loading = null, failedSrc = '', loadedCount = 0, done = {}, panel = null, wf = null, wfCanvas = null, moodSel = null, seedBump = 0, lastChords = '';
   function aiOn(){ try{ return JSON.parse(localStorage.getItem(PREFS_KEY) || '{}').ai === true; }catch(e){ return false; } }
   function G(){ return window.GWAI; }
-  // Teks hasil Test Connection: penyebab paling mungkin + potongan pesan server (textContent, aman).
-  function testMsg(r){
-    var d = r && r.detail ? '\n' + r.detail : '', ms = r && r.ms != null ? ' (' + r.ms + ' ms)' : '';
-    if(r.ok) return '✓ Terhubung' + ms + '. Key & endpoint diterima.';
-    var e = r.error || '';
-    if(e === 'no-key') return '✗ Isi API key dulu.';
-    if(e === 'not-configured') return '✗ Endpoint belum diatur.';
-    if(e === 'http-401' || e === 'http-403') return '✗ Key ditolak (' + e.slice(5) + '). Cek key-nya, atau key itu bukan untuk endpoint ini.' + d;
-    if(e === 'http-404') return '✗ Endpoint / path tidak ditemukan (404). Cek alamatnya.' + d;
-    if(e === 'http-400' || e === 'http-422') return '✗ Permintaan ditolak (' + e.slice(5) + '). Kemungkinan nama model salah; isi kolom Model.' + d;
-    if(e === 'http-429') return '! Kena batas kecepatan/kuota (429). Coba lagi sebentar.' + d;
-    if(/^http-5/.test(e)) return '✗ Server layanan bermasalah (' + e.slice(5) + ').' + d;
-    if(e === 'timeout') return '✗ Waktu habis' + ms + '. Server tidak menjawab.';
-    if(e === 'network') return '✗ Tidak bisa terhubung. Cek internet atau alamat endpoint.';
-    return '✗ Gagal: ' + e + d;
-  }
   function nat(){ try{ return window.AndroidKeyboard || null; }catch(e){ return null; } }
   function $(id){ return document.getElementById(id); }
-  var MSG = { 'not-configured':'Belum diatur: isi endpoint & kunci (kunci dibaca dari localStorage "meta_key").',
-    'no-active-tab':'Belum ada tab aktif.', 'busy':'Masih memproses perintah sebelumnya.', 'timeout':'Waktu habis.', 'network':'Gagal terhubung ke layanan.',
+  function setText(id, t){ var e = $(id); if(e) e.textContent = t; }
+
+  /* ---------- [LABEL AI / BERSIH-BERSIH] versi online lama (v1.4.x) menyimpan kunci API di perangkat: hapus, tidak dipakai lagi ---------- */
+  try{ ['meta_key','gwai_cfg_v1','gwai_wonder_quota'].forEach(function(k){ localStorage.removeItem(k); }); }catch(e){}
+
+  var MSG = { 'no-active-tab':'Belum ada tab aktif.', 'unknown-command':'Perintah belum dikenali.', 'bad-chord':'Akor tidak valid.',
     'no-native-mic':'Fitur ini butuh keyboard Android (mic native).', 'mic-not-running':'Mic native belum menyala / izin mikrofon belum diberikan.',
-    'no-audio':'Belum ada rekaman humming.', 'tab-not-json':'Jawaban AI bukan tab yang valid; tab tidak diubah.', 'tab-shape':'Jawaban AI bukan tab yang valid; tab tidak diubah.',
-    'tab-empty':'Jawaban AI tidak berisi nada yang valid; tab tidak diubah.', 'job-failed':'Layanan gagal membuat lagu.', 'service-off':'Wonder NONAKTIF (berbayar). Aktifkan dulu di panel kalau memang mau.', 'limit-reached':'Jatah Wonder habis (mencegah tagihan berulang). Reset jatah dulu kalau memang mau generate lagi.', 'no-melody':'Melodi tidak terbaca. Bersenandung lebih jelas, minimal 3 nada.', 'payload-too-large':'Data terlalu besar; tidak dikirim.', 'bad-key':'Key tidak valid (8-512 karakter, tanpa spasi/kutip).', 'bad-url':'Endpoint harus alamat lengkap diawali https:// tanpa spasi, ?query, atau #.', 'bad-model':'Nama model tidak valid.', 'storage':'Penyimpanan perangkat menolak.', 'bad-wav':'Rekaman tidak terbaca.', 'bad-image':'Gambar dari layanan tidak valid.' };
-  function msg(r){ var e = r && r.error || 'unexpected'; return MSG[e] || (/^http-/.test(e) ? 'Layanan menolak permintaan (' + e.slice(5) + ').' : 'Gagal: ' + e); }
+    'no-audio':'Belum ada rekaman humming.', 'bad-wav':'Rekaman tidak terbaca.', 'no-melody':'Melodi tidak terbaca. Bersenandung lebih jelas (minimal 3 nada, jeda antar nada).',
+    'no-canvas':'Canvas tidak tersedia di perangkat ini.', 'unknown-song':'Lagu tidak ditemukan.', 'nothing-to-undo':'Tidak ada yang dibatalkan.', 'tab-empty':'Tab kosong.' };
+  function msg(r){ var m = MSG[r && r.error] || ('Gagal: ' + (r && r.error)); return r && r.detail ? m + ' (' + r.detail + ')' : m; }
 
   /* ---------- [LABEL AI / PEMUAT] muat modul berurutan; gagal satu -> berhenti, aplikasi tetap jalan ---------- */
   function load(){
     if(loaded) return Promise.resolve(true);
     if(loading) return loading;
+    failedSrc = '';
     loading = MODS.reduce(function(p, src){
-      return p.then(function(ok){ if(!ok) return false; return new Promise(function(res){
+      return p.then(function(ok){ if(!ok) return false; if(done[src]) return true;       // yang sudah berhasil tidak dimuat ulang saat mencoba lagi
+        return new Promise(function(res){
         var el = document.createElement('script'); el.src = src; el.async = false;
-        el.onload = function(){ res(true); }; el.onerror = function(){ res(false); }; document.head.appendChild(el); }); });
-    }, Promise.resolve(true)).then(function(ok){ loaded = ok && !!G(); loading = null; if(loaded) setup(); return loaded; });
+        el.onload = function(){ done[src] = true; loadedCount = Object.keys(done).length; res(true); }; el.onerror = function(){ failedSrc = src; res(false); }; document.head.appendChild(el); }); });
+    }, Promise.resolve(true)).then(function(ok){ loaded = ok && !!G() && !!G().wonder && !!G().waveform; loading = null; if(loaded) setup(); else if(!failedSrc) failedSrc = '(modul tidak lengkap)'; showStatus(); return loaded; });
     return loading;
   }
-
-  /* ---------- [LABEL AI / BAWAAN] endpoint dari spesifikasi pemilik aplikasi (BELUM terverifikasi; Spark disebut aktif 27 Okt) ---------- */
+  /* ---------- [LABEL AI / DIAGNOSIS] kalau modul tidak ketemu: sebutkan berkasnya + penyebab yang paling mungkin ---------- */
+  function loadFailMsg(){ return 'Modul gagal dimuat: ' + (failedSrc || 'tidak diketahui') + '.\nPenyebab paling mungkin: folder www/ai/ belum ikut di-push ke GitHub / belum ikut di-build ke APK. Pasang ulang APK dari build terbaru.'; }
+  function showStatus(){ var e = $('gwai-status'); if(!e) return; e.textContent = loaded ? 'Modul: ' + MODS.length + '/' + MODS.length + ' dimuat ✓ (v' + G().version + ')' : 'Modul: ' + loadedCount + '/' + MODS.length + ' dimuat — gagal di ' + (failedSrc || '?'); }
+  window.gwaiDiag = function(){ return { loaded: loaded, count: loadedCount, total: MODS.length, failed: failedSrc, version: G() ? G().version : null }; };
   function setup(){
-    G().setDefaults({ services: {
-      spark:  { baseUrl:'https://api.dev.meta.ai', path:'/v1/chat/completions', model:'muse-spark', keyStorage:'meta_key' },   // dari spesifikasi pemilik (belum terverifikasi); bisa diganti dari kolom Endpoint di Panel AI
-      wonder: { baseUrl:'https://api.meta.ai', path:'/muse/wonder',                     keyStorage:'meta_key' } } });
-    // Migrasi: alamat bawaan lama (v1.4.0) yang mungkin sudah tersimpan -> alamat baru. Alamat buatan pengguna tidak disentuh.
-    var sp = G().getConfig().services.spark;
-    if(sp.baseUrl === 'https://api.meta.ai' && sp.path === '/v1/chat') G().saveEndpoint('spark', 'https://api.dev.meta.ai/v1/chat/completions', 'muse-spark');
-    // Spark memakai format chat: tab dikirim sebagai JSON, jawaban harus JSON tab saja.
-    var SYS = 'Kamu mengedit tab gitar. Balas HANYA dengan JSON tab: {"v":1,"title":"","tempo":90,"key":"E","timeSig":[4,4],"notes":[{"t":0,"d":0.5,"s":6,"f":0}]} ' +
-              '(t=ketukan mulai, d=durasi ketukan, s=senar 1..6 dengan 1=e tinggi, f=fret 0..24, nada E2..B5). Tanpa penjelasan dan tanpa markdown.';
-    G().hooks.spark.mapRequest = function(p){ if(p.messages) return { model: p.model || 'muse-spark', messages: p.messages };   // Test Connection: pesan sudah disusun core
-      return { model: p.model || 'muse-spark', messages: [
-      { role:'system', content: SYS }, { role:'user', content: 'Instruksi: ' + p.instruction + '\nTab saat ini: ' + JSON.stringify(p.tab) } ] }; };
-    G().hooks.spark.mapResponse = function(j){ var c = j && j.choices && j.choices[0] && j.choices[0].message; return { text: c ? c.content : '' }; };
-    document.addEventListener('gw:tab-changed', function(e){ showTab(e.detail && e.detail.tab, e.detail && e.detail.why); });
+    document.addEventListener('gw:tab-changed', function(e){ showTab(e.detail && e.detail.tab); });
   }
-  function showTab(tab, why){
-    var out = $('tab-output'), full = $('full-song'); if(!tab || !out) return;
-    var ascii = G().tab.toAscii(tab);
-    if(String(why || '').indexOf('wonder') === 0 && full) full.textContent = ascii; else out.textContent = ascii;
+  function fmtTime(sec){ var m = Math.floor(sec / 60), s = Math.round(sec % 60); return m + ':' + (s < 10 ? '0' : '') + s; }
+  function showTab(tab){
+    var out = $('tab-output'); if(!out || !tab) return;
+    var head = (tab.title || 'Tanpa judul') + ' · ' + (tab.key || '?') + ' · ' + tab.tempo + ' bpm · ' + fmtTime(G().tab.seconds(tab)) + ' · ' + tab.notes.length + ' nada';
+    out.textContent = head + '\n\n' + G().tab.toAscii(tab);
+    out.scrollTop = 0;
   }
 
-  /* ---------- [LABEL MUSE SPARK] perintah -> ubah tab langsung ---------- */
-  var PRESETS = { bluesy: 'bikin lebih bluesy' };           // allowlist untuk Intent/trigger dari native
+  /* ---------- [LABEL MUSE SPARK / OFFLINE] perintah -> ubah tab langsung ---------- */
+  var PRESETS = { bluesy:'bikin lebih bluesy', galau:'buat jadi galau', ceria:'bikin ceria', rock:'jadi rock', fingerstyle:'versi fingerstyle', cepat:'lebih cepat', lambat:'lebih lambat' };   // allowlist untuk Intent/trigger dari native
   function runSpark(text){
-    var out = $('tab-output'); if(!out) return Promise.resolve();
     return load().then(function(ok){
-      if(!ok){ out.textContent = 'Modul AI gagal dimuat.'; return; }
+      if(!ok){ setText('gwai-cmdres', loadFailMsg()); return; }
       if(!G().tab.get()) G().tab.set(G().tab.sample(), 'sample');
-      out.textContent = 'Spark berpikir…';
-      return G().editor.run(text).then(function(r){ if(!r.ok){ out.textContent = msg(r) + '\n\n' + G().tab.toAscii(G().tab.get()); } });
+      var r = G().editor.run(text);
+      setText('gwai-cmdres', r.ok ? '✓ ' + r.applied.join(' + ') + (r.dropped ? ' (' + r.dropped + ' nada di luar jangkauan dibuang)' : '') : '✗ ' + msg(r) + (r.suggestions ? '\nCoba: ' + r.suggestions.join(' · ') : ''));
     });
   }
   window.makeItBluesy = function(){ return runSpark('bikin lebih bluesy'); };
   window.onSparkTrigger = function(preset){ var t = PRESETS[preset]; if(!t || !aiOn()) return; window.gwaiOpen(); runSpark(t); };
 
-  /* ---------- [LABEL MUSE WONDER / HEMAT] humming 30 dtk -> melodi dibaca di perangkat -> ketuk "Kirim" -> lagu penuh ----------
-     Yang dikirim hanya daftar nada (beberapa ratus token), BUKAN rekaman. Jatah 1x, bawaan nonaktif, tanpa kirim otomatis. */
-  var humming = false, pending = null;
-  function show(id, on){ var e = $(id); if(e) e.style.display = on ? '' : 'none'; }
-  // Tombol konfirmasi ketuk-dua-kali (tanpa confirm()/alert(), yang bisa mati di WebView keyboard): ketukan pertama "mempersenjatai" 5 detik.
-  function twoTap(b, normal, armed, fn){
-    var t = null;
-    b.addEventListener('click', function(){
-      if(t){ clearTimeout(t); t = null; b.textContent = normal; fn(); return; }
-      b.textContent = armed; t = setTimeout(function(){ t = null; b.textContent = normal; }, 5000);
-    });
+  /* ---------- [LABEL MUSE SPARK / CHORD -> LAGU OFFLINE] ---------- */
+  window.metaGenerate = function(chord){ return Promise.resolve(buildFromChords(chord, false)); };
+  function buildFromChords(chordText, variation){
+    if(!loaded){ setText('gwai-lirik', 'Modul belum dimuat; tunggu sebentar lalu coba lagi.'); return ''; }
+    if(variation && chordText === lastChords) seedBump++; else if(!variation) seedBump = 0;
+    lastChords = chordText;
+    var seed = (G().lyrics.hash(String(chordText).trim().split(/[\s,|]+/).join(' ')) + seedBump) >>> 0;
+    var r = G().editor.fromChords(chordText, { mood: moodSel, seed: seed });
+    if(!r.ok){ setText('gwai-lirik', '✗ ' + msg(r)); setText('gwai-band', ''); return ''; }
+    var d = r.data;
+    setText('gwai-lirik', '♪ ' + d.title + ' — ' + (d.mood === 'galau' ? 'galau' : 'ceria') + ', ' + d.tempo + ' bpm, ' + fmtTime(d.seconds) + '\n\n' + d.lirik);
+    setText('gwai-band', 'BASS\n' + d.bassTab + '\n\nDRUM\n' + d.drumTab);
+    return d.lirik;
   }
-  function wonderStat(){
-    if(!G() || !G().wonder) return; var q = G().wonder.quota(), off = G().isServiceOff('wonder'), st = $('gwai-wonder-stat');
-    if(st) st.textContent = 'Wonder: ' + (off ? 'NONAKTIF (berbayar)' : 'AKTIF (berbayar)') + ' · jatah sisa ' + q.left + ' dari ' + q.max;
-    show('gwai-wonder-on', off); show('gwai-wonder-reset', q.left === 0);
-  }
+
+  /* ---------- [LABEL MUSE WONDER / OFFLINE] humming 30 dtk -> lagu penuh ~3 menit, di perangkat ---------- */
+  var humming = false;
   window.generateFullSong = function(){
-    var btn = $('gwai-wonder'), full = $('full-song');
+    var btn = $('gwai-wonder');
     load().then(function(ok){
-      if(!ok){ full.textContent = 'Modul AI gagal dimuat.'; return; }
-      if(humming){ G().wonder.cancelHum(); humming = false; btn.textContent = 'Humming → Lagu Full [Muse Wonder]'; full.textContent = 'Dibatalkan.'; return; }
-      wonderStat();
-      if(G().isServiceOff('wonder')){ full.textContent = msg({ error: 'service-off' }); return; }
-      if(G().wonder.quota().left < 1){ full.textContent = msg({ error: 'limit-reached' }); return; }
-      pending = null; show('gwai-wonder-send', false); show('gwai-wonder-cancel', false);
+      if(!ok){ setText('full-song', loadFailMsg()); return; }
+      if(humming){ G().wonder.cancelHum(); humming = false; btn.textContent = 'Humming 30 dtk → Lagu Full'; setText('full-song', 'Dibatalkan.'); return; }
       var st = G().wonder.startHum(function(left){ btn.textContent = 'Merekam… ' + left + ' dtk (ketuk untuk batal)'; }, function(){ finishHum(); });
-      if(!st.ok){ full.textContent = msg(st); return; }
-      humming = true; btn.textContent = 'Merekam… 30 dtk (ketuk untuk batal)'; full.textContent = 'Bersenandung sekarang…';
+      if(!st.ok){ setText('full-song', '✗ ' + msg(st)); return; }
+      humming = true; btn.textContent = 'Merekam… 30 dtk (ketuk untuk batal)'; setText('full-song', 'Bersenandung sekarang… (jeda sebentar antar nada supaya terbaca jelas)');
     });
   };
   function finishHum(){
-    var btn = $('gwai-wonder'), full = $('full-song'); humming = false; btn.textContent = 'Humming → Lagu Full [Muse Wonder]';
-    var h = G().wonder.getHum(); if(!h.ok){ full.textContent = msg(h); return; }
-    if(wf) wf.setWavBase64(h.data.audio);                     // hanya untuk tampilan gelombang di layar
-    full.textContent = 'Membaca melodi di perangkat…';
-    G().wonder.prepare(h.data).then(function(r){
-      if(!r.ok){ full.textContent = msg(r); return; }
-      pending = r.data; var q = G().wonder.quota();
-      full.textContent = 'Melodi terbaca: ' + r.data.notes.length + ' nada (±' + r.data.approxTokens + ' token, ' + (r.data.bytes / 1024).toFixed(1) + ' KB). Rekaman TIDAK dikirim.\n' +
-        'Kirim = 1 permintaan BERBAYAR. Jatah sisa: ' + q.left + '.\nKetuk "Kirim ke Wonder" kalau setuju, atau "Batal".';
-      show('gwai-wonder-send', true); show('gwai-wonder-cancel', true);
-    });
-  }
-  function sendWonder(){
-    if(!pending || !G()) return; var full = $('full-song'), data = pending; pending = null; show('gwai-wonder-send', false); show('gwai-wonder-cancel', false);
-    full.textContent = 'Wonder berpikir… (bisa sampai beberapa menit). Jangan ketuk lagi.';
-    G().wonder.generateFull(data, { onProgress: function(p){ full.textContent = 'Wonder berpikir…' + (p != null ? ' ' + Math.round(p * 100) + '%' : ''); } }).then(function(r){
-      wonderStat();
-      if(!r.ok){ full.textContent = msg(r) + (r.error === 'timeout' ? '\nPermintaan MUNGKIN sudah diproses dan ditagih. JANGAN diulang; cek dashboard dulu.' : (r.refunded ? '\n(Ditolak server, jatah dikembalikan.)' : '')); }
-      else full.textContent += '\n\n(' + Math.round(r.seconds) + ' dtk' + (r.dropped ? ', ' + r.dropped + ' nada tak valid dibuang' : '') + ')';
+    var btn = $('gwai-wonder'); humming = false; btn.textContent = 'Humming 30 dtk → Lagu Full';
+    var h = G().wonder.getHum(); if(!h.ok){ setText('full-song', '✗ ' + msg(h)); return; }
+    if(wf) wf.setWavBase64(h.data.audio);
+    setText('full-song', 'Membaca melodi & menyusun lagu di perangkat…');
+    G().wonder.generate(h.data).then(function(r){
+      if(!r.ok){ setText('full-song', '✗ ' + msg(r)); return; }
+      var a = r.data.analysis;
+      setText('full-song', '♪ ' + r.data.title + '\nKunci ' + a.key + ' · ' + a.tempo + ' bpm · ' + fmtTime(a.seconds) + ' · ' + a.melodyNotes + ' nada humming\nAkor bait: ' + a.verseChords.join(' ') + '\nBagian: ' + a.sections.join(' › '));
+      setText('gwai-lirik', r.data.lirik); setText('gwai-band', '');
     });
   }
 
-  /* ---------- [LABEL SAM 3.1 + MUSE IMAGE / WAVEFORM] ---------- */
+  /* ---------- [LABEL PERPUSTAKAAN TAB LAGU] ---------- */
+  function openSong(id){
+    return load().then(function(ok){
+      if(!ok) return; var r = G().songs.get(id);
+      if(!r.ok){ setText('gwai-note', '✗ ' + msg(r)); return; }
+      G().tab.set(r.data, 'lib:' + id); setText('gwai-note', 'Tab dibuka: ' + r.data.title);
+    });
+  }
+
+  /* ---------- [LABEL SAM + IMAGE / WAVEFORM] ---------- */
   window.onWaveformClick = function(freq, idx){ if(wf && panel && panel.style.display !== 'none') wf.mark(freq); };   // dipanggil native tiap nada valid
-  function runSam(){ var o = $('gwai-note'); load().then(function(ok){ if(!ok || !wf) return; wf.segment().then(function(r){ o.textContent = r.ok ? 'Segmen: ' + r.data.length : msg(r); }); }); }
+  function runSam(){ load().then(function(ok){ if(!ok || !wf) return; var r = wf.segment(); setText('gwai-note', r.ok ? 'Segmen: ' + r.data.length + ' frasa' : '✗ ' + msg(r)); }); }
   function runCover(){
-    var o = $('gwai-note'), img = $('gwai-cover');
-    load().then(function(ok){ if(!ok) return; var t = G().tab.get();
-      G().waveform.makeCover('Sampul album gitar blues' + (t && t.title ? ': ' + t.title : '')).then(function(r){
-        if(!r.ok){ o.textContent = msg(r); return; } img.src = r.data.src; img.style.display = 'block'; o.textContent = 'Sampul siap.'; }); });
+    load().then(function(ok){ if(!ok) return;
+      if(!G().tab.get()){ setText('gwai-note', '✗ ' + msg({ error: 'no-active-tab' })); return; }
+      var r = G().waveform.makeCover(G().tab.get()), img = $('gwai-cover');
+      if(!r.ok){ setText('gwai-note', '✗ ' + msg(r)); return; } img.src = r.data.src; img.style.display = 'block'; setText('gwai-note', 'Sampul siap (digambar di perangkat).'); });
   }
 
   /* ---------- [LABEL AI / PANEL] overlay di atas keyboard; dibuat sekali, hanya saat dibuka ---------- */
   function build(){
     var st = document.createElement('style');
-    st.textContent = '#gwaiPanel{position:absolute;inset:0;z-index:70;overflow:auto;padding:8px;box-sizing:border-box;background:Canvas;color:CanvasText;font:13px sans-serif}' +
-      '#gwaiPanel button{margin:3px 4px 3px 0;padding:8px 10px;border-radius:8px;border:1px solid #8888;background:transparent;color:inherit;font:inherit}' +
-      '#gwaiPanel pre{margin:4px 0;padding:6px;border:1px solid #8884;border-radius:6px;overflow:auto;max-height:110px;font:11px monospace;white-space:pre}' +
-      '#gwaiPanel canvas{width:100%;height:56px;border:1px solid #8884;border-radius:6px}#gwaiPanel img{max-width:100%;max-height:120px;display:none;border-radius:6px}';
+    /* [LABEL AI / TEMA] Panel memakai VARIABEL TEMA keyboard (--kb-bg, --key-*, --divider, --muted ...) persis seperti panel setelan,
+       jadi otomatis ikut tema Gelap / Terang / Biru / Ungu / Hijau / Otomatis. Tidak ada warna yang ditulis manual. */
+    st.textContent =
+      '#gwaiPanel{position:absolute;inset:0;z-index:70;overflow:auto;padding:12px;box-sizing:border-box;background:var(--kb-bg);color:var(--key-text);' +
+        'font:14px Roboto,system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:var(--divider) transparent}' +
+      '#gwaiPanel .gw-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:8px;margin-bottom:4px;border-bottom:1px solid var(--divider)}' +
+      '#gwaiPanel .gw-title{font-size:1rem;font-weight:700;color:var(--key-text)}#gwaiPanel .gw-title b{color:var(--key-tag)}' +
+      '#gwaiPanel button{margin:3px 4px 3px 0;padding:9px 12px;border:var(--key-border,none);border-radius:var(--key-radius,8px);background:var(--key-bg);color:var(--key-text);font:inherit;box-shadow:0 1px 0 var(--shadow)}' +
+      '#gwaiPanel button:active{background:var(--key-active-bg)}#gwaiPanel button:disabled{opacity:.5}' +
+      '#gwaiPanel button.fn{background:var(--key-fn-bg);margin:0}#gwaiPanel button.fn:active{background:var(--key-fn-active-bg)}' +
+      '#gwaiPanel .chips button,#gwaiPanel button.chip{border-radius:999px;background:var(--pill-bg);padding:7px 13px;font-size:.9rem}' +
+      '#gwaiPanel .chips button.on,#gwaiPanel button.on{background:var(--key-enter-bg);color:var(--kb-bg);font-weight:600}' +
+      'body.theme-light #gwaiPanel .chips button.on,body.theme-light #gwaiPanel button.on{color:var(--key-bubble-text)}' +   // tema Terang: teks putih di aksen biru (kontras 4,5 vs 3,7)
+      '#gwaiPanel h4{margin:16px 0 4px;font-size:.85rem;font-weight:700;color:var(--key-tag);letter-spacing:.02em}' +
+      '#gwaiPanel .hint{font-size:.75rem;color:var(--muted);margin:0 0 6px;white-space:pre-wrap}' +
+      '#gwaiPanel pre{margin:6px 0;padding:8px;background:var(--key-fn-bg);color:var(--key-text);border:1px solid var(--divider);border-radius:var(--key-radius,8px);overflow:auto;max-height:220px;' +
+        'font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;white-space:pre;scrollbar-width:thin;scrollbar-color:var(--divider) transparent}' +
+      '#gwaiPanel input,#gwaiPanel select{display:block;width:100%;box-sizing:border-box;margin:4px 0;padding:10px;background:var(--key-fn-bg);color:var(--key-text);border:1px solid var(--divider);border-radius:var(--key-radius,8px);font:inherit}' +
+      '#gwaiPanel input::placeholder{color:var(--muted)}#gwaiPanel input:focus,#gwaiPanel select:focus{outline:none;border-color:var(--key-tag)}' +
+      '#gwaiPanel select option{background:var(--key-fn-bg);color:var(--key-text)}' +
+      '#gwaiPanel canvas{width:100%;height:56px;background:var(--key-fn-bg);border:1px solid var(--divider);border-radius:var(--key-radius,8px)}' +
+      '#gwaiPanel img{max-width:100%;max-height:200px;display:none;border-radius:var(--key-radius,8px);margin-top:6px;border:1px solid var(--divider)}';
     document.head.appendChild(st);
     panel = document.createElement('div'); panel.id = 'gwaiPanel'; panel.style.display = 'none';
-    var wrap = $('kbWrap') || document.body; wrap.appendChild(panel);
-    function btn(id, label, fn){ var b = document.createElement('button'); if(id) b.id = id; b.textContent = label; b.addEventListener('click', fn); panel.appendChild(b); return b; }
-    function pre(id, txt){ var p = document.createElement('pre'); p.id = id; p.textContent = txt; panel.appendChild(p); return p; }
-    btn('', '✕ Tutup', function(){ window.gwaiClose(); });
-    /* [LABEL AI / API MANUAL] 3 elemen yang muncul begitu "Fitur AI (Muse)" di-ON-kan:
-       (1) TextField API Key  (2) TextField Endpoint (opsional)  (3) Tombol Test Connection.  + Model (opsional) agar key Llama/Meta dengan nama model lain tetap bisa dipakai. */
-    function fld(label, ph, type){ var l = document.createElement('div'); l.textContent = label; l.style.cssText = 'margin-top:6px;font-weight:600'; panel.appendChild(l);
-      var i = document.createElement('input'); i.type = type || 'text'; i.placeholder = ph; i.autocomplete = 'off'; i.spellcheck = false; i.autocapitalize = 'off';
-      i.style.cssText = 'display:block;width:100%;box-sizing:border-box;margin:3px 0;padding:8px;border-radius:6px;border:1px solid #8886;background:transparent;color:inherit;font:inherit'; panel.appendChild(i); return i; }
-    var kin = fld('API Key (Llama / Meta)', 'Tempel API key di sini', 'password'), kst = document.createElement('div'); kst.id = 'gwai-keystat'; kst.style.cssText = 'font-size:11px;opacity:.75'; panel.appendChild(kst);
-    btn('gwai-keydel', 'Hapus key dari HP ini', function(){ if(!G()) return; G().clearKey(); kin.value = ''; kst.textContent = 'Key dihapus dari perangkat ini. (Key lama tetap berlaku di dashboard sampai Anda mencabutnya di sana.)'; });
-    var ein = fld('Endpoint (opsional)', 'https://api.dev.meta.ai/v1/chat/completions');
-    var min = fld('Model (opsional)', 'muse-spark');
-    var tst = document.createElement('div'); tst.id = 'gwai-testres'; tst.style.cssText = 'margin:4px 0;white-space:pre-wrap;word-break:break-word';
-    function refreshStat(){ if(!G()) return; kst.textContent = G().hasKey() ? 'Key tersimpan: ' + G().keyHint() : 'Belum ada key.';
-      ein.value = G().endpointText('spark'); min.value = G().getConfig().services.spark.model || ''; }
-    // Simpan otomatis: key, endpoint, model. Mengembalikan teks error (atau '' kalau semua tersimpan).
-    function saveAll(){
-      if(!G()) return 'Modul AI belum dimuat; tunggu sebentar lalu coba lagi.';
-      if(kin.value.trim()){ var rk = G().saveKey(kin.value); if(!rk.ok) return msg(rk); kin.value = ''; }
-      var re = G().saveEndpoint('spark', ein.value, min.value); if(!re.ok) return msg(re);
-      refreshStat(); return '';
-    }
-    [kin, ein, min].forEach(function(i){ i.addEventListener('change', function(){ var e = saveAll(); tst.textContent = e || 'Tersimpan.'; }); });
-    var tbtn = btn('gwai-test', 'Test Connection', function(){
-      var e = saveAll(); if(e){ tst.textContent = '✗ ' + e; return; }
-      tst.textContent = 'Menguji koneksi…'; tbtn.disabled = true;
-      load().then(function(ok){ if(!ok){ tst.textContent = '✗ Modul AI gagal dimuat.'; tbtn.disabled = false; return; }
-        G().testConnection('spark').then(function(r){ tbtn.disabled = false; tst.textContent = testMsg(r); }); });
-    });
-    panel.appendChild(tst);
-    btn('gwai-spark', 'Bikin Lebih Bluesy 🎸 [Muse Spark]', function(){ window.makeItBluesy(); });
-    btn('', '↶ Batalkan', function(){ var r = G() && G().tab.undo(); if(r && !r.ok) $('tab-output').textContent = 'Tidak ada yang dibatalkan.'; });
-    pre('tab-output', 'Tab aktif akan tampil di sini.');
-    /* [LABEL MUSE WONDER / HEMAT] status + saklar + jatah. Wonder BERBAYAR: bawaan mati, jatah 1x, kirim butuh ketukan sadar. */
-    var wst = document.createElement('div'); wst.id = 'gwai-wonder-stat'; wst.style.cssText = 'margin-top:8px;font-weight:600'; panel.appendChild(wst);
-    var won = btn('gwai-wonder-on', 'Aktifkan Wonder (berbayar)', function(){}); twoTap(won, 'Aktifkan Wonder (berbayar)', 'Ketuk LAGI untuk mengaktifkan (berbayar)', function(){ if(G()){ G().setServiceEnabled('wonder', true); wonderStat(); } });
-    btn('gwai-wonder', 'Humming → Lagu Full [Muse Wonder]', function(){ window.generateFullSong(); });
-    var wsend = btn('gwai-wonder-send', 'Kirim ke Wonder (berbayar)', function(){ sendWonder(); }); wsend.style.display = 'none';
-    var wcan = btn('gwai-wonder-cancel', 'Batal', function(){ pending = null; show('gwai-wonder-send', false); show('gwai-wonder-cancel', false); $('full-song').textContent = 'Dibatalkan. Tidak ada yang dikirim.'; }); wcan.style.display = 'none';
-    var wrs = btn('gwai-wonder-reset', 'Reset jatah Wonder', function(){}); wrs.style.display = 'none';
-    twoTap(wrs, 'Reset jatah Wonder', 'Ketuk LAGI: reset jatah (bisa menambah tagihan)', function(){ if(G()){ G().wonder.resetQuota(); wonderStat(); $('full-song').textContent = 'Jatah direset.'; } });
-    pre('full-song', 'Lagu penuh akan tampil di sini.');
+    ($('kbWrap') || document.body).appendChild(panel);
+    function el(tag, text, cls){ var e = document.createElement(tag); if(text != null) e.textContent = text; if(cls) e.className = cls; panel.appendChild(e); return e; }
+    function btn(label, fn, id, parent){ var b = document.createElement('button'); if(id) b.id = id; b.textContent = label; b.addEventListener('click', fn); (parent || panel).appendChild(b); return b; }
+    function inp(ph, id, max){ var i = document.createElement('input'); i.type = 'text'; i.id = id; i.placeholder = ph; i.maxLength = max || 80; i.autocomplete = 'off'; i.spellcheck = false; panel.appendChild(i); return i; }
+    function pre(id, t){ var p = el('pre', t); p.id = id; return p; }
+
+    var head = el('div', null, 'gw-head'), ttl = document.createElement('div'); ttl.className = 'gw-title'; ttl.textContent = '🎸 Fitur cerdas · '; var ob = document.createElement('b'); ob.textContent = 'OFFLINE'; ttl.appendChild(ob); head.appendChild(ttl);
+    btn('✕ Tutup', function(){ window.gwaiClose(); }, null, head).className = 'fn';
+    el('div', 'Semua dikerjakan di HP ini: tanpa internet, tanpa API, tanpa kunci.', 'hint');
+    el('div', 'Memuat modul…', 'hint').id = 'gwai-status';
+    pre('tab-output', 'Tab aktif akan tampil di sini. Buka lagu dari perpustakaan atau buat lagu dari chord.');
+    btn('↶ Batalkan', function(){ var r = G() && G().tab.undo(); if(r && !r.ok) setText('gwai-cmdres', msg(r)); });
+    btn('Contoh riff', function(){ load().then(function(ok){ if(ok) G().tab.set(G().tab.sample(), 'sample'); }); });
+
+    el('h4', '① Ubah tab (Spark offline)');
+    el('div', 'Ketik perintah atau ketuk gaya. Hasilnya langsung mengubah tab aktif.', 'hint');
+    var cmd = inp('mis. "bikin lebih bluesy dan cepat"', 'gwai-cmd', 100);
+    var chips = el('div', null, 'chips');
+    [['Bluesy','bikin lebih bluesy'],['Galau','buat jadi galau'],['Ceria','bikin ceria'],['Rock','jadi rock'],['Fingerstyle','versi fingerstyle'],['Cepat','lebih cepat'],['Lambat','lebih lambat'],['Naik 2','naikin 2 nada'],['Turun 2','turunin 2 nada'],['Ulang','ulang dua kali']].forEach(function(c){
+      btn(c[0], function(){ cmd.value = c[1]; runSpark(c[1]); }, null, chips); });
+    btn('Terapkan', function(){ runSpark(cmd.value); });
+    el('div', '', 'hint').id = 'gwai-cmdres';
+
+    el('h4', '② Chord → Lagu + lirik');
+    el('div', 'Isi akor (maks 16), mis. Em C G D. Dapat: tab gitar ~3 menit, lirik berakor, tab bass & drum.', 'hint');
+    var chin = inp('Em C G D', 'gwai-chords', 80);
+    var moods = el('div', null, 'chips'), mb = {};
+    [['Suasana: otomatis', null], ['Suasana: galau', 'galau'], ['Suasana: ceria', 'ceria']].forEach(function(m){
+      mb[m[0]] = btn(m[0], function(){ moodSel = m[1]; Object.keys(mb).forEach(function(k){ mb[k].className = ''; }); mb[m[0]].className = 'on'; }, null, moods); });
+    mb['Suasana: otomatis'].className = 'on';
+    btn('Buat lagu', function(){ load().then(function(){ buildFromChords(chin.value, false); }); });
+    btn('Variasi lain', function(){ load().then(function(){ buildFromChords(chin.value, true); }); });
+    pre('gwai-lirik', 'Lirik & akor akan tampil di sini.');
+    pre('gwai-band', '');
+
+    el('h4', '③ Humming → Lagu Full (Wonder offline)');
+    el('div', 'Bersenandung 30 detik. Melodi dibaca di HP, lalu disusun jadi lagu ~3 menit (Intro, Verse, Chorus, Bridge, Outro) + lirik.', 'hint');
+    btn('Humming 30 dtk → Lagu Full', function(){ window.generateFullSong(); }, 'gwai-wonder');
+    pre('full-song', 'Hasil analisis humming akan tampil di sini.');
+
+    el('h4', '④ Perpustakaan tab lagu');
+    el('div', 'Lagu domain publik/tradisional dan latihan gitar. Tersedia tanpa internet.', 'hint');
+    var sel = document.createElement('select'); sel.id = 'gwai-songs'; panel.appendChild(sel);
+    btn('Buka tab', function(){ openSong(sel.value); });
+
+    el('h4', '⑤ Waveform, segmentasi & sampul');
     wfCanvas = document.createElement('canvas'); wfCanvas.width = 360; wfCanvas.height = 56; panel.appendChild(wfCanvas);
-    btn('', 'Segmentasi [SAM 3.1]', runSam); btn('', 'Sampul [Muse Image]', runCover);
+    btn('Segmentasi frasa (SAM)', runSam); btn('Sampul lagu (Image)', runCover);
     var im = document.createElement('img'); im.id = 'gwai-cover'; im.alt = 'Sampul'; panel.appendChild(im);
-    var n = document.createElement('div'); n.id = 'gwai-note'; panel.appendChild(n);
+    el('div', '', 'hint').id = 'gwai-note';
   }
   window.gwaiOpen = function(){
-    if(!aiOn()){ alert('Nyalakan "Fitur AI (Muse)" di Setelan → Eksperimental dulu.'); return; }
+    if(!aiOn()){ alert('Nyalakan "Fitur cerdas (offline)" di Setelan → Eksperimental dulu.'); return; }
     if(!panel) build();
     panel.style.display = 'block';
-    load().then(function(ok){ if(!ok) return; if(!wf && G().waveform) wf = G().waveform.create(wfCanvas);
-      wonderStat();
-      var rs = $('gwai-keystat'); if(rs){ rs.textContent = G().hasKey() ? 'Key tersimpan: ' + G().keyHint() : 'Belum ada key.'; var f = panel.querySelectorAll('input'); if(f[1]) f[1].value = G().endpointText('spark'); if(f[2]) f[2].value = G().getConfig().services.spark.model || ''; }
-      var t = G().tab.get(); if(t) showTab(t, 'open'); });
+    load().then(function(ok){ showStatus(); if(!ok){ setText('tab-output', loadFailMsg()); return; }
+      if(!wf) wf = G().waveform.create(wfCanvas);
+      try{ var tc = getComputedStyle(document.body).getPropertyValue('--key-tag').trim(); if(tc) wf.setColor(tc); }catch(e){}   // gelombang ikut warna aksen tema
+      var sel = $('gwai-songs'); if(sel && !sel.options.length) G().songs.list().forEach(function(s){ var o = document.createElement('option'); o.value = s.id; o.textContent = (s.kind === 'lagu' ? '♪ ' : '✎ ') + s.title; sel.appendChild(o); });
+      var t = G().tab.get(); if(t) showTab(t); });
     var a = nat(); try{ a && a.setWaveformHook && a.setWaveformHook(true); }catch(e){}
   };
   window.gwaiClose = function(){
