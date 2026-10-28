@@ -43,7 +43,7 @@ native-patches/            # pasted into the android/ project that Capacitor gen
   app-icon/                    # launcher icons (mipmap-*)
 www/
   index.html  sw.js  manifest.json  (+ icon-192.png, icon-512.png)
-  ai/  ai-core.js  editor.js  generate-full.js  waveform.js   # Meta/Muse modules (off by default)
+  ai/  ai-core.js music.js lyrics.js songgen.js songs.js editor.js generate-full.js waveform.js   # OFFLINE smart features (off by default, no network)
 tools/                     # tests and simulators (not shipped in the APK)
 capacitor.config.json
 package.json
@@ -76,6 +76,34 @@ Every push to `main` builds an APK and a new Release (`build-<number>`).
 | `RELEASE_RMS` (0.009) | deliberately below `ONSET_RMS` (0.012): hysteresis so ring ripples do not release the lock and get read as a new pluck |
 
 ## Changelog
+
+### v1.5.1 — the offline panel now follows the keyboard theme + module diagnostics
+Built on v1.5.0 (native Java still byte-identical to v1.4.0).
+- **Same look as the keyboard.** The panel no longer uses system colours; it uses the keyboard's own CSS variables — background `--kb-bg`, buttons `--key-bg` (pressed `--key-active-bg`), inputs/code boxes `--key-fn-bg`, chips `--pill-bg`, accent `--key-tag` / `--key-enter-bg`, lines `--divider`, hints `--muted`, corner radius `--key-radius` — exactly like the Settings panel. It therefore follows the theme switch (Dark / Light / Blue / Purple / Green / Auto) with no colour hard-coded; the waveform line takes the accent colour. Header row with the title and a close button, pill-shaped style chips, Roboto font.
+- **Readable in all five themes:** WCAG contrast computed from the real theme variables — main text, buttons, inputs and chips ≥ 7:1, hints ≥ 4.5:1, active chip ≥ 4.5:1 (Light theme uses white text on the blue accent), section titles ≥ 3.7:1 (same accent as the existing Settings headings).
+- **Module diagnostics:** the panel shows "Modul: 8/8 dimuat ✓ (v1.5.1)". If a file under `www/ai/` is missing from the APK (e.g. the folder was not pushed), it names the file and the likely cause instead of a vague error; `window.gwaiDiag()` returns the same. Fixed a bug found by that test: after one failed module, every retry reloaded all modules from the start — now only the ones not yet loaded are retried.
+- The two mood buttons were renamed "Suasana: otomatis / galau / ceria" so they are not confused with the Spark style chips of the same name.
+- Tests: `node tools/ai-test.js` 94 checks, `node tools/ai-panel-test.js` 34 checks (theme variables all defined, no hard-coded colours, contrast in 5 themes, missing-module scenarios).
+
+### v1.5.0 — everything AI is now OFFLINE (no API, no key, no network)
+Built on v1.4.7. Native Java is byte-identical to v1.4.0. The four online services (Muse Spark / Wonder / SAM 3.1 / Muse Image) were replaced by local engines; the **switch stays** (Settings → Experimental → "Fitur cerdas (offline)", off by default, turning it ON opens the panel). All v1.4.x online code (keys, endpoints, Test Connection, quota) was removed — the older zips still contain it.
+- **Spark, offline (`ai/editor.js`)** — *Commands:* type or tap "bikin lebih bluesy", "buat jadi galau", "bikin ceria", "jadi rock", "versi fingerstyle", "lebih cepat/lambat", "naikin 2 nada", "turunin 3 nada", "ulang dua kali" (Indonesian + English keywords, combinable: "bluesy dan lebih cepat"). Each is real music theory on the active tab: blues-scale snapping + swing + bends/vibrato + a turnaround lick; major↔minor + tempo + bass pad; power-chord fifths + hammer-ons/pull-offs; alternating-bass fingerstyle; transposition with automatic re-fingering; tab techniques `b / h p ~` are shown in the tab. *Chord → song:* `Em C G D` → a 2½–3 minute song (Intro, Verse ×2–4, Chorus, Bridge, Final Chorus, Outro) with arpeggio/strum/sustain patterns, **Indonesian lyrics with chords above the words** (rhymed AABB, mood galau/ceria, "Bandung" flavour, seeded: "Variasi lain" gives another lyric), plus **bass and drum tabs**.
+- **Wonder, offline (`ai/generate-full.js`)** — 30 s of humming → melody (NSDF pitch tracking, on the device) → tempo (median inter-onset interval), key (Krumhansl–Kessler), chords (Viterbi harmonisation over the diatonic chords) → a ~3 minute full song with the hummed melody as the verse theme, a chorus built from the same melody (shifted and snapped to chord tones), bridge and outro, **plus lyrics with chords**.
+- **Tab library (`ai/songs.js`)** — 6 public-domain/traditional songs (Twinkle Twinkle, Ode to Joy, Selamat Ulang Tahun/Happy Birthday, Jingle Bells chorus, Frère Jacques, Mary Had a Little Lamb) + 3 exercises (12-bar blues boogie in E, Am pentatonic box 1, Canon-style progression). Every melody note is verified present in the tab. No copyrighted songs.
+- **SAM, offline (`ai/waveform.js`)** — phrase segmentation of the humming waveform (voiced runs, gaps < 0.3 s merged, phrases < 0.4 s dropped). **Image, offline** — cover art drawn on a canvas from the song's title, key, tempo, mood and note heights (palette per mood), returned as a PNG data-URI.
+- **Tab format** gained optional `x` (technique) and `meta` (`sections`, `chords`, `mood`), both validated. The ASCII view now shows section names and chord names above the six strings, with bar lines, two bars per line.
+- **Privacy:** nothing leaves the device; `privacy-policy.md` section 7 rewritten. On load the app deletes the old `meta_key` / `gwai_cfg_v1` / `gwai_wonder_quota` from `localStorage`. **If the old key was ever shared or exposed, revoke it at the provider** — deleting it here does not.
+- **Honest limits:** the lyric writer is template-based (hand-written line banks grouped by rhyme, ~40 lines per mood), not a language model — it is varied and singable but repeats vocabulary across songs. Harmony is diatonic (no secondary dominants). The hum reader is monophonic and needs steady, separated notes. "SAM" and "Image" are local approximations of the idea, not the Meta models. Nothing here plays sound.
+- Tests: `node tools/ai-test.js` runs 94 checks (the network is **blocked** during the run and the test fails if any module touches it) and `node tools/ai-panel-test.js` runs 34 checks that drive the real panel code in a fake DOM.
+
+### v1.4.7 — Wonder moved to the chat endpoint (`https://api.meta.ai/v1/chat/completions`)
+Built on v1.4.6 (native Java still byte-identical to v1.4.0).
+- **Wonder no longer calls the special `/muse/wonder` endpoint** (reported as the expensive one). Its default is now `https://api.meta.ai/v1/chat/completions` with model `muse-spark`. **Spark's default moved to the same URL** (previously `api.dev.meta.ai`). The URL comes from the app owner's notes and is **not verified**; an endpoint you typed yourself in the panel is never touched (only values exactly equal to the old defaults are migrated). To go back, type the other address in the Endpoint field.
+- **The URL does not set the price — the model and the token count do.** So the model is now **mandatory**: if it is empty, Wonder returns `no-model` with no request and no quota used (an empty model lets the server choose its own default, which may be far more expensive).
+- Request format: a default `GWAI.hooks.wonder.mapRequest` turns the melody into a chat request `{model, messages:[system, user], max_tokens}` (English system prompt, "AT MOST 200 notes" so the answer fits in `max_tokens`); `mapResponse` reads `choices[0].message.content`. Direct `{tab}` and job `{job_id}` answers are still understood.
+- **Truncated answers are rescued:** if `max_tokens` cuts the JSON in the middle of the note list, the tab is cut after the last complete note and closed, then fully validated (previously a paid answer would have been thrown away). JSON wrapped in ```json or in extra sentences is read too (this also helps Spark).
+- All cost guards of v1.4.6 stay: Wonder off by default, quota of 1, quota spent before sending, no auto-retry, no auto-send, melody only (never audio).
+- Tests: `node tools/ai-test.js` now runs 83 checks.
 
 ### v1.4.6 — cost guard for Muse Wonder (it billed far too much)
 Built on v1.4.5. Native Java is byte-identical to v1.4.0; changes are in `www/ai/generate-full.js`, `www/ai/ai-core.js`, the AI block of `www/index.html`, `sw.js`, the test, `privacy-policy.md` and this README.
@@ -193,7 +221,8 @@ Privacy policy: [privacy-policy.md](privacy-policy.md)
 
 ## Testing (`tools/` folder)
 Run here before a release; not shipped in the APK.
-- `tools/ai-test.js` (plain Node, no dependencies): 77 checks of the AI modules with `fetch` and the native bridge mocked — request format, key from `localStorage`, broken answers rejected, job polling, SAM segment validation, image URL validation, key/endpoint validation and Test Connection.
+- `tools/ai-test.js` (plain Node, no dependencies): 94 checks of the offline AI engines — no network in the code (static scan) and none at run time (fetch/XHR/WebSocket/beacon are blocked), tab validation, music theory, song builder, lyrics, library fidelity, Spark commands, chord→song, humming→song, segmentation, cover art.
+- `tools/ai-panel-test.js` (plain Node): 34 checks that run the real panel script from `index.html` in a minimal fake DOM and tap its buttons (commands, chord→song, library, cover, humming with a fake native bridge, native intent allowlist).
 - `tools/flow-test.js` (Node + `npm i jsdom`): runs `www/index.html` in a fake browser; checks label ↔ note ↔ typed character for ALL keys in letter/Shift/Caps/symbol-1/symbol-2 modes, the typing flow from Java, Shift/CapsLock behaviour from pitch vs touch, and the `?123` mode switch.
 - `tools/vsim/` (JDK 17): like `tools/sim/` but with a **virtual clock**, so results are identical on every run and much faster than real time. `cost=<ms>` imitates a slow phone; `DET=<file.java>` compares another detector (e.g. an old version); extra scenario `rep <gap> <midi> <amp>` (same note repeated). Scenario `hl <profile> <midi...> [res=<ratio>]` (v1.3.7): each note plucked on its own with a given harmonic profile and synthetic guitar-body resonance (`-Dresf=<Hz>` sets its frequency, `PER=1` prints per-note results). Example: `tools/vsim/run.sh cost=8 rapid`.
 - `tools/sim/` (JDK 17): runs the REAL `NativeMicPitchDetector.java` with Android stubs and real-time synthetic audio (plucks, fast sequences, ringing, AGC, phone-mic high-pass, function keys, harmonic echo, overtone-veto unit test). See `tools/sim/README.txt`. Results are simulations, not a real guitar/phone.

@@ -8,7 +8,7 @@ Guitarwiter adalah keyboard Android yang mengubah nada gitar (lewat mikrofon) me
 
 ## 1. Mikrofon
 - Izin **RECORD_AUDIO** dipakai hanya untuk mendeteksi nada gitar secara *real-time* di dalam aplikasi.
-- Audio **tidak direkam, tidak disimpan, dan tidak dikirim**. Suara langsung dianalisis dan dibuang; yang dipakai hanya hasilnya (nada apa yang terdengar). Satu-satunya pengecualian adalah fitur AI opsional di bagian 6.
+- Audio **tidak direkam, tidak disimpan, dan tidak dikirim**. Suara langsung dianalisis dan dibuang; yang dipakai hanya hasilnya (nada apa yang terdengar).
 - Mikrofon hanya aktif saat fitur deteksi nada dinyalakan.
 
 ## 2. Teks yang kamu ketik
@@ -28,7 +28,7 @@ Semuanya bisa dihapus lewat **Pengaturan Android → Aplikasi → Guitarwiter �
 Guitarwiter membaca salinan terbaru di papan klip hanya untuk menampilkannya sebagai saran tempel. Isinya disimpan lokal dan tidak dikirim ke mana pun.
 
 ## 5. Jaringan & pihak ketiga
-- Tidak ada pengiriman data ke server (kecuali fitur AI opsional di bagian 6, yang bawaannya mati), tidak ada iklan, tidak ada SDK analitik.
+- Tidak ada pengiriman data ke server, tidak ada iklan, tidak ada SDK analitik.
 - Tab GIF berjalan offline (stiker emoji); tidak ada permintaan ke layanan GIF.
 
 ## 6. Anak-anak
@@ -45,9 +45,9 @@ Pertanyaan soal privasi: **[ISI EMAIL KONTAK KAMU DI SINI]**
 ### English summary
 Guitarwiter processes everything on your device. The microphone (RECORD_AUDIO) is used only for real-time pitch detection; audio is never recorded, stored, or transmitted. Typed text, learned words, settings, and clipboard suggestions stay in local app storage and can be cleared by clearing app data. No ads, analytics, trackers, or network data transfer. In private/password fields the keyboard does not learn or suggest words. Contact: **[ADD YOUR CONTACT EMAIL HERE]**
 
-## 6. Fitur AI opsional (Setelan → Eksperimental → "Fitur AI (Muse)")
-Bawaannya **mati**. Selama mati, tidak ada kode AI yang dimuat dan tidak ada data yang dikirim. Setelah Anda menyalakannya dan mengisi layanan yang Anda pilih:
-- **Ubah tab dengan perintah**: teks perintah (mis. "bikin lebih bluesy") dan tab yang sedang aktif dikirim ke layanan teks yang Anda atur.
-- **Humming jadi lagu** (Wonder, berbayar, bawaan NONAKTIF): setelah Anda menekan tombolnya, aplikasi merekam **30 detik terakhir** dari mikrofon hanya di memori, lalu **membaca melodinya di perangkat** (daftar nada dan durasi). **Rekaman audio tidak dikirim ke mana pun**; yang dikirim, hanya setelah Anda menekan "Kirim ke Wonder", adalah daftar nada tersebut (beberapa ratus karakter). Rekaman dibuang dari memori saat selesai atau dibatalkan.
-- **Segmentasi dan sampul**: rekaman humming atau deskripsi sampul dikirim ke layanan segmentasi/gambar yang Anda atur, hanya saat Anda menekan tombolnya.
-- Kunci API dibaca dari penyimpanan lokal perangkat (`meta_key`). Data yang dikirim tunduk pada kebijakan penyedia layanan yang Anda pilih. Hapus kunci dan matikan fitur ini kapan saja.
+## 7. Fitur cerdas (offline) — Setelan → Eksperimental → "Fitur cerdas (offline)"
+Bawaannya **mati**. Saat dinyalakan, semua dikerjakan **di perangkat Anda**: mengubah tab dengan perintah, membuat lagu dan lirik dari akor, mengubah humming jadi lagu, perpustakaan tab lagu, segmentasi frasa, dan sampul lagu.
+- **Tidak ada koneksi internet, tidak ada API, tidak ada kunci, tidak ada layanan pihak ketiga.** Tidak ada teks, tab, rekaman, atau gambar yang dikirim ke mana pun.
+- Rekaman humming 30 detik hanya disimpan di memori selama dianalisis (melodinya dibaca di perangkat), lalu dibuang saat selesai atau dibatalkan. Tidak disimpan ke penyimpanan.
+- Tab terakhir yang Anda buka disimpan di penyimpanan lokal aplikasi (`lastTab`) agar bisa dilanjutkan; hapus data aplikasi untuk menghapusnya.
+- Versi lama (1.4.x) yang memakai layanan online menyimpan kunci API di perangkat. Versi ini menghapus kunci itu saat dimuat.
