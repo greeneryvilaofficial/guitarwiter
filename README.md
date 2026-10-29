@@ -86,7 +86,8 @@ Built on v1.5.0 (native Java still byte-identical to v1.4.0).
 - Tests: `node tools/ai-test.js` 94 checks, `node tools/ai-panel-test.js` 34 checks (theme variables all defined, no hard-coded colours, contrast in 5 themes, missing-module scenarios).
 ### 🌍 Supported
 EN | ID | SU (Sunda) | JV (Jawa) | RU | AR | JA - 100% Offline.
-## Note: Currently tested on Android only (built entirely on-device in Lembang). Mac/Windows support planned - limited by device access, not architecture.
+### Note:
+Currently tested on Android only (built entirely on-device in Lembang). Mac/Windows support planned - limited by device access, not architecture.
 
 ### v1.5.0 — everything AI is now OFFLINE (no API, no key, no network)
 Built on v1.4.7. Native Java is byte-identical to v1.4.0. The four online services (Muse Spark / Wonder / SAM 3.1 / Muse Image) were replaced by local engines; the **switch stays** (Settings → Experimental → "Fitur cerdas (offline)", off by default, turning it ON opens the panel). All v1.4.x online code (keys, endpoints, Test Connection, quota) was removed — the older zips still contain it.
