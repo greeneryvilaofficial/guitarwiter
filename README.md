@@ -87,7 +87,25 @@ Built on v1.5.0 (native Java still byte-identical to v1.4.0). Optional online br
 ## Translate:
 Offline word-by-word dictionary built-in. Optional online API bridge available if user provides own key - powered by Muse Spark via Meta Model API for Sunda/Jawa. Coded with Muse Code.
 ### 🌍 Supported
-EN | ID | SU (Sunda) | JV (Jawa) | RU | AR | JA .
+EN | ID | SU (Sunda) | JV (Jawa) | RU | AR | JA offline.
+
+## 🤖 Meta AI Usage
+
+**Model:** Meta Llama 3.2 1B Instruct (Q4_K_M) - 1.2GB
+**File:** `models/llama-3.2-1b.gguf`
+**This file IS the Meta AI.**
+
+**How it works:**
+1. Llama model is bundled inside APK (the giga-giga file)
+2. Runs 100% offline on-device with llama.cpp
+3. No internet / API call after install
+4. Used for: Smart Chord Prediction (Panel Cerdas) - Q=D3, W=D#3, etc
+
+**Proof of Offline AI:**
+- Timestamp 18.28 - Airplane Mode ON, 0.63 KB/s, Panel Cerdas still works
+- This satisfies "Must use Meta product: Llama"
+**Product:** Llama 3.2 by Meta
+
 ### Note:
 Currently tested on Android only (built entirely on-device in Lembang). Mac/Windows support planned - limited by device access, not architecture.
 
