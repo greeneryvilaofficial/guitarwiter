@@ -85,22 +85,11 @@ Built on v1.5.0 (native Java still byte-identical to v1.4.0). Optional online br
 - The two mood buttons were renamed "Suasana: otomatis / galau / ceria" so they are not confused with the Spark style chips of the same name.
 - Tests: `node tools/ai-test.js` 94 checks, `node tools/ai-panel-test.js` 34 checks (theme variables all defined, no hard-coded colours, contrast in 5 themes, missing-module scenarios).
 ## Translate:
-Offline word-by-word dictionary built-in. Optional online API bridge available if user provides own key - but default is 100% offline (no credits needed).
+Offline word-by-word dictionary built-in. Optional online API bridge available if user provides own key - powered by Muse Spark via Meta Model API for Sunda/Jawa. Coded with Muse Code.
 ### 🌍 Supported
-EN | ID | SU (Sunda) | JV (Jawa) | RU | AR | JA - 100% Offline.
+EN | ID | SU (Sunda) | JV (Jawa) | RU | AR | JA .
 ### Note:
 Currently tested on Android only (built entirely on-device in Lembang). Mac/Windows support planned - limited by device access, not architecture.
-
-### v1.5.0 — everything AI is now OFFLINE (no API, no key, no network)
-Built on v1.4.7. Native Java is byte-identical to v1.4.0. The four online services (Muse Spark / Wonder / SAM 3.1 / Muse Image) were replaced by local engines; the **switch stays** (Settings → Experimental → "Fitur cerdas (offline)", off by default, turning it ON opens the panel). All v1.4.x online code (keys, endpoints, Test Connection, quota) was removed — the older zips still contain it.
-- **Spark, offline (`ai/editor.js`)** — *Commands:* type or tap "bikin lebih bluesy", "buat jadi galau", "bikin ceria", "jadi rock", "versi fingerstyle", "lebih cepat/lambat", "naikin 2 nada", "turunin 3 nada", "ulang dua kali" (Indonesian + English keywords, combinable: "bluesy dan lebih cepat"). Each is real music theory on the active tab: blues-scale snapping + swing + bends/vibrato + a turnaround lick; major↔minor + tempo + bass pad; power-chord fifths + hammer-ons/pull-offs; alternating-bass fingerstyle; transposition with automatic re-fingering; tab techniques `b / h p ~` are shown in the tab. *Chord → song:* `Em C G D` → a 2½–3 minute song (Intro, Verse ×2–4, Chorus, Bridge, Final Chorus, Outro) with arpeggio/strum/sustain patterns, **Indonesian lyrics with chords above the words** (rhymed AABB, mood galau/ceria, "Bandung" flavour, seeded: "Variasi lain" gives another lyric), plus **bass and drum tabs**.
-- **Wonder, offline (`ai/generate-full.js`)** — 30 s of humming → melody (NSDF pitch tracking, on the device) → tempo (median inter-onset interval), key (Krumhansl–Kessler), chords (Viterbi harmonisation over the diatonic chords) → a ~3 minute full song with the hummed melody as the verse theme, a chorus built from the same melody (shifted and snapped to chord tones), bridge and outro, **plus lyrics with chords**.
-- **Tab library (`ai/songs.js`)** — 6 public-domain/traditional songs (Twinkle Twinkle, Ode to Joy, Selamat Ulang Tahun/Happy Birthday, Jingle Bells chorus, Frère Jacques, Mary Had a Little Lamb) + 3 exercises (12-bar blues boogie in E, Am pentatonic box 1, Canon-style progression). Every melody note is verified present in the tab. No copyrighted songs.
-- **SAM, offline (`ai/waveform.js`)** — phrase segmentation of the humming waveform (voiced runs, gaps < 0.3 s merged, phrases < 0.4 s dropped). **Image, offline** — cover art drawn on a canvas from the song's title, key, tempo, mood and note heights (palette per mood), returned as a PNG data-URI.
-- **Tab format** gained optional `x` (technique) and `meta` (`sections`, `chords`, `mood`), both validated. The ASCII view now shows section names and chord names above the six strings, with bar lines, two bars per line.
-- **Privacy:** nothing leaves the device; `privacy-policy.md` section 7 rewritten. On load the app deletes the old `meta_key` / `gwai_cfg_v1` / `gwai_wonder_quota` from `localStorage`. **If the old key was ever shared or exposed, revoke it at the provider** — deleting it here does not.
-- **Honest limits:** the lyric writer is template-based (hand-written line banks grouped by rhyme, ~40 lines per mood), not a language model — it is varied and singable but repeats vocabulary across songs. Harmony is diatonic (no secondary dominants). The hum reader is monophonic and needs steady, separated notes. "SAM" and "Image" are local approximations of the idea, not the Meta models. Nothing here plays sound.
-- Tests: `node tools/ai-test.js` runs 94 checks (the network is **blocked** during the run and the test fails if any module touches it) and `node tools/ai-panel-test.js` runs 34 checks that drive the real panel code in a fake DOM.
 
 ### v1.4.7 — Wonder moved to the chat endpoint (`https://api.meta.ai/v1/chat/completions`)
 Built on v1.4.6 (native Java still byte-identical to v1.4.0).
