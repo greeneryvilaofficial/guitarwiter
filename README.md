@@ -84,6 +84,8 @@ Built on v1.5.0 (native Java still byte-identical to v1.4.0).
 - **Module diagnostics:** the panel shows "Modul: 8/8 dimuat ✓ (v1.5.1)". If a file under `www/ai/` is missing from the APK (e.g. the folder was not pushed), it names the file and the likely cause instead of a vague error; `window.gwaiDiag()` returns the same. Fixed a bug found by that test: after one failed module, every retry reloaded all modules from the start — now only the ones not yet loaded are retried.
 - The two mood buttons were renamed "Suasana: otomatis / galau / ceria" so they are not confused with the Spark style chips of the same name.
 - Tests: `node tools/ai-test.js` 94 checks, `node tools/ai-panel-test.js` 34 checks (theme variables all defined, no hard-coded colours, contrast in 5 themes, missing-module scenarios).
+## Translate:
+Offline word-by-word dictionary built-in. Optional online API bridge available if user provides own key - but default is 100% offline (no credits needed).
 ### 🌍 Supported
 EN | ID | SU (Sunda) | JV (Jawa) | RU | AR | JA - 100% Offline.
 ### Note:
