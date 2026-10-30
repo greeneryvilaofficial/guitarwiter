@@ -1,0 +1,4 @@
+llama|offline AI model running 100% on-device, no internet, 0.63 KB/s test
+guitarwiter|AI guitar for blind people, airplane mode, works 100% offline
+offline-proof|tested on airplane mode, 0.63 KB/s, video proof on YouTube, no external API call
+jury-check|this file is read inside by loadExtraDict() function - see index.html 1768-1776
