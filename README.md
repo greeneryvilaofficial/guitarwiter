@@ -84,12 +84,12 @@ Built on v1.5.0 (native Java still byte-identical to v1.4.0). Optional online br
 - **Module diagnostics:** the panel shows "Modul: 8/8 dimuat ✓ (v1.5.1)". If a file under `www/ai/` is missing from the APK (e.g. the folder was not pushed), it names the file and the likely cause instead of a vague error; `window.gwaiDiag()` returns the same. Fixed a bug found by that test: after one failed module, every retry reloaded all modules from the start — now only the ones not yet loaded are retried.
 - The two mood buttons were renamed "Suasana: otomatis / galau / ceria" so they are not confused with the Spark style chips of the same name.
 - Tests: `node tools/ai-test.js` 94 checks, `node tools/ai-panel-test.js` 34 checks (theme variables all defined, no hard-coded colours, contrast in 5 themes, missing-module scenarios).
-## Translate:
+ **Translate:**
 Offline word-by-word dictionary built-in. Optional online API bridge available if user provides own key - powered by Muse Spark via Meta Model API for Sunda/Jawa. Coded with Muse Code.
-### 🌍 Supported
+**🌍 Supported**
 EN | ID | SU (Sunda) | JV (Jawa) | RU | AR | JA offline.
 
-## 🤖 Meta AI Usage
+**🤖 Meta AI Usage**
 
 **Model:** Meta Llama 3.2 1B Instruct (Q4_K_M) - 1.2GB
 **File:** `models/llama-3.2-1b.gguf`
@@ -106,7 +106,7 @@ EN | ID | SU (Sunda) | JV (Jawa) | RU | AR | JA offline.
 - This satisfies "Must use Meta product: Llama"
 **Product:** Llama 3.2 by Meta
 
-### Note:
+**Note:**
 Currently tested on Android only (built entirely on-device in Lembang). Mac/Windows support planned - limited by device access, not architecture.
 
 ### v1.4.7 — Wonder moved to the chat endpoint (`https://api.meta.ai/v1/chat/completions`)
