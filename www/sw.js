@@ -16,7 +16,7 @@ const CORE_ASSETS = [
   'ai/waveform.js',
   'manifest.json',
   'icon-192.png',
-  'icon-512.png'
+  'icon-512.png',
   'dict/en.txt',
   'dict/id.txt',
   'dict/README_OFFLINE.txt'
