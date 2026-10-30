@@ -17,6 +17,9 @@ const CORE_ASSETS = [
   'manifest.json',
   'icon-192.png',
   'icon-512.png'
+  'dict/en.txt',
+  'dict/id.txt',
+  'dict/README_OFFLINE.txt'
 ];
 
 // Saat pertama kali dipasang: simpan file inti ke cache.
