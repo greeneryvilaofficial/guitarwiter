@@ -96,7 +96,7 @@ EN | ID | SU (Sunda) | JV (Jawa) | RU | AR | JA offline.
 **This file IS the Meta AI.**
 
 **How it works:**
-1. Llama model is bundled inside APK (the giga-giga file)
+1. Llama model is bundled inside APK (the file Bundle Meta offline)
 2. Runs 100% offline on-device with llama.cpp
 3. No internet / API call after install
 4. Used for: Smart Chord Prediction (Panel Cerdas) - Q=D3, W=D#3, etc
