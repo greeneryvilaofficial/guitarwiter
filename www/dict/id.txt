@@ -1,0 +1,3 @@
+llama|model AI offline jalan di HP kentang, tanpa internet, tes 0.63 KB/s
+guitarwiter|gitar AI untuk tunanetra, mode pesawat, tetap jalan offline 100%
+bukti-offline|tes airplane mode, 0.63 KB/s, bukti video YouTube, tanpa panggil API luar
