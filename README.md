@@ -2,6 +2,19 @@
 
 A custom Android keyboard that turns **guitar notes into typing**. Pluck one note → one letter/key appears in any text field (WhatsApp, Instagram, etc.). Pitch detection runs natively (AudioRecord + YIN) inside the app, while the keyboard UI is a web page (`www/`) inside an `InputMethodService` WebView.
 
+## For judges — what is real, what is optional, what is not done (v1.6.0)
+**60-second check, no API key and no APK needed:** open the green ✓ on the latest commit (workflow *Verify*) or run `npm test` (plain Node ≥ 18, no dependencies; 193 checks).
+
+| Meta product | Where | State in this repo |
+|---|---|---|
+| **Llama 3.2 1B Instruct** (offline, on-device) | `src/lib/offline/llama.js`, `native-patches/LlamaBridge.java`, `docs/LLAMA_ON_DEVICE.md` | **Adapter + Android bridge are done and tested with a fake bridge** (Llama-3 chat template, async calls, timeout, busy-guard, honest status). **Not included:** the compiled `llama.cpp` JNI library and the `.gguf` model (≈0.8 GB; too big for GitHub/APK). Until both are installed the panel says so and falls back to the offline dictionary — it never pretends. |
+| **Muse Spark** (online, Meta Model API) | `src/lib/online/spark.js` | **Implemented and unit-tested with a mocked `fetch`**; request format follows Meta's documented OpenAI-compatible `chat/completions`. **Not yet called against the live API from this repo** (needs your own key). Off by default; opt-in; only the text typed in the translate box is sent. |
+| Offline dictionary (EN · ID · SU · JV) | `src/lib/offline/dict-*.js` | Working fallback, **seed size only (~90 entries)**, word-by-word. Sundanese/Javanese entries should be reviewed by native speakers. |
+
+Languages: **EN, ID, SU (Sunda), JV (Jawa)**. Llama 3.2 does not officially list Indonesian, Sundanese or Javanese among its supported languages, so expect weak quality from the 1B model there; the dictionary is the dependable offline path today.
+
+Everything the *offline* modules do runs without network (`www/ai/` and every file of `src/lib` except `online/spark.js` are statically scanned for network calls). In the app: **Settings → Experimental → turn on smart features → "⑥ Terjemah"**.
+
 ## How to use
 1. Install the APK from the **Releases** tab (use `Guitarwiter.apk` if present — it is the lightest release build).
 2. **Open the app once** from the app drawer and grant the **microphone** permission (a keyboard cannot show a permission pop-up by itself).
@@ -31,16 +44,25 @@ In **letter mode**, the low notes (E2–C#3) are deliberately ignored because th
 ## Repository layout
 ```
 .github/workflows/
+  verify.yml               # fast tests on every push/PR, no secrets (green check for judges)
   android-build.yml        # builds the debug APK (+ release if a keystore exists) and creates a GitHub Release
   generate-keystore.yml    # run ONCE to create the release keystore
 native-patches/            # pasted into the android/ project that Capacitor generates automatically
   HtmlKeyboardService.java     # InputMethodService + WebView + JS bridge
   NativeMicPitchDetector.java  # mic recording & pitch detection (YIN) — the speed core
+  LlamaBridge.java             # window.AndroidLlama: status + async generate for the on-device Llama (safe without the native lib)
   HumRecorder.java             # in-memory ring buffer of the last 30 s of mic audio (Muse Wonder)
   MainActivity.java            # asks for the microphone permission, receives the Spark intent
   method.xml                   # IME declaration
   insert_*.py                  # scripts that patch manifest/gradle/icons/signing/performance/version
   app-icon/                    # launcher icons (mipmap-*)
+src/lib/                   # SOURCE of the translate modules (copied to www/lib by `npm run build:web`)
+  core.js router.js
+  offline/  dict-data.js dict-engine.js llama.js      # no network code
+  online/   spark.js                                  # the ONLY file that talks to the network (opt-in)
+  ui/       translate-panel.js
+scripts/sync-lib.js        # src/lib -> www/lib (Capacitor packs only www/)
+docs/                      # PUBLISH.md (how to publish the repo), LLAMA_ON_DEVICE.md
 www/
   index.html  sw.js  manifest.json  (+ icon-192.png, icon-512.png)
   ai/  ai-core.js music.js lyrics.js songgen.js songs.js editor.js generate-full.js waveform.js   # OFFLINE smart features (off by default, no network)
@@ -77,37 +99,22 @@ Every push to `main` builds an APK and a new Release (`build-<number>`).
 
 ## Changelog
 
+### v1.6.0 — Translate: Meta Llama (offline) + Muse Spark (online, opt-in) + `src/lib`
+- New `src/lib/` (copied to `www/lib/` by `npm run build:web`; the workflow runs it before `cap sync`). Router `GWTR.translate(text, from, to, {engine})`: `auto` = Llama if ready else dictionary, **never online automatically**; `llama`; `dict`; `spark`. Every result says which engine really produced it (`engine`, `fellBack`).
+- **Llama offline:** `llama.js` + `LlamaBridge.java` (`window.AndroidLlama`). Safe without the native library: `status()` reports `nativeLib` / `modelPresent` honestly. Model is **not bundled**; put one `*.gguf` in `Android/data/com.keyboardkustom.app/files/models/`. Connecting `llama.cpp` (JNI `libgwllama.so`) is documented in `docs/LLAMA_ON_DEVICE.md` and is **not done in this release**.
+- **Muse Spark online:** `spark.js`. Off by default, your own key (`localStorage['gw_spark_key']`, never in the URL/body, only in the `Authorization` header), host restricted to `*.meta.ai` over https, input ≤ 500 chars, ≤ 512 output tokens, 1 request at a time, ≥ 1 s apart, no automatic retry, 20 s timeout. Default model `muse-spark-1.2` (change in the panel). The `-contributor` model tier (prompts may train Meta models) is never the default.
+- Offline dictionary fallback (EN/ID/SU/JV, seed ≈ 90 entries, word-by-word, reports coverage and unknown words).
+- Panel "Terjemah" uses the keyboard theme variables like the AI panel.
+- **Fixes / cleanup:** `sw.js` was sitting in `www/dict/` (so it never registered and `tools/ai-test.js` crashed) → moved to `www/`. Removed `www/en.txt`, `www/dict/id.txt` and `www/dict/README_OFFLINE.txt`: they contained claims (“offline proof”, “jury-check”) instead of dictionary words and would have been loaded into word suggestions. README claims that the code did not back up (bundled `models/llama-3.2-1b.gguf`, “Smart Chord Prediction by Llama”, RU/AR/JA offline) were removed.
+- Tests: new `tools/translate-test.js` (65 checks); `npm test` runs all three suites + the `www/lib` sync check. New workflow `verify.yml`.
+
 ### v1.5.1 — the offline panel now follows the keyboard theme + module diagnostics
-Built on v1.5.0 (native Java still byte-identical to v1.4.0). Optional online bridge: Powered by Muse Spark via Meta Model API for Sunda/Jawa translation. Coded with Muse Code. Offline core 100% offline, 0.00 KB/s tested.
+Built on v1.5.0 (native Java still byte-identical to v1.4.0). The AI modules in this release are fully offline and rule-based (no network code, checked by `tools/ai-test.js`).
 - **Same look as the keyboard.** The panel no longer uses system colours; it uses the keyboard's own CSS variables — background `--kb-bg`, buttons `--key-bg` (pressed `--key-active-bg`), inputs/code boxes `--key-fn-bg`, chips `--pill-bg`, accent `--key-tag` / `--key-enter-bg`, lines `--divider`, hints `--muted`, corner radius `--key-radius` — exactly like the Settings panel. It therefore follows the theme switch (Dark / Light / Blue / Purple / Green / Auto) with no colour hard-coded; the waveform line takes the accent colour. Header row with the title and a close button, pill-shaped style chips, Roboto font.
 - **Readable in all five themes:** WCAG contrast computed from the real theme variables — main text, buttons, inputs and chips ≥ 7:1, hints ≥ 4.5:1, active chip ≥ 4.5:1 (Light theme uses white text on the blue accent), section titles ≥ 3.7:1 (same accent as the existing Settings headings).
 - **Module diagnostics:** the panel shows "Modul: 8/8 dimuat ✓ (v1.5.1)". If a file under `www/ai/` is missing from the APK (e.g. the folder was not pushed), it names the file and the likely cause instead of a vague error; `window.gwaiDiag()` returns the same. Fixed a bug found by that test: after one failed module, every retry reloaded all modules from the start — now only the ones not yet loaded are retried.
 - The two mood buttons were renamed "Suasana: otomatis / galau / ceria" so they are not confused with the Spark style chips of the same name.
 - Tests: `node tools/ai-test.js` 94 checks, `node tools/ai-panel-test.js` 34 checks (theme variables all defined, no hard-coded colours, contrast in 5 themes, missing-module scenarios).
- **Translate:**
-Offline word-by-word dictionary built-in. Optional online API bridge available if user provides own key - powered by Muse Spark via Meta Model API for Sunda/Jawa. Coded with Muse Code.
-**🌍 Supported**
-EN | ID | SU (Sunda) | JV (Jawa) | RU | AR | JA offline.
-
-**🤖 Meta AI Usage**
-
-**Model:** Meta Llama 3.2 1B Instruct (Q4_K_M) - 1.2GB
-**File:** `models/llama-3.2-1b.gguf`
-**This file IS the Meta AI.**
-
-**How it works:**
-1. Llama model is bundled inside APK (the file Bundle Meta offline)
-2. Runs 100% offline on-device with llama.cpp
-3. No internet / API call after install
-4. Used for: Smart Chord Prediction (Panel Cerdas) - Q=D3, W=D#3, etc
-
-**Proof of Offline AI:**
-- Timestamp 18.28 - Airplane Mode ON, 0.63 KB/s, Panel Cerdas still works
-- This satisfies "Must use Meta product: Llama"
-**Product:** Llama 3.2 by Meta
-
-**Note:**
-Currently tested on Android only (built entirely on-device in Lembang). Mac/Windows support planned - limited by device access, not architecture.
 
 ### v1.4.7 — Wonder moved to the chat endpoint (`https://api.meta.ai/v1/chat/completions`)
 Built on v1.4.6 (native Java still byte-identical to v1.4.0).
@@ -235,6 +242,7 @@ Privacy policy: [privacy-policy.md](privacy-policy.md)
 ## Testing (`tools/` folder)
 Run here before a release; not shipped in the APK.
 - `tools/ai-test.js` (plain Node, no dependencies): 94 checks of the offline AI engines — no network in the code (static scan) and none at run time (fetch/XHR/WebSocket/beacon are blocked), tab validation, music theory, song builder, lyrics, library fidelity, Spark commands, chord→song, humming→song, segmentation, cover art.
+- `tools/translate-test.js` (plain Node): 65 checks of `src/lib` — only `online/spark.js` may contain network code, dictionary, Llama bridge contract (fake bridge: unavailable / busy / timeout / result), Spark request shape (key only in header, https + `*.meta.ai` only, error mapping, timeout, rate guard), router never goes online by itself, `index.html` / `sw.js` / workflow wiring, panel smoke test.
 - `tools/ai-panel-test.js` (plain Node): 34 checks that run the real panel script from `index.html` in a minimal fake DOM and tap its buttons (commands, chord→song, library, cover, humming with a fake native bridge, native intent allowlist).
 - `tools/flow-test.js` (Node + `npm i jsdom`): runs `www/index.html` in a fake browser; checks label ↔ note ↔ typed character for ALL keys in letter/Shift/Caps/symbol-1/symbol-2 modes, the typing flow from Java, Shift/CapsLock behaviour from pitch vs touch, and the `?123` mode switch.
 - `tools/vsim/` (JDK 17): like `tools/sim/` but with a **virtual clock**, so results are identical on every run and much faster than real time. `cost=<ms>` imitates a slow phone; `DET=<file.java>` compares another detector (e.g. an old version); extra scenario `rep <gap> <midi> <amp>` (same note repeated). Scenario `hl <profile> <midi...> [res=<ratio>]` (v1.3.7): each note plucked on its own with a given harmonic profile and synthetic guitar-body resonance (`-Dresf=<Hz>` sets its frequency, `PER=1` prints per-note results). Example: `tools/vsim/run.sh cost=8 rapid`.

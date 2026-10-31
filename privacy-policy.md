@@ -1,10 +1,10 @@
 # Kebijakan Privasi — Guitarwiter
 
-_Terakhir diperbarui: 1 Oktober 2026_
+_Terakhir diperbarui: 31 Oktober 2026 (v1.6.0: fitur Terjemah)_
 
 Guitarwiter adalah keyboard Android yang mengubah nada gitar (lewat mikrofon) menjadi ketikan. Kebijakan ini menjelaskan data apa yang disentuh aplikasi dan ke mana perginya.
 
-**Ringkasnya: semua diproses di perangkatmu. Guitarwiter tidak mengirim apa pun ke server mana pun, tidak memakai iklan, dan tidak memakai analitik/pelacak.**
+**Ringkasnya: semua diproses di perangkatmu. Guitarwiter tidak mengirim apa pun ke server mana pun, tidak memakai iklan, dan tidak memakai analitik/pelacak — satu-satunya pengecualian adalah mesin terjemahan online yang opsional dan mati secara bawaan (lihat bagian 10).**
 
 ## 1. Mikrofon
 - Izin **RECORD_AUDIO** dipakai hanya untuk mendeteksi nada gitar secara *real-time* di dalam aplikasi.
@@ -45,9 +45,15 @@ Pertanyaan soal privasi: **[ISI EMAIL KONTAK KAMU DI SINI]**
 ### English summary
 Guitarwiter processes everything on your device. The microphone (RECORD_AUDIO) is used only for real-time pitch detection; audio is never recorded, stored, or transmitted. Typed text, learned words, settings, and clipboard suggestions stay in local app storage and can be cleared by clearing app data. No ads, analytics, trackers, or network data transfer. In private/password fields the keyboard does not learn or suggest words. Contact: **[ADD YOUR CONTACT EMAIL HERE]**
 
-## 7. Fitur cerdas (offline) — Setelan → Eksperimental → "Fitur cerdas (offline)"
+## 9. Fitur cerdas (offline) — Setelan → Eksperimental → "Fitur cerdas (offline)"
 Bawaannya **mati**. Saat dinyalakan, semua dikerjakan **di perangkat Anda**: mengubah tab dengan perintah, membuat lagu dan lirik dari akor, mengubah humming jadi lagu, perpustakaan tab lagu, segmentasi frasa, dan sampul lagu.
 - **Tidak ada koneksi internet, tidak ada API, tidak ada kunci, tidak ada layanan pihak ketiga.** Tidak ada teks, tab, rekaman, atau gambar yang dikirim ke mana pun.
 - Rekaman humming 30 detik hanya disimpan di memori selama dianalisis (melodinya dibaca di perangkat), lalu dibuang saat selesai atau dibatalkan. Tidak disimpan ke penyimpanan.
 - Tab terakhir yang Anda buka disimpan di penyimpanan lokal aplikasi (`lastTab`) agar bisa dilanjutkan; hapus data aplikasi untuk menghapusnya.
 - Versi lama (1.4.x) yang memakai layanan online menyimpan kunci API di perangkat. Versi ini menghapus kunci itu saat dimuat.
+
+## 10. Terjemah (v1.6.0) — Setelan → Eksperimental → "Fitur cerdas (offline)" → "⑥ Terjemah"
+- **Mesin offline (kamus bawaan, dan Meta Llama bila model dipasang):** teks yang kamu ketik di kotak Terjemah diproses sepenuhnya di perangkat. Tidak ada koneksi jaringan.
+- **Mesin online "Spark online" (Meta Model API) — MATI secara bawaan.** Hanya jika kamu (1) menyalakannya, (2) memasukkan kunci API milikmu sendiri, dan (3) memilih mesin Spark lalu menekan "Terjemahkan", **teks di kotak Terjemah itu saja** dikirim lewat https ke Meta Model API untuk diterjemahkan. Ketikan keyboard biasa, audio mikrofon, tab, dan papan klip tidak pernah dikirim. Pemrosesan di sisi Meta mengikuti syarat dan kebijakan privasi Meta; model bawaan memakai tingkat standar (bukan tingkat "contributor").
+- Kunci API disimpan hanya di penyimpanan lokal aplikasi di perangkat ini dan dikirim hanya sebagai header otorisasi ke `*.meta.ai`. Tombol "Hapus kunci" menghapusnya dari perangkat (cabut juga kuncinya di dashboard penyedia bila perlu).
+- Mode "Otomatis" tidak pernah memakai mesin online.
