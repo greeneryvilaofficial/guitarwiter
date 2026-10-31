@@ -4762,6 +4762,17 @@
   /* ---------- [LABEL AI / DIAGNOSIS] kalau modul tidak ketemu: sebutkan berkasnya + penyebab yang paling mungkin ---------- */
   function loadFailMsg(){ return 'Modul gagal dimuat: ' + (failedSrc || 'tidak diketahui') + '.\nPenyebab paling mungkin: folder www/ai/ belum ikut di-push ke GitHub / belum ikut di-build ke APK. Pasang ulang APK dari build terbaru.'; }
   function showStatus(){ var e = $('gwai-status'); if(!e) return; e.textContent = loaded ? 'Modul: ' + MODS.length + '/' + MODS.length + ' dimuat ✓ (v' + G().version + ')' : 'Modul: ' + loadedCount + '/' + MODS.length + ' dimuat — gagal di ' + (failedSrc || '?'); }
+  /* ---------- [LABEL GWTR / PEMUAT] modul terjemah (src/lib -> www/lib): dimuat HANYA saat tombol "Buka Terjemah" ditekan ---------- */
+  var TR_MODS = ['lib/core.js','lib/offline/dict-data.js','lib/offline/dict-engine.js','lib/offline/llama.js','lib/online/spark.js','lib/router.js','lib/ui/translate-panel.js'], trLoading = null, trFailed = '';
+  function loadTranslate(){
+    if(window.gwTranslateOpen) return Promise.resolve(true);
+    if(trLoading) return trLoading;
+    trFailed = '';
+    trLoading = TR_MODS.reduce(function(p, src){ return p.then(function(ok){ if(!ok) return false;
+      return new Promise(function(res){ var el = document.createElement('script'); el.src = src; el.async = false; el.onload = function(){ res(true); }; el.onerror = function(){ trFailed = src; res(false); }; document.head.appendChild(el); }); }); }, Promise.resolve(true))
+      .then(function(ok){ trLoading = null; return ok && !!window.gwTranslateOpen; });
+    return trLoading;
+  }
   window.gwaiDiag = function(){ return { loaded: loaded, count: loadedCount, total: MODS.length, failed: failedSrc, version: G() ? G().version : null }; };
   function setup(){
     document.addEventListener('gw:tab-changed', function(e){ showTab(e.detail && e.detail.tab); });
@@ -4922,6 +4933,9 @@
     wfCanvas = document.createElement('canvas'); wfCanvas.width = 360; wfCanvas.height = 56; panel.appendChild(wfCanvas);
     btn('Segmentasi frasa (SAM)', runSam); btn('Sampul lagu (Image)', runCover);
     var im = document.createElement('img'); im.id = 'gwai-cover'; im.alt = 'Sampul'; panel.appendChild(im);
+    el('h4', '⑥ Terjemah (EN · ID · SU · JV)');
+    el('div', 'Meta Llama offline bila sudah terpasang di HP, kamus offline sebagai cadangan. Mode online (Muse Spark) opsional, mati bawaan, kunci milikmu sendiri.', 'hint');
+    btn('Buka Terjemah', function(){ loadTranslate().then(function(ok){ if(ok) window.gwTranslateOpen(); else setText('gwai-note', 'Modul terjemah gagal dimuat: ' + (trFailed || '?') + '. Pasang ulang APK dari build terbaru (folder www/lib/ harus ikut).'); }); });
     el('div', '', 'hint').id = 'gwai-note';
   }
   window.gwaiOpen = function(){
