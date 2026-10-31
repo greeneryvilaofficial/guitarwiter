@@ -1,0 +1,23 @@
+name: Verify (tes cepat, tanpa keystore & tanpa secret)
+
+# Jalan di setiap push dan pull request, ~30 detik. Tidak membangun APK dan tidak butuh secret apa pun,
+# jadi siapa pun (termasuk juri) bisa melihat centang hijau/merah tanpa menunggu build Android.
+on:
+  push:
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+      - name: Tes (AI offline, panel, terjemah, sinkron src/lib -> www/lib)
+        run: npm test
