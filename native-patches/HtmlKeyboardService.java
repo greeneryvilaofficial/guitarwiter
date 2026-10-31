@@ -115,6 +115,8 @@ public class HtmlKeyboardService extends InputMethodService {
 
         // Daftarkan jembatan: di JavaScript akan muncul sebagai window.AndroidKeyboard
         webView.addJavascriptInterface(new KeyboardBridge(), "AndroidKeyboard");
+        // [LABEL GWTR / LLAMA] jembatan Meta Llama offline (aman tanpa pustaka native: melapor status jujur)
+        webView.addJavascriptInterface(new LlamaBridge(this, webView), "AndroidLlama");
 
         // BOOSTER LATENSI KETIK (baru): window.AndroidKeyboard.* di atas method-nya
         // dipanggil Android di THREAD LAIN, bukan UI thread -- makanya tiap panggilan
