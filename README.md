@@ -1,9 +1,14 @@
-# 🎸 GuitarWiter — Guitar-to-Keyboard
+# 🎸 GuitarWiter — Guitar-to-Keyboard + Offline AI
 
-A custom Android keyboard that turns **guitar notes into typing**. Pluck one note → one letter/key appears in any text field (WhatsApp, Instagram, etc.). Pitch detection runs natively (AudioRecord + YIN) inside the app, while the keyboard UI is a web page (`www/`) inside an `InputMethodService` WebView.
+A custom Android keyboard that turns **guitar notes into typing**. Pluck one note → one letter. Pitch detection runs natively (AudioRecord + YIN) inside an `InputMethodService` WebView. Plus **true offline translation**.
 
-## For judges — what is real, what is optional, what is not done (v1.6.0)
-**60-second check, no API key and no APK needed:** open the green ✓ on the latest commit (workflow *Verify*) or run `npm test` (plain Node ≥ 18, no dependencies; 193 checks).
+## For judges — 60-second verify, no keystore & no secret
+
+**Fast check:** Actions tab → green ✓ on `Verify (fast, no keystore & no secret)` or run:
+```bash
+npm test
+
+(plain Node ≥ 18, no dependencies; 193 checks).
 
 | Meta product | Where | State in this repo |
 |---|---|---|
