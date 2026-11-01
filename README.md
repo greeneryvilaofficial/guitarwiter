@@ -19,6 +19,20 @@ Guitarwiter is intentionally **offline-first** for Lembang, West Java (low signa
 Judge test: Turn off data > Open WhatsApp > Type `G` > Sundanese guitar typing appears.
 
 **Online mode:** requires `gw_spark_key` from dev.meta.ai (optional, only if $1 card hold passes)
+## 🤖🧠 Wise AI Philosophy - Save Earth
+
+"If we use AI too much, AI will control us and make us slaves of robots. 
+If we use it wisely as needed, we will be the ones who control the robots."
+
+Guitarwiter built with this principle:
+- 100% OFFLINE, no cloud AI dependency
+- On-device only, no data collection
+- Human controls the tool, not tool controls human
+- Save Earth by using AI wisely, not excessively
+
+Built in Lembang, Bandung - for humans, by human, with wise AI 
+as tool, not master.
+🌏 Save Earth. Use AI Wisely.
 
 | Meta product | Where | State in this repo |
 |---|---|---|
