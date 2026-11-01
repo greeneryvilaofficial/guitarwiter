@@ -6,6 +6,19 @@ A custom Android keyboard that turns **guitar notes into typing**. Pluck one not
 
 Fast check: Actions tab → green ✓ on Verify (fast, no keystore & no secret) or run: npm test
 193 checks, plain Node ≥18, no dependencies.
+## ⚠️ API Status
+
+**CREDIT HOLD / No payment method? = NORMAL - Not an error**
+
+Guitarwiter is intentionally **offline-first** for Lembang, West Java (low signal area):
+- When free credit is on hold / card verification fails → app auto-runs on **Llama 3.2 1B on-device (8/9 modules, v1.5.0)**
+- No internet, no API, no key required
+- Online **Muse Spark** mode is optional, can be disabled in Android settings
+> `Smart features OFFLINE - Everything runs on this phone`
+
+Judge test: Turn off data > Open WhatsApp > Type `G` > Sundanese guitar typing appears.
+
+**Online mode:** requires `gw_spark_key` from dev.meta.ai (optional, only if $1 card hold passes)
 
 | Meta product | Where | State in this repo |
 |---|---|---|
